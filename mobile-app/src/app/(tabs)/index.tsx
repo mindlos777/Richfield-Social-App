@@ -32,7 +32,6 @@ type FeedPost = {
 };
 
 type Opportunity = {
-  id: string;
   title: string;
   company: string;
   companyInitials: string;
@@ -59,7 +58,6 @@ type SuggestedConnection = {
   initials: string;
   role: string;
   programme: string;
-  type: 'ALUMNI' | 'STUDENT' | 'BUSINESS';
 };
 
 /* ==========================================================================
@@ -119,7 +117,6 @@ const initialPosts: FeedPost[] = [
 ];
 
 const recommendedOpportunity: Opportunity = {
-  id: 'opportunity-1',
   title: 'Graduate Software Developer',
   company: 'Tech Solutions Africa',
   companyInitials: 'TS',
@@ -167,7 +164,6 @@ const suggestedConnections: SuggestedConnection[] = [
     initials: 'SD',
     role: 'Software Developer',
     programme: 'BSc IT',
-    type: 'ALUMNI',
   },
   {
     id: 'person-2',
@@ -175,7 +171,6 @@ const suggestedConnections: SuggestedConnection[] = [
     initials: 'NW',
     role: 'Cloud Engineer',
     programme: 'BSc IT',
-    type: 'ALUMNI',
   },
   {
     id: 'person-3',
@@ -183,7 +178,6 @@ const suggestedConnections: SuggestedConnection[] = [
     initials: 'KM',
     role: 'Cybersecurity Analyst',
     programme: 'BSc IT',
-    type: 'ALUMNI',
   },
 ];
 
@@ -323,18 +317,6 @@ function HomeContentHeader() {
           </Text>
         </View>
 
-        <Pressable
-          style={styles.filterButton}
-          onPress={() => {
-            // Feed filter screen will be added later.
-          }}
-        >
-          <Ionicons
-            name="options-outline"
-            size={19}
-            color={COLORS.textPrimary}
-          />
-        </Pressable>
       </View>
 
       <CreatePostCard />
@@ -619,7 +601,7 @@ function EventsSection() {
       contentContainerStyle={styles.horizontalContainer}
     >
       {upcomingEvents.map((event) => (
-        <Pressable
+        <View
           key={event.id}
           style={styles.eventCard}
         >
@@ -670,7 +652,7 @@ function EventsSection() {
               </Text>
             </View>
           </View>
-        </Pressable>
+        </View>
       ))}
     </ScrollView>
   );
@@ -746,9 +728,7 @@ function CreatePostCard() {
   return (
     <Pressable
       style={styles.createPostCard}
-      onPress={() => {
-        // Post composer screen will be added later.
-      }}
+      onPress={() => router.push('/post')}
     >
       <View style={styles.currentUserAvatar}>
         <Text style={styles.currentUserInitials}>AT</Text>
@@ -948,8 +928,6 @@ const COLORS = {
   success: '#287A52',
   successLight: '#EAF6EF',
 
-  warning: '#A66A00',
-  warningLight: '#FFF5DF',
 };
 
 /* ==========================================================================
@@ -1492,17 +1470,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-
-  filterButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 
   /* ------------------------------------------------------------------------

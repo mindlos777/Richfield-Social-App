@@ -52,7 +52,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="opportunities"
         options={{
-          title: "Career",
+          title: "Opportunities",
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name="briefcase" size={size} color={focused ? "#0300cf" : color} />
           ),

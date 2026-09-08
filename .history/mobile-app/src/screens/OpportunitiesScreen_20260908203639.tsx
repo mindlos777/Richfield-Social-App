@@ -3,6 +3,7 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
+  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,

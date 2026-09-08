@@ -3,13 +3,13 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
+  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 type OpportunityType = 'All' | 'Graduate' | 'Internship' | 'Part-time';
 
