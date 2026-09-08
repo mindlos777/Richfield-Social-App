@@ -43,6 +43,7 @@ export default function TabsLayout() {
         name="post"
         options={{
           title: "Create Post",
+          headerShown: false,
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name="add" size={size} color={focused ? "#0300cf" : color} />
           ),
