@@ -1,0 +1,1 @@
+import A from '../../screens/StudentProfileScreen';

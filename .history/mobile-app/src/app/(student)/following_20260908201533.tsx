@@ -1,0 +1,1 @@
+import {EditProfileScreen} from '../../screens/StudentProfileScreen';

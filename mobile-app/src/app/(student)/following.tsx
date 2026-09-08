@@ -1,0 +1,1 @@
+import {FollowingScreen} from '../../screens/StudentProfileScreen';

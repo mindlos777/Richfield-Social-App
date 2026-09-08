@@ -1,0 +1,1 @@
+import {Se} from '../../screens/StudentProfileScreen';
