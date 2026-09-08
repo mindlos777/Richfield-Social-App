@@ -40,11 +40,11 @@ export default function TabsLayout() {
       />
 
       <Tabs.Screen
-        name="post"
+        name="network"
         options={{
-          title: "Create Post",
+          title: "Network",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name="add" size={size} color={focused ? "#0300cf" : color} />
+            <Ionicons name="people" size={size} color={focused ? "#0300cf" : color} />
           ),
         }}
       />
@@ -52,7 +52,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="opportunities"
         options={{
-          title: "Opportunities",
+          title: "Career",
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name="briefcase" size={size} color={focused ? "#0300cf" : color} />
           ),
@@ -60,9 +60,19 @@ export default function TabsLayout() {
       />
 
       <Tabs.Screen
+        name="chat"
+        options={{
+          title: "Chat",
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name="chatbubbles" size={size} color={focused ? "#0300cf" : color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
         name="profile"
         options={{
-          title: "Profile",
+          title: "profile",
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name="person" size={size} color={focused ? "#0300cf" : color} />
           ),

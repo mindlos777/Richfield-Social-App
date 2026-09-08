@@ -38,7 +38,7 @@ export default function Auth() {
         <TextInput
           onChangeText={(text) => setEmail(text)}
           value={email}
-          placeholder="email@address.com"
+          placeholder="email@address.ac.za"
           autoCapitalize="none"
           style={styles.input}
         />
