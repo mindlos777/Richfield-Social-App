@@ -1,1 +1,0 @@
-import {Fol} from '../../screens/StudentProfileScreen';

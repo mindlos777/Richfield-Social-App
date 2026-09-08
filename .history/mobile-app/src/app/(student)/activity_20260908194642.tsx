@@ -1,1 +1,0 @@
-import PotfolioScreen from '../../screens/StudentProfileScreen';

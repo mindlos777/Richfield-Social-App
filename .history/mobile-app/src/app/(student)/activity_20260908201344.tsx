@@ -1,1 +1,0 @@
-import Ac from '../../screens/StudentProfileScreen';

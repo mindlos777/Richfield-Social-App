@@ -1,1 +1,0 @@
-import {f} from '../../screens/StudentProfileScreen';

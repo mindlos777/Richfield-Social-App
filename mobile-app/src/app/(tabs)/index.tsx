@@ -341,7 +341,7 @@ function ProfileStrengthCard() {
           <Ionicons
             name="person-outline"
             size={20}
-            color={COLORS.white}
+            color={COLORS.brand}
           />
         </View>
 
@@ -728,7 +728,7 @@ function CreatePostCard() {
   return (
     <Pressable
       style={styles.createPostCard}
-      onPress={() => router.push('/post')}
+      onPress={() => router.push('/network')}
     >
       <View style={styles.currentUserAvatar}>
         <Text style={styles.currentUserInitials}>AT</Text>

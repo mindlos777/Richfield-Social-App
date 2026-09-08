@@ -106,11 +106,11 @@ const currentOpportunities: Opportunity[] = [
 const colors = {
   background: '#F5F7F9',
   white: '#FFFFFF',
-  ink: '#17212B',
+  ink: '#000000',
   secondary: '#5F6B76',
   muted: '#89949E',
   border: '#E3E8EC',
-  brand: '#243447',
+  brand: '#0300cf',
   brandSoft: '#EEF2F5',
   success: '#287A52',
   successSoft: '#EAF6EF',

@@ -313,6 +313,10 @@ export default function ProfileScreen() {
         {/* HEADER */}
 
         <View style={styles.header}>
+          <Text style={styles.headerTitle}>
+            Profile
+          </Text>
+
           <Pressable
             onPress={() => setMenuVisible(true)}
             style={styles.headerButton}
@@ -321,21 +325,6 @@ export default function ProfileScreen() {
               name="menu-outline"
               size={29}
               color="#111"
-            />
-          </Pressable>
-
-          <Text style={styles.headerTitle}>
-            Profile
-          </Text>
-
-          <Pressable
-            onPress={showCreateOptions}
-            style={styles.headerButton}
-          >
-            <Ionicons
-              name="add"
-              size={29}
-              color={PRIMARY}
             />
           </Pressable>
         </View>
