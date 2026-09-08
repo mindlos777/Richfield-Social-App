@@ -341,7 +341,7 @@ function ProfileStrengthCard() {
           <Ionicons
             name="person-outline"
             size={20}
-            color={COLORS.brand}
+            color={COLORS.white}
           />
         </View>
 
