@@ -1,16 +1,27 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from "../lib/supabase";
 
-const RICHFIELD_EMAIL_DOMAINS = [
-  '@my.richfield.ac.za',
-  '@richfield.ac.za',
-  '@my.aaa.ac.za',
-  '@aaa.ac.za',
+const STUDENT_EMAIL_DOMAINS = [
+  "@my.richfield.ac.za",
+  "@my.aaa.ac.za",
 ];
 
-export const isRichfieldEmail = (email: string) => {
+const STAFF_EMAIL_DOMAINS = [
+  "@richfield.ac.za",
+  "@aaa.ac.za",
+];
+
+export const isStudentEmail = (email: string) => {
   const normalizedEmail = email.toLowerCase().trim();
 
-  return RICHFIELD_EMAIL_DOMAINS.some(domain =>
+  return STUDENT_EMAIL_DOMAINS.some((domain) =>
+    normalizedEmail.endsWith(domain)
+  );
+};
+
+export const isStaffEmail = (email: string) => {
+  const normalizedEmail = email.toLowerCase().trim();
+
+  return STAFF_EMAIL_DOMAINS.some((domain) =>
     normalizedEmail.endsWith(domain)
   );
 };
@@ -19,10 +30,11 @@ export const signIn = async (
   email: string,
   password: string
 ) => {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
-    password,
-  });
+  const { data, error } =
+    await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
 
   if (error) {
     throw error;
@@ -34,24 +46,38 @@ export const signIn = async (
 export const signUpStudent = async (
   email: string,
   password: string,
-  fullName: string
+  fullName: string,
+  studentNumber: string,
+  programme: string,
+  campus: string,
+  yearOfStudy: number
 ) => {
-  if (!isRichfieldEmail(email)) {
+  if (!isStudentEmail(email)) {
     throw new Error(
-      'Students must register using a valid Richfield or AAA institutional email.'
+      "Students must use a valid Richfield or AAA student email."
     );
   }
 
-  const { data, error } = await supabase.auth.signUp({
-    email: email.trim().toLowerCase(),
-    password,
-    options: {
-      data: {
-        full_name: fullName,
-        role: 'student',
+  const { data, error } =
+    await supabase.auth.signUp({
+      email: email.trim().toLowerCase(),
+      password,
+      options: {
+        data: {
+          full_name: fullName.trim(),
+
+          signup_role: "student",
+
+          student_number: studentNumber,
+
+          programme,
+
+          campus,
+
+          year_of_study: yearOfStudy,
+        },
       },
-    },
-  });
+    });
 
   if (error) {
     throw error;
@@ -69,28 +95,32 @@ export const signUpAlumni = async (
   campus: string,
   graduationYear: number
 ) => {
-  const { data, error } = await supabase.auth.signUp({
-    email: email.trim().toLowerCase(),
-    password,
-    options: {
-      data: {
-        full_name: fullName,
-        role: 'alumni',
+  const { data, error } =
+    await supabase.auth.signUp({
+      email: email.trim().toLowerCase(),
+      password,
+      options: {
+        data: {
+          full_name: fullName.trim(),
+
+          signup_role: "alumni",
+
+          student_number: studentNumber,
+
+          programme,
+
+          campus,
+
+          graduation_year: graduationYear,
+        },
       },
-    },
-  });
+    });
 
   if (error) {
     throw error;
   }
 
-  return {
-    data,
-    studentNumber,
-    programme,
-    campus,
-    graduationYear,
-  };
+  return data;
 };
 
 export const signUpBusiness = async (
@@ -103,33 +133,39 @@ export const signUpBusiness = async (
   location: string,
   description: string
 ) => {
-  const { data, error } = await supabase.auth.signUp({
-    email: email.trim().toLowerCase(),
-    password,
-    options: {
-      data: {
-        full_name: fullName,
-        role: 'business',
+  const { data, error } =
+    await supabase.auth.signUp({
+      email: email.trim().toLowerCase(),
+      password,
+      options: {
+        data: {
+          full_name: fullName.trim(),
+
+          signup_role: "business",
+
+          company_name: companyName,
+
+          industry,
+
+          website,
+
+          location,
+
+          description,
+        },
       },
-    },
-  });
+    });
 
   if (error) {
     throw error;
   }
 
-  return {
-    data,
-    companyName,
-    industry,
-    website,
-    location,
-    description,
-  };
+  return data;
 };
 
 export const signOut = async () => {
-  const { error } = await supabase.auth.signOut();
+  const { error } =
+    await supabase.auth.signOut();
 
   if (error) {
     throw error;

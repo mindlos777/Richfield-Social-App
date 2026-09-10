@@ -1,0 +1,1 @@
+export { AlumniSettingsScreen as default } from "../../screens/AlumniScreens";
