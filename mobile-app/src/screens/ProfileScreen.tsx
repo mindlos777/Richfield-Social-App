@@ -728,7 +728,7 @@ export default function ProfileScreen() {
             }
           >
             <Ionicons
-              name="briefcase-outline"
+              name="folder-open-outline"
               size={23}
               color="#fff"
             />

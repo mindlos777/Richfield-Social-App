@@ -1,22 +1,54 @@
-import React, { useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import {
+  ActivityIndicator,
+  Alert,
   FlatList,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   View,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+} from "react-native";
+
+import { Ionicons } from "@expo/vector-icons";
+import { router, useFocusEffect } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+import { supabase } from "../../lib/supabase";
 
 /* ==========================================================================
    TYPES
    ========================================================================== */
 
-type IconName = React.ComponentProps<typeof Ionicons>['name'];
+type IconName = React.ComponentProps<typeof Ionicons>["name"];
+
+type UserRole =
+  | "student"
+  | "alumni"
+  | "business"
+  | "admin";
+
+type HomeProfile = {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  role: UserRole | null;
+  avatar_url: string | null;
+  bio: string | null;
+
+  linkedin_url?: string | null;
+  github_url?: string | null;
+  instagram_url?: string | null;
+  website_url?: string | null;
+};
 
 type FeedPost = {
   id: string;
@@ -54,61 +86,57 @@ type EventItem = {
 
 type SuggestedConnection = {
   id: string;
-  name: string;
-  initials: string;
-  role: string;
-  programme: string;
+  full_name: string | null;
+  username: string | null;
+  role: UserRole | null;
+  avatar_url: string | null;
+  bio: string | null;
 };
 
 /* ==========================================================================
-   TEMPORARY DEVELOPMENT DATA
-   ========================================================================== */
+   TEMPORARY DATA
 
-/**
- * These are development-only values.
- *
- * Later these will come from:
- * - Firebase / backend API
- * - TanStack Query
- * - Authenticated user profile
- * - Recommendation / matching service
- */
+   Posts, opportunities and events stay temporary until we confirm the
+   existing Supabase table schemas.
+
+   Profiles and follows ARE connected to Supabase.
+   ========================================================================== */
 
 const initialPosts: FeedPost[] = [
   {
-    id: 'post-1',
-    author: 'Thabo Mokoena',
-    initials: 'TM',
-    headline: 'Software Engineer · Richfield Alumni',
-    time: '2h',
+    id: "post-1",
+    author: "Thabo Mokoena",
+    initials: "TM",
+    headline: "Software Engineer · Richfield Alumni",
+    time: "2h",
     content:
-      'Excited to share that I have started a new role as a Backend Software Engineer. One thing I learnt during my transition from university into industry is that consistently building projects matters just as much as completing coursework.',
+      "Excited to share that I have started a new role as a Backend Software Engineer. One thing I learnt during my transition from university into industry is that consistently building projects matters just as much as completing coursework.",
     likes: 42,
     comments: 8,
     shares: 3,
     liked: false,
   },
   {
-    id: 'post-2',
-    author: 'Richfield Career Development',
-    initials: 'RC',
-    headline: 'Career Development',
-    time: '5h',
+    id: "post-2",
+    author: "Richfield Career Development",
+    initials: "RC",
+    headline: "Career Development",
+    time: "5h",
     content:
-      'Applications are now open for the upcoming industry networking session. Students interested in software development, cloud computing and cybersecurity are encouraged to attend.',
+      "Applications are now open for the upcoming industry networking session. Students interested in software development, cloud computing and cybersecurity are encouraged to attend.",
     likes: 76,
     comments: 14,
     shares: 11,
     liked: false,
   },
   {
-    id: 'post-3',
-    author: 'Lerato Nkosi',
-    initials: 'LN',
-    headline: 'BSc IT · Final Year Student',
-    time: '1d',
+    id: "post-3",
+    author: "Lerato Nkosi",
+    initials: "LN",
+    headline: "BSc IT · Final Year Student",
+    time: "1d",
     content:
-      'Just completed my first full-stack project using React, Node.js and PostgreSQL. Looking forward to connecting with other students working on interesting software projects.',
+      "Just completed my first full-stack project using React, Node.js and PostgreSQL. Looking forward to connecting with other students working on interesting software projects.",
     likes: 31,
     comments: 6,
     shares: 2,
@@ -117,134 +145,699 @@ const initialPosts: FeedPost[] = [
 ];
 
 const recommendedOpportunity: Opportunity = {
-  title: 'Graduate Software Developer',
-  company: 'Tech Solutions Africa',
-  companyInitials: 'TS',
-  location: 'Johannesburg, Gauteng',
-  type: 'Graduate Programme',
+  title: "Graduate Software Developer",
+  company: "Tech Solutions Africa",
+  companyInitials: "TS",
+  location: "Johannesburg, Gauteng",
+  type: "Graduate Programme",
   match: 92,
-  closingDate: '18 Sep 2026',
-  skills: ['Java', 'Spring Boot', 'REST APIs'],
+  closingDate: "18 Sep 2026",
+  skills: ["Java", "Spring Boot", "REST APIs"],
 };
 
 const upcomingEvents: EventItem[] = [
   {
-    id: 'event-1',
-    title: 'Technology Career Fair',
-    date: '18',
-    month: 'SEP',
-    time: '10:00',
-    location: 'Richfield Centurion Campus',
-    category: 'Career Fair',
+    id: "event-1",
+    title: "Technology Career Fair",
+    date: "18",
+    month: "SEP",
+    time: "10:00",
+    location: "Richfield Centurion Campus",
+    category: "Career Fair",
   },
   {
-    id: 'event-2',
-    title: 'Building Your Developer Portfolio',
-    date: '22',
-    month: 'SEP',
-    time: '14:00',
-    location: 'Online',
-    category: 'Workshop',
+    id: "event-2",
+    title: "Building Your Developer Portfolio",
+    date: "22",
+    month: "SEP",
+    time: "14:00",
+    location: "Online",
+    category: "Workshop",
   },
   {
-    id: 'event-3',
-    title: 'Industry Networking Evening',
-    date: '26',
-    month: 'SEP',
-    time: '17:30',
-    location: 'Richfield Sandton Campus',
-    category: 'Networking',
+    id: "event-3",
+    title: "Industry Networking Evening",
+    date: "26",
+    month: "SEP",
+    time: "17:30",
+    location: "Richfield Sandton Campus",
+    category: "Networking",
   },
 ];
 
-const suggestedConnections: SuggestedConnection[] = [
-  {
-    id: 'person-1',
-    name: 'Sipho Dlamini',
-    initials: 'SD',
-    role: 'Software Developer',
-    programme: 'BSc IT',
-  },
-  {
-    id: 'person-2',
-    name: 'Nadia Williams',
-    initials: 'NW',
-    role: 'Cloud Engineer',
-    programme: 'BSc IT',
-  },
-  {
-    id: 'person-3',
-    name: 'Kabelo Molefe',
-    initials: 'KM',
-    role: 'Cybersecurity Analyst',
-    programme: 'BSc IT',
-  },
-];
+/* ==========================================================================
+   HELPERS
+   ========================================================================== */
+
+function getInitials(name: string | null) {
+  if (!name) {
+    return "U";
+  }
+
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return "U";
+  }
+
+  if (parts.length === 1) {
+    return parts[0].charAt(0).toUpperCase();
+  }
+
+  return `${parts[0]
+    .charAt(0)
+    .toUpperCase()}${parts[parts.length - 1]
+    .charAt(0)
+    .toUpperCase()}`;
+}
+
+function getRoleLabel(role: UserRole | null) {
+  switch (role) {
+    case "student":
+      return "Student";
+
+    case "alumni":
+      return "Alumni";
+
+    case "business":
+      return "Business";
+
+    case "admin":
+      return "Admin";
+
+    default:
+      return "Member";
+  }
+}
+
+function getGreeting() {
+  const hour = new Date().getHours();
+
+  if (hour < 12) {
+    return "Good morning";
+  }
+
+  if (hour < 17) {
+    return "Good afternoon";
+  }
+
+  return "Good evening";
+}
 
 /* ==========================================================================
    MAIN HOME SCREEN
    ========================================================================== */
 
 export default function HomeScreen() {
-  const [posts, setPosts] = useState<FeedPost[]>(initialPosts);
-  const [refreshing, setRefreshing] = useState(false);
+  const [posts, setPosts] =
+    useState<FeedPost[]>(initialPosts);
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
+  const [profile, setProfile] =
+    useState<HomeProfile | null>(null);
 
-    /*
-     * Temporary refresh simulation.
-     *
-     * Later:
-     * queryClient.invalidateQueries({
-     *   queryKey: ['feed'],
-     * });
-     */
+  const [suggestions, setSuggestions] =
+    useState<SuggestedConnection[]>([]);
 
-    await new Promise((resolve) => setTimeout(resolve, 800));
+  const [following, setFollowing] =
+    useState<string[]>([]);
 
-    setRefreshing(false);
-  };
+  const [loading, setLoading] =
+    useState(true);
 
-  const handleLike = (postId: string) => {
-    setPosts((currentPosts) =>
-      currentPosts.map((post) => {
-        if (post.id !== postId) {
-          return post;
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  const [followLoading, setFollowLoading] =
+    useState<string[]>([]);
+
+  /* ------------------------------------------------------------------------
+     LOAD PROFILE
+     ------------------------------------------------------------------------ */
+
+  const loadProfile = useCallback(
+    async (userId: string) => {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("profiles")
+        .select(`
+          id,
+          full_name,
+          username,
+          role,
+          avatar_url,
+          bio,
+          linkedin_url,
+          github_url,
+          instagram_url,
+          website_url
+        `)
+        .eq("id", userId)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setProfile(data as HomeProfile);
+
+      return data as HomeProfile;
+    },
+    []
+  );
+
+  /* ------------------------------------------------------------------------
+     LOAD FOLLOWING
+     ------------------------------------------------------------------------ */
+
+  const loadFollowing = useCallback(
+    async (userId: string) => {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("follows")
+        .select("following_id")
+        .eq("follower_id", userId);
+
+      if (error) {
+        throw error;
+      }
+
+      const ids = (data || []).map(
+        (item) => item.following_id
+      );
+
+      setFollowing(ids);
+
+      return ids;
+    },
+    []
+  );
+
+  /* ------------------------------------------------------------------------
+     LOAD SUGGESTIONS
+     ------------------------------------------------------------------------ */
+
+  const loadSuggestions = useCallback(
+    async (
+      userId: string,
+      followedIds: string[]
+    ) => {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("profiles")
+        .select(`
+          id,
+          full_name,
+          username,
+          role,
+          avatar_url,
+          bio
+        `)
+        .neq("id", userId)
+        .eq("status", "active")
+        .in("role", [
+          "student",
+          "alumni",
+          "business",
+        ])
+        .order("full_name", {
+          ascending: true,
+        })
+        .limit(20);
+
+      if (error) {
+        throw error;
+      }
+
+      const availablePeople = (
+        (data || []) as SuggestedConnection[]
+      )
+        .filter(
+          (person) =>
+            !followedIds.includes(person.id)
+        )
+        .slice(0, 6);
+
+      setSuggestions(availablePeople);
+    },
+    []
+  );
+
+  /* ------------------------------------------------------------------------
+     LOAD HOME
+     ------------------------------------------------------------------------ */
+
+  const loadHome = useCallback(
+    async (showLoader = false) => {
+      try {
+        if (showLoader) {
+          setLoading(true);
         }
 
-        return {
-          ...post,
-          liked: !post.liked,
-          likes: post.liked ? post.likes - 1 : post.likes + 1,
-        };
-      }),
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) {
+          throw userError;
+        }
+
+        if (!user) {
+          setProfile(null);
+          setSuggestions([]);
+          setFollowing([]);
+
+          return;
+        }
+
+        await loadProfile(user.id);
+
+        const followedIds =
+          await loadFollowing(user.id);
+
+        await loadSuggestions(
+          user.id,
+          followedIds
+        );
+      } catch (error: any) {
+        console.log(
+          "Home error:",
+          error
+        );
+
+        Alert.alert(
+          "Home error",
+          error?.message ||
+            "Could not load your home page."
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [
+      loadProfile,
+      loadFollowing,
+      loadSuggestions,
+    ]
+  );
+
+  /* ------------------------------------------------------------------------
+     LOAD WHEN SCREEN OPENS
+     ------------------------------------------------------------------------ */
+
+  useFocusEffect(
+    useCallback(() => {
+      loadHome(true);
+    }, [loadHome])
+  );
+
+  /* ------------------------------------------------------------------------
+     REALTIME
+
+     Hackathon version uses Postgres Changes.
+
+     profiles and follows must be in:
+     supabase_realtime
+     ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (!profile?.id) {
+      return;
+    }
+
+    const userId =
+      profile.id;
+
+    const profileChannel =
+      supabase
+        .channel(
+          `home-profiles-${userId}`
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "profiles",
+          },
+          async () => {
+            try {
+              await loadProfile(
+                userId
+              );
+            } catch (error) {
+              console.log(
+                "Home realtime profile error:",
+                error
+              );
+            }
+          }
+        )
+        .subscribe((status) => {
+          console.log(
+            "Home profiles realtime:",
+            status
+          );
+        });
+
+    const followsChannel =
+      supabase
+        .channel(
+          `home-follows-${userId}`
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "follows",
+          },
+          async () => {
+            try {
+              const followedIds =
+                await loadFollowing(
+                  userId
+                );
+
+              await loadSuggestions(
+                userId,
+                followedIds
+              );
+            } catch (error) {
+              console.log(
+                "Home realtime follow error:",
+                error
+              );
+            }
+          }
+        )
+        .subscribe((status) => {
+          console.log(
+            "Home follows realtime:",
+            status
+          );
+        });
+
+    return () => {
+      supabase.removeChannel(
+        profileChannel
+      );
+
+      supabase.removeChannel(
+        followsChannel
+      );
+    };
+  }, [
+    profile?.id,
+    loadProfile,
+    loadFollowing,
+    loadSuggestions,
+  ]);
+
+  /* ------------------------------------------------------------------------
+     REFRESH
+     ------------------------------------------------------------------------ */
+
+  const handleRefresh =
+    async () => {
+      setRefreshing(true);
+
+      await loadHome(false);
+    };
+
+  /* ------------------------------------------------------------------------
+     FOLLOW / UNFOLLOW
+     ------------------------------------------------------------------------ */
+
+  const toggleFollow =
+    async (
+      profileId: string
+    ) => {
+      if (!profile?.id) {
+        return;
+      }
+
+      if (
+        followLoading.includes(
+          profileId
+        )
+      ) {
+        return;
+      }
+
+      const isFollowing =
+        following.includes(
+          profileId
+        );
+
+      setFollowLoading(
+        (previous) => [
+          ...previous,
+          profileId,
+        ]
+      );
+
+      try {
+        if (isFollowing) {
+          setFollowing(
+            (previous) =>
+              previous.filter(
+                (id) =>
+                  id !== profileId
+              )
+          );
+
+          const {
+            error,
+          } = await supabase
+            .from("follows")
+            .delete()
+            .eq(
+              "follower_id",
+              profile.id
+            )
+            .eq(
+              "following_id",
+              profileId
+            );
+
+          if (error) {
+            throw error;
+          }
+        } else {
+          setFollowing(
+            (previous) =>
+              previous.includes(
+                profileId
+              )
+                ? previous
+                : [
+                    ...previous,
+                    profileId,
+                  ]
+          );
+
+          const {
+            error,
+          } = await supabase
+            .from("follows")
+            .insert({
+              follower_id:
+                profile.id,
+
+              following_id:
+                profileId,
+            });
+
+          if (
+            error &&
+            error.code !==
+              "23505"
+          ) {
+            throw error;
+          }
+
+          setSuggestions(
+            (previous) =>
+              previous.filter(
+                (item) =>
+                  item.id !==
+                  profileId
+              )
+          );
+        }
+      } catch (error: any) {
+        console.log(
+          "Home follow error:",
+          error
+        );
+
+        await loadHome(false);
+
+        Alert.alert(
+          "Unable to update",
+          error?.message ||
+            "Could not update this connection."
+        );
+      } finally {
+        setFollowLoading(
+          (previous) =>
+            previous.filter(
+              (id) =>
+                id !== profileId
+            )
+        );
+      }
+    };
+
+  /* ------------------------------------------------------------------------
+     TEMPORARY POST LIKE
+
+     This stays local until we connect the existing post/like schema.
+     ------------------------------------------------------------------------ */
+
+  const handleLike =
+    (postId: string) => {
+      setPosts(
+        (currentPosts) =>
+          currentPosts.map(
+            (post) => {
+              if (
+                post.id !==
+                postId
+              ) {
+                return post;
+              }
+
+              return {
+                ...post,
+
+                liked:
+                  !post.liked,
+
+                likes:
+                  post.liked
+                    ? Math.max(
+                        0,
+                        post.likes - 1
+                      )
+                    : post.likes +
+                      1,
+              };
+            }
+          )
+      );
+    };
+
+  /* ------------------------------------------------------------------------
+     LOADING
+     ------------------------------------------------------------------------ */
+
+  if (loading) {
+    return (
+      <SafeAreaView
+        style={
+          styles.loadingScreen
+        }
+      >
+        <ActivityIndicator
+          size="large"
+          color={
+            COLORS.brand
+          }
+        />
+
+        <Text
+          style={
+            styles.loadingText
+          }
+        >
+          Loading your home...
+        </Text>
+      </SafeAreaView>
     );
-  };
+  }
+
+  /* ------------------------------------------------------------------------
+     UI
+     ------------------------------------------------------------------------ */
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    <SafeAreaView
+      style={
+        styles.safeArea
+      }
+      edges={["bottom"]}
+    >
       <FlatList
         data={posts}
-        keyExtractor={(item) => item.id}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
+        keyExtractor={(
+          item
+        ) => item.id}
+        showsVerticalScrollIndicator={
+          false
+        }
+        contentContainerStyle={
+          styles.listContent
+        }
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
+            refreshing={
+              refreshing
+            }
+            onRefresh={
+              handleRefresh
+            }
           />
         }
         ListHeaderComponent={
-          <HomeContentHeader />
+          <HomeContentHeader
+            profile={
+              profile
+            }
+            suggestions={
+              suggestions
+            }
+            following={
+              following
+            }
+            followLoading={
+              followLoading
+            }
+            onToggleFollow={
+              toggleFollow
+            }
+          />
         }
-        renderItem={({ item }) => (
+        renderItem={({
+          item,
+        }) => (
           <FeedPostCard
             post={item}
-            onLike={() => handleLike(item.id)}
+            onLike={() =>
+              handleLike(
+                item.id
+              )
+            }
           />
         )}
-        ListFooterComponent={<View style={styles.bottomSpacing} />}
+        ListFooterComponent={
+          <View
+            style={
+              styles.bottomSpacing
+            }
+          />
+        }
       />
     </SafeAreaView>
   );
@@ -254,43 +847,81 @@ export default function HomeScreen() {
    HOME CONTENT HEADER
    ========================================================================== */
 
-function HomeContentHeader() {
+function HomeContentHeader({
+  profile,
+  suggestions,
+  following,
+  followLoading,
+  onToggleFollow,
+}: {
+  profile: HomeProfile | null;
+  suggestions: SuggestedConnection[];
+  following: string[];
+  followLoading: string[];
+  onToggleFollow: (
+    userId: string
+  ) => void;
+}) {
+  const firstName =
+    profile?.full_name
+      ?.trim()
+      .split(/\s+/)[0] ||
+    "there";
+
   return (
     <View>
-      {/* Welcome */}
+      <View
+        style={
+          styles.welcomeSection
+        }
+      >
+        <Text
+          style={
+            styles.greeting
+          }
+        >
+          {getGreeting()},{" "}
+          {firstName}
+        </Text>
 
-      <View style={styles.welcomeSection}>
-        <Text style={styles.greeting}>Good afternoon, User</Text>
-
-        <Text style={styles.welcomeTitle}>
+        <Text
+          style={
+            styles.welcomeTitle
+          }
+        >
           Build your professional future.
         </Text>
 
-        <Text style={styles.welcomeDescription}>
-          Connect with students, alumni and industry professionals while
-          discovering opportunities that match your career goals.
+        <Text
+          style={
+            styles.welcomeDescription
+          }
+        >
+          Connect with students, alumni and industry professionals while discovering opportunities that match your career goals.
         </Text>
       </View>
 
-      {/* Profile Strength */}
-
-      <ProfileStrengthCard />
-
-      {/* Quick Actions */}
+      <ProfileStrengthCard
+        profile={profile}
+      />
 
       <QuickActions />
-
-      {/* Recommended Opportunity */}
 
       <SectionHeader
         title="Recommended for you"
         action="View all"
-        onPress={() => router.push('/opportunities')}
+        onPress={() =>
+          router.push(
+            "/opportunities"
+          )
+        }
       />
 
-      <OpportunityCard opportunity={recommendedOpportunity} />
-
-      {/* Events */}
+      <OpportunityCard
+        opportunity={
+          recommendedOpportunity
+        }
+      />
 
       <SectionHeader
         title="Upcoming events"
@@ -298,28 +929,58 @@ function HomeContentHeader() {
 
       <EventsSection />
 
-      {/* People */}
-
       <SectionHeader
         title="People you may know"
+        action="View network"
+        onPress={() =>
+          router.push(
+            "/network"
+          )
+        }
       />
 
-      <SuggestedConnections />
+      <SuggestedConnections
+        suggestions={
+          suggestions
+        }
+        following={
+          following
+        }
+        followLoading={
+          followLoading
+        }
+        onToggleFollow={
+          onToggleFollow
+        }
+      />
 
-      {/* Feed */}
-
-      <View style={styles.feedHeading}>
+      <View
+        style={
+          styles.feedHeading
+        }
+      >
         <View>
-          <Text style={styles.sectionTitle}>Professional feed</Text>
+          <Text
+            style={
+              styles.sectionTitle
+            }
+          >
+            Professional feed
+          </Text>
 
-          <Text style={styles.sectionSubtitle}>
+          <Text
+            style={
+              styles.sectionSubtitle
+            }
+          >
             Updates from your Richfield community
           </Text>
         </View>
-
       </View>
 
-      <CreatePostCard />
+      <CreatePostCard
+        profile={profile}
+      />
     </View>
   );
 }
@@ -328,69 +989,196 @@ function HomeContentHeader() {
    PROFILE STRENGTH
    ========================================================================== */
 
-function ProfileStrengthCard() {
-  const profileStrength = 72;
+function ProfileStrengthCard({
+  profile,
+}: {
+  profile: HomeProfile | null;
+}) {
+  const fields = [
+    profile?.full_name,
+    profile?.username,
+    profile?.avatar_url,
+    profile?.bio,
+    profile?.linkedin_url,
+    profile?.github_url,
+    profile?.instagram_url,
+    profile?.website_url,
+  ];
+
+  const completedFields =
+    fields.filter(
+      (value) =>
+        typeof value ===
+          "string" &&
+        value.trim().length > 0
+    ).length;
+
+  const profileStrength =
+    fields.length > 0
+      ? Math.round(
+          (completedFields /
+            fields.length) *
+            100
+        )
+      : 0;
+
+  const missing: string[] =
+    [];
+
+  if (
+    !profile?.avatar_url
+  ) {
+    missing.push(
+      "profile photo"
+    );
+  }
+
+  if (!profile?.bio) {
+    missing.push("bio");
+  }
+
+  if (
+    !profile?.linkedin_url
+  ) {
+    missing.push(
+      "LinkedIn"
+    );
+  }
+
+  if (
+    !profile?.github_url
+  ) {
+    missing.push(
+      "GitHub"
+    );
+  }
+
+  const suggestion =
+    missing.length > 0
+      ? `Add ${missing
+          .slice(0, 2)
+          .join(" and ")}`
+      : "Your profile is looking great";
 
   return (
     <Pressable
-      style={styles.profileStrengthCard}
-      onPress={() => router.push('/profile')}
+      style={
+        styles.profileStrengthCard
+      }
+      onPress={() =>
+        router.push(
+          "/profile"
+        )
+      }
     >
-      <View style={styles.profileStrengthHeader}>
-        <View style={styles.profileStrengthIcon}>
+      <View
+        style={
+          styles.profileStrengthHeader
+        }
+      >
+        <View
+          style={
+            styles.profileStrengthIcon
+          }
+        >
           <Ionicons
             name="person-outline"
             size={20}
-            color={COLORS.white}
+            color={
+              COLORS.white
+            }
           />
         </View>
 
-        <View style={styles.profileStrengthContent}>
-          <View style={styles.profileStrengthTitleRow}>
-            <Text style={styles.profileStrengthTitle}>
+        <View
+          style={
+            styles.profileStrengthContent
+          }
+        >
+          <View
+            style={
+              styles.profileStrengthTitleRow
+            }
+          >
+            <Text
+              style={
+                styles.profileStrengthTitle
+              }
+            >
               Profile strength
             </Text>
 
-            <Text style={styles.profileStrengthPercentage}>
-              {profileStrength}%
+            <Text
+              style={
+                styles.profileStrengthPercentage
+              }
+            >
+              {
+                profileStrength
+              }
+              %
             </Text>
           </View>
 
-          <Text style={styles.profileStrengthDescription}>
-            Your profile is looking good. Add a few more details to stand out
-            to recruiters and alumni.
+          <Text
+            style={
+              styles.profileStrengthDescription
+            }
+          >
+            Complete your profile to stand out to students, alumni and employers.
           </Text>
         </View>
       </View>
 
-      <View style={styles.progressTrack}>
+      <View
+        style={
+          styles.progressTrack
+        }
+      >
         <View
           style={[
             styles.progressFill,
             {
-              width: `${profileStrength}%`,
+              width:
+                `${profileStrength}%`,
             },
           ]}
         />
       </View>
 
-      <View style={styles.profileStrengthFooter}>
-        <View style={styles.suggestionContainer}>
+      <View
+        style={
+          styles.profileStrengthFooter
+        }
+      >
+        <View
+          style={
+            styles.suggestionContainer
+          }
+        >
           <Ionicons
             name="sparkles-outline"
             size={15}
-            color={COLORS.textSecondary}
+            color={
+              COLORS.textSecondary
+            }
           />
 
-          <Text style={styles.profileSuggestion}>
-            Add GitHub and 2 more skills
+          <Text
+            style={
+              styles.profileSuggestion
+            }
+          >
+            {suggestion}
           </Text>
         </View>
 
         <Ionicons
           name="chevron-forward"
           size={17}
-          color={COLORS.textSecondary}
+          color={
+            COLORS.textSecondary
+          }
         />
       </View>
     </Pressable>
@@ -405,57 +1193,113 @@ function QuickActions() {
   const actions: {
     title: string;
     icon: IconName;
-    route?: '/opportunities' | '/profile';
+    route?:
+      | "/opportunities"
+      | "/profile"
+      | "/network"
+      | "../ai-assistant"
+      | "../(student)/portfolio";
   }[] = [
     {
-      title: 'Opportunities',
-      icon: 'briefcase-outline',
-      route: '/opportunities',
+      title:
+        "Opportunities",
+      icon:
+        "briefcase-outline",
+      route:
+        "/opportunities",
     },
     {
-      title: 'Explore Alumni',
-      icon: 'people-outline',
-      route: '/profile',
+      title:
+        "Explore Alumni",
+      icon:
+        "people-outline",
+      route:
+        "/network",
     },
     {
-      title: 'Portfolio',
-      icon: 'folder-open-outline',
-      route: '/profile',
+      title:
+        "AI Assistant",
+      icon:
+        "sparkles-outline",
+        route:
+          "../ai-assistant"
     },
     {
-      title: 'AI Assistant',
-      icon: 'sparkles-outline',
+      title:
+        "Portfolio",
+      icon:
+        "folder-open-outline",
+      route:
+        "../(student)/portfolio",
     },
   ];
 
   return (
-    <View style={styles.quickActionsSection}>
-      <Text style={styles.sectionTitle}>Quick actions</Text>
+    <View
+      style={
+        styles.quickActionsSection
+      }
+    >
+      <Text
+        style={
+          styles.sectionTitle
+        }
+      >
+        Quick actions
+      </Text>
 
-      <View style={styles.quickActionsGrid}>
-        {actions.map((action) => (
-          <Pressable
-            key={action.title}
-            style={styles.quickAction}
-            onPress={() => {
-              if (action.route) {
-                router.push(action.route);
+      <View
+        style={
+          styles.quickActionsGrid
+        }
+      >
+        {actions.map(
+          (action) => (
+            <Pressable
+              key={
+                action.title
               }
-            }}
-          >
-            <View style={styles.quickActionIcon}>
-              <Ionicons
-                name={action.icon}
-                size={21}
-                color={COLORS.textPrimary}
-              />
-            </View>
+              style={
+                styles.quickAction
+              }
+              onPress={() => {
+                if (
+                  action.route
+                ) {
+                  router.push(
+                    action.route
+                  );
+                }
+              }}
+            >
+              <View
+                style={
+                  styles.quickActionIcon
+                }
+              >
+                <Ionicons
+                  name={
+                    action.icon
+                  }
+                  size={21}
+                  color={
+                    COLORS.textPrimary
+                  }
+                />
+              </View>
 
-            <Text style={styles.quickActionText}>
-              {action.title}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={
+                  styles.quickActionText
+                }
+              >
+                {
+                  action.title
+                }
+              </Text>
+            </Pressable>
+          )
+        )}
       </View>
     </View>
   );
@@ -475,12 +1319,34 @@ function SectionHeader({
   onPress?: () => void;
 }) {
   return (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <View
+      style={
+        styles.sectionHeader
+      }
+    >
+      <Text
+        style={
+          styles.sectionTitle
+        }
+      >
+        {title}
+      </Text>
 
-      {action && onPress ? (
-        <Pressable onPress={onPress} hitSlop={8}>
-          <Text style={styles.sectionAction}>{action}</Text>
+      {action &&
+      onPress ? (
+        <Pressable
+          onPress={
+            onPress
+          }
+          hitSlop={8}
+        >
+          <Text
+            style={
+              styles.sectionAction
+            }
+          >
+            {action}
+          </Text>
         </Pressable>
       ) : null}
     </View>
@@ -488,7 +1354,7 @@ function SectionHeader({
 }
 
 /* ==========================================================================
-   OPPORTUNITY CARD
+   OPPORTUNITY
    ========================================================================== */
 
 function OpportunityCard({
@@ -498,90 +1364,217 @@ function OpportunityCard({
 }) {
   return (
     <Pressable
-      style={styles.opportunityCard}
-      onPress={() => router.push('/opportunities')}
+      style={
+        styles.opportunityCard
+      }
+      onPress={() =>
+        router.push(
+          "/opportunities"
+        )
+      }
     >
-      <View style={styles.opportunityHeader}>
-        <View style={styles.companyLogo}>
-          <Text style={styles.companyLogoText}>
-            {opportunity.companyInitials}
+      <View
+        style={
+          styles.opportunityHeader
+        }
+      >
+        <View
+          style={
+            styles.companyLogo
+          }
+        >
+          <Text
+            style={
+              styles.companyLogoText
+            }
+          >
+            {
+              opportunity.companyInitials
+            }
           </Text>
         </View>
 
-        <View style={styles.opportunityMain}>
+        <View
+          style={
+            styles.opportunityMain
+          }
+        >
           <Text
-            style={styles.opportunityTitle}
-            numberOfLines={2}
+            style={
+              styles.opportunityTitle
+            }
+            numberOfLines={
+              2
+            }
           >
-            {opportunity.title}
+            {
+              opportunity.title
+            }
           </Text>
 
-          <Text style={styles.companyName}>
-            {opportunity.company}
+          <Text
+            style={
+              styles.companyName
+            }
+          >
+            {
+              opportunity.company
+            }
           </Text>
 
-          <View style={styles.opportunityLocation}>
+          <View
+            style={
+              styles.opportunityLocation
+            }
+          >
             <Ionicons
               name="location-outline"
               size={14}
-              color={COLORS.textMuted}
+              color={
+                COLORS.textMuted
+              }
             />
 
-            <Text style={styles.locationText}>
-              {opportunity.location}
+            <Text
+              style={
+                styles.locationText
+              }
+            >
+              {
+                opportunity.location
+              }
             </Text>
           </View>
         </View>
 
-        <View style={styles.matchBadge}>
-          <Text style={styles.matchNumber}>
-            {opportunity.match}%
+        <View
+          style={
+            styles.matchBadge
+          }
+        >
+          <Text
+            style={
+              styles.matchNumber
+            }
+          >
+            {
+              opportunity.match
+            }
+            %
           </Text>
 
-          <Text style={styles.matchText}>MATCH</Text>
+          <Text
+            style={
+              styles.matchText
+            }
+          >
+            MATCH
+          </Text>
         </View>
       </View>
 
-      <View style={styles.matchExplanation}>
+      <View
+        style={
+          styles.matchExplanation
+        }
+      >
         <Ionicons
           name="sparkles-outline"
           size={15}
-          color={COLORS.textSecondary}
+          color={
+            COLORS.textSecondary
+          }
         />
 
-        <Text style={styles.matchExplanationText}>
+        <Text
+          style={
+            styles.matchExplanationText
+          }
+        >
           Strong match based on your skills, programme and career interests.
         </Text>
       </View>
 
-      <View style={styles.skillsContainer}>
-        {opportunity.skills.map((skill) => (
-          <View key={skill} style={styles.skillTag}>
-            <Text style={styles.skillTagText}>{skill}</Text>
-          </View>
-        ))}
+      <View
+        style={
+          styles.skillsContainer
+        }
+      >
+        {opportunity.skills.map(
+          (skill) => (
+            <View
+              key={
+                skill
+              }
+              style={
+                styles.skillTag
+              }
+            >
+              <Text
+                style={
+                  styles.skillTagText
+                }
+              >
+                {skill}
+              </Text>
+            </View>
+          )
+        )}
       </View>
 
-      <View style={styles.opportunityDivider} />
+      <View
+        style={
+          styles.opportunityDivider
+        }
+      />
 
-      <View style={styles.opportunityFooter}>
+      <View
+        style={
+          styles.opportunityFooter
+        }
+      >
         <View>
-          <Text style={styles.opportunityType}>
-            {opportunity.type}
+          <Text
+            style={
+              styles.opportunityType
+            }
+          >
+            {
+              opportunity.type
+            }
           </Text>
 
-          <Text style={styles.closingText}>
-            Closes {opportunity.closingDate}
+          <Text
+            style={
+              styles.closingText
+            }
+          >
+            Closes{" "}
+            {
+              opportunity.closingDate
+            }
           </Text>
         </View>
 
-        <View style={styles.viewButton}>
-          <Text style={styles.viewButtonText}>View opportunity</Text>
+        <View
+          style={
+            styles.viewButton
+          }
+        >
+          <Text
+            style={
+              styles.viewButtonText
+            }
+          >
+            View opportunity
+          </Text>
 
           <Ionicons
             name="arrow-forward"
             size={15}
-            color={COLORS.white}
+            color={
+              COLORS.white
+            }
           />
         </View>
       </View>
@@ -597,63 +1590,131 @@ function EventsSection() {
   return (
     <ScrollView
       horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.horizontalContainer}
+      showsHorizontalScrollIndicator={
+        false
+      }
+      contentContainerStyle={
+        styles.horizontalContainer
+      }
     >
-      {upcomingEvents.map((event) => (
-        <View
-          key={event.id}
-          style={styles.eventCard}
-        >
-          <View style={styles.eventDateContainer}>
-            <Text style={styles.eventMonth}>
-              {event.month}
-            </Text>
-
-            <Text style={styles.eventDay}>{event.date}</Text>
-          </View>
-
-          <View style={styles.eventContent}>
-            <Text style={styles.eventCategory}>
-              {event.category}
-            </Text>
-
-            <Text
-              style={styles.eventTitle}
-              numberOfLines={2}
+      {upcomingEvents.map(
+        (event) => (
+          <View
+            key={
+              event.id
+            }
+            style={
+              styles.eventCard
+            }
+          >
+            <View
+              style={
+                styles.eventDateContainer
+              }
             >
-              {event.title}
-            </Text>
-
-            <View style={styles.eventMeta}>
-              <Ionicons
-                name="time-outline"
-                size={13}
-                color={COLORS.textMuted}
-              />
-
-              <Text style={styles.eventMetaText}>
-                {event.time}
+              <Text
+                style={
+                  styles.eventMonth
+                }
+              >
+                {
+                  event.month
+                }
               </Text>
-            </View>
-
-            <View style={styles.eventMeta}>
-              <Ionicons
-                name="location-outline"
-                size={13}
-                color={COLORS.textMuted}
-              />
 
               <Text
-                style={styles.eventMetaText}
-                numberOfLines={1}
+                style={
+                  styles.eventDay
+                }
               >
-                {event.location}
+                {
+                  event.date
+                }
               </Text>
             </View>
+
+            <View
+              style={
+                styles.eventContent
+              }
+            >
+              <Text
+                style={
+                  styles.eventCategory
+                }
+              >
+                {
+                  event.category
+                }
+              </Text>
+
+              <Text
+                style={
+                  styles.eventTitle
+                }
+                numberOfLines={
+                  2
+                }
+              >
+                {
+                  event.title
+                }
+              </Text>
+
+              <View
+                style={
+                  styles.eventMeta
+                }
+              >
+                <Ionicons
+                  name="time-outline"
+                  size={13}
+                  color={
+                    COLORS.textMuted
+                  }
+                />
+
+                <Text
+                  style={
+                    styles.eventMetaText
+                  }
+                >
+                  {
+                    event.time
+                  }
+                </Text>
+              </View>
+
+              <View
+                style={
+                  styles.eventMeta
+                }
+              >
+                <Ionicons
+                  name="location-outline"
+                  size={13}
+                  color={
+                    COLORS.textMuted
+                  }
+                />
+
+                <Text
+                  style={
+                    styles.eventMetaText
+                  }
+                  numberOfLines={
+                    1
+                  }
+                >
+                  {
+                    event.location
+                  }
+                </Text>
+              </View>
+            </View>
           </View>
-        </View>
-      ))}
+        )
+      )}
     </ScrollView>
   );
 }
@@ -662,60 +1723,246 @@ function EventsSection() {
    CONNECTION SUGGESTIONS
    ========================================================================== */
 
-function SuggestedConnections() {
+function SuggestedConnections({
+  suggestions,
+  following,
+  followLoading,
+  onToggleFollow,
+}: {
+  suggestions: SuggestedConnection[];
+  following: string[];
+  followLoading: string[];
+  onToggleFollow: (
+    userId: string
+  ) => void;
+}) {
+  if (
+    suggestions.length ===
+    0
+  ) {
+    return (
+      <View
+        style={
+          styles.noSuggestions
+        }
+      >
+        <View
+          style={
+            styles.noSuggestionsIcon
+          }
+        >
+          <Ionicons
+            name="people-outline"
+            size={25}
+            color={
+              COLORS.textPrimary
+            }
+          />
+        </View>
+
+        <Text
+          style={
+            styles.noSuggestionsTitle
+          }
+        >
+          Explore your network
+        </Text>
+
+        <Text
+          style={
+            styles.noSuggestionsText
+          }
+        >
+          Find more students, alumni and industry professionals in the Network tab.
+        </Text>
+
+        <Pressable
+          style={
+            styles.exploreNetworkButton
+          }
+          onPress={() =>
+            router.push(
+              "/network"
+            )
+          }
+        >
+          <Text
+            style={
+              styles.exploreNetworkText
+            }
+          >
+            Explore network
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   return (
     <ScrollView
       horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.horizontalContainer}
+      showsHorizontalScrollIndicator={
+        false
+      }
+      contentContainerStyle={
+        styles.horizontalContainer
+      }
     >
-      {suggestedConnections.map((person) => (
-        <View
-          key={person.id}
-          style={styles.connectionCard}
-        >
-          <View style={styles.connectionAvatar}>
-            <Text style={styles.connectionAvatarText}>
-              {person.initials}
-            </Text>
-          </View>
+      {suggestions.map(
+        (person) => {
+          const isFollowing =
+            following.includes(
+              person.id
+            );
 
-          <Text
-            style={styles.connectionName}
-            numberOfLines={1}
-          >
-            {person.name}
-          </Text>
+          const isUpdating =
+            followLoading.includes(
+              person.id
+            );
 
-          <Text
-            style={styles.connectionRole}
-            numberOfLines={1}
-          >
-            {person.role}
-          </Text>
+          return (
+            <Pressable
+              key={
+                person.id
+              }
+              style={
+                styles.connectionCard
+              }
+              onPress={() =>
+                router.push({
+                  pathname:
+                    "/(tabs)/profile",
 
-          <Text style={styles.connectionProgramme}>
-            {person.programme} · Alumni
-          </Text>
+                  params: {
+                    userId:
+                      person.id,
+                  },
+                })
+              }
+            >
+              {person.avatar_url ? (
+                <Image
+                  source={{
+                    uri:
+                      person.avatar_url,
+                  }}
+                  style={
+                    styles.connectionImage
+                  }
+                />
+              ) : (
+                <View
+                  style={
+                    styles.connectionAvatar
+                  }
+                >
+                  <Text
+                    style={
+                      styles.connectionAvatarText
+                    }
+                  >
+                    {getInitials(
+                      person.full_name
+                    )}
+                  </Text>
+                </View>
+              )}
 
-          <Pressable
-            style={styles.connectButton}
-            onPress={() => {
-              // Connection API will be implemented later.
-            }}
-          >
-            <Ionicons
-              name="person-add-outline"
-              size={15}
-              color={COLORS.textPrimary}
-            />
+              <Text
+                style={
+                  styles.connectionName
+                }
+                numberOfLines={
+                  1
+                }
+              >
+                {person.full_name ||
+                  "Richfield Member"}
+              </Text>
 
-            <Text style={styles.connectButtonText}>
-              Connect
-            </Text>
-          </Pressable>
-        </View>
-      ))}
+              <Text
+                style={
+                  styles.connectionRole
+                }
+                numberOfLines={
+                  1
+                }
+              >
+                {getRoleLabel(
+                  person.role
+                )}
+              </Text>
+
+              <Text
+                style={
+                  styles.connectionProgramme
+                }
+                numberOfLines={
+                  1
+                }
+              >
+                {person.username
+                  ? `@${person.username}`
+                  : "Richfield Connect"}
+              </Text>
+
+              <Pressable
+                style={[
+                  styles.connectButton,
+
+                  isFollowing &&
+                    styles.connectedButton,
+                ]}
+                disabled={
+                  isUpdating
+                }
+                onPress={(
+                  event
+                ) => {
+                  event.stopPropagation();
+
+                  onToggleFollow(
+                    person.id
+                  );
+                }}
+              >
+                {isUpdating ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={
+                      COLORS.textPrimary
+                    }
+                  />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={
+                        isFollowing
+                          ? "checkmark"
+                          : "person-add-outline"
+                      }
+                      size={15}
+                      color={
+                        COLORS.textPrimary
+                      }
+                    />
+
+                    <Text
+                      style={
+                        styles.connectButtonText
+                      }
+                    >
+                      {isFollowing
+                        ? "Following"
+                        : "Connect"}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            </Pressable>
+          );
+        }
+      )}
     </ScrollView>
   );
 }
@@ -724,27 +1971,76 @@ function SuggestedConnections() {
    CREATE POST
    ========================================================================== */
 
-function CreatePostCard() {
+function CreatePostCard({
+  profile,
+}: {
+  profile: HomeProfile | null;
+}) {
   return (
     <Pressable
-      style={styles.createPostCard}
-      onPress={() => router.push('/network')}
+      style={
+        styles.createPostCard
+      }
+      onPress={() =>
+        router.push(
+          "/profile"
+        )
+      }
     >
-      <View style={styles.currentUserAvatar}>
-        <Text style={styles.currentUserInitials}>AT</Text>
-      </View>
+      {profile?.avatar_url ? (
+        <Image
+          source={{
+            uri:
+              profile.avatar_url,
+          }}
+          style={
+            styles.currentUserImage
+          }
+        />
+      ) : (
+        <View
+          style={
+            styles.currentUserAvatar
+          }
+        >
+          <Text
+            style={
+              styles.currentUserInitials
+            }
+          >
+            {getInitials(
+              profile?.full_name ||
+                null
+            )}
+          </Text>
+        </View>
+      )}
 
-      <View style={styles.postInput}>
-        <Text style={styles.postPlaceholder}>
+      <View
+        style={
+          styles.postInput
+        }
+      >
+        <Text
+          style={
+            styles.postPlaceholder
+          }
+        >
           Share a professional update...
         </Text>
       </View>
 
-      <View style={styles.postCreateIcon}>
+      <View
+        style={
+          styles.postCreateIcon
+        }
+      >
         <Ionicons
           name="create-outline"
           size={19}
-          color={COLORS.textPrimary}
+          color={
+            COLORS.textPrimary
+          }
         />
       </View>
     </Pressable>
@@ -753,6 +2049,8 @@ function CreatePostCard() {
 
 /* ==========================================================================
    FEED POST
+
+   Still temporary until existing posts table is confirmed.
    ========================================================================== */
 
 function FeedPostCard({
@@ -763,96 +2061,179 @@ function FeedPostCard({
   onLike: () => void;
 }) {
   return (
-    <View style={styles.postCard}>
-      {/* Author */}
-
-      <View style={styles.postHeader}>
-        <View style={styles.postAvatar}>
-          <Text style={styles.postAvatarText}>
-            {post.initials}
+    <View
+      style={
+        styles.postCard
+      }
+    >
+      <View
+        style={
+          styles.postHeader
+        }
+      >
+        <View
+          style={
+            styles.postAvatar
+          }
+        >
+          <Text
+            style={
+              styles.postAvatarText
+            }
+          >
+            {
+              post.initials
+            }
           </Text>
         </View>
 
-        <View style={styles.postAuthorContainer}>
-          <Text style={styles.postAuthor}>
-            {post.author}
+        <View
+          style={
+            styles.postAuthorContainer
+          }
+        >
+          <Text
+            style={
+              styles.postAuthor
+            }
+          >
+            {
+              post.author
+            }
           </Text>
 
-          <Text style={styles.postHeadline}>
-            {post.headline}
+          <Text
+            style={
+              styles.postHeadline
+            }
+          >
+            {
+              post.headline
+            }
           </Text>
 
-          <View style={styles.postTimeRow}>
-            <Text style={styles.postTime}>
+          <View
+            style={
+              styles.postTimeRow
+            }
+          >
+            <Text
+              style={
+                styles.postTime
+              }
+            >
               {post.time}
             </Text>
 
-            <Text style={styles.postVisibility}>
+            <Text
+              style={
+                styles.postVisibility
+              }
+            >
               ·
             </Text>
 
             <Ionicons
               name="globe-outline"
               size={12}
-              color={COLORS.textMuted}
+              color={
+                COLORS.textMuted
+              }
             />
           </View>
         </View>
 
         <Pressable
-          style={styles.moreButton}
+          style={
+            styles.moreButton
+          }
           hitSlop={8}
         >
           <Ionicons
             name="ellipsis-horizontal"
             size={20}
-            color={COLORS.textMuted}
+            color={
+              COLORS.textMuted
+            }
           />
         </Pressable>
       </View>
 
-      {/* Content */}
-
-      <Text style={styles.postContent}>
+      <Text
+        style={
+          styles.postContent
+        }
+      >
         {post.content}
       </Text>
 
-      {/* Engagement */}
-
-      <View style={styles.engagementSummary}>
-        <View style={styles.likeSummary}>
-          <View style={styles.likeIcon}>
+      <View
+        style={
+          styles.engagementSummary
+        }
+      >
+        <View
+          style={
+            styles.likeSummary
+          }
+        >
+          <View
+            style={
+              styles.likeIcon
+            }
+          >
             <Ionicons
               name="thumbs-up"
               size={10}
-              color={COLORS.white}
+              color={
+                COLORS.white
+              }
             />
           </View>
 
-          <Text style={styles.engagementText}>
+          <Text
+            style={
+              styles.engagementText
+            }
+          >
             {post.likes}
           </Text>
         </View>
 
-        <Text style={styles.engagementText}>
-          {post.comments} comments · {post.shares} shares
+        <Text
+          style={
+            styles.engagementText
+          }
+        >
+          {post.comments} comments ·{" "}
+          {post.shares} shares
         </Text>
       </View>
 
-      <View style={styles.postDivider} />
+      <View
+        style={
+          styles.postDivider
+        }
+      />
 
-      {/* Actions */}
-
-      <View style={styles.postActions}>
+      <View
+        style={
+          styles.postActions
+        }
+      >
         <Pressable
-          style={styles.postAction}
-          onPress={onLike}
+          style={
+            styles.postAction
+          }
+          onPress={
+            onLike
+          }
         >
           <Ionicons
             name={
               post.liked
-                ? 'thumbs-up'
-                : 'thumbs-up-outline'
+                ? "thumbs-up"
+                : "thumbs-up-outline"
             }
             size={19}
             color={
@@ -865,42 +2246,70 @@ function FeedPostCard({
           <Text
             style={[
               styles.postActionText,
-              post.liked && styles.postActionTextActive,
+
+              post.liked &&
+                styles.postActionTextActive,
             ]}
           >
             Like
           </Text>
         </Pressable>
 
-        <Pressable style={styles.postAction}>
+        <Pressable
+          style={
+            styles.postAction
+          }
+        >
           <Ionicons
             name="chatbubble-outline"
             size={18}
-            color={COLORS.textSecondary}
+            color={
+              COLORS.textSecondary
+            }
           />
 
-          <Text style={styles.postActionText}>
+          <Text
+            style={
+              styles.postActionText
+            }
+          >
             Comment
           </Text>
         </Pressable>
 
-        <Pressable style={styles.postAction}>
+        <Pressable
+          style={
+            styles.postAction
+          }
+        >
           <Ionicons
             name="share-social-outline"
             size={19}
-            color={COLORS.textSecondary}
+            color={
+              COLORS.textSecondary
+            }
           />
 
-          <Text style={styles.postActionText}>
+          <Text
+            style={
+              styles.postActionText
+            }
+          >
             Share
           </Text>
         </Pressable>
 
-        <Pressable style={styles.bookmarkButton}>
+        <Pressable
+          style={
+            styles.bookmarkButton
+          }
+        >
           <Ionicons
             name="bookmark-outline"
             size={19}
-            color={COLORS.textSecondary}
+            color={
+              COLORS.textSecondary
+            }
           />
         </Pressable>
       </View>
@@ -913,770 +2322,1074 @@ function FeedPostCard({
    ========================================================================== */
 
 const COLORS = {
-  background: '#F5F7F9',
-  white: '#FFFFFF',
+  background:
+    "#F5F7F9",
 
-  textPrimary: '#17212B',
-  textSecondary: '#5F6B76',
-  textMuted: '#8A949E',
+  white:
+    "#FFFFFF",
 
-  border: '#E4E8EC',
+  textPrimary:
+    "#000000",
 
-  brand: '#243447',
-  brandLight: '#EEF2F5',
+  textSecondary:
+    "#5F6B76",
 
-  success: '#287A52',
-  successLight: '#EAF6EF',
+  textMuted:
+    "#8A949E",
 
+  border:
+    "#E4E8EC",
+
+  brand:
+    "#0300cf",
+
+  brandLight:
+    "#EEF2F5",
+
+  success:
+    "#287A52",
+
+  successLight:
+    "#EAF6EF",
 };
 
 /* ==========================================================================
    STYLES
    ========================================================================== */
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-
-  listContent: {
-    paddingTop: 0,
-  },
-
-  /* ------------------------------------------------------------------------
-     Welcome
-     ------------------------------------------------------------------------ */
-
-  welcomeSection: {
-    paddingHorizontal: 20,
-    paddingTop: 22,
-    paddingBottom: 18,
-  },
-
-  greeting: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginBottom: 7,
-  },
-
-  welcomeTitle: {
-    fontSize: 26,
-    lineHeight: 32,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    letterSpacing: -0.4,
-    marginBottom: 8,
-  },
-
-  welcomeDescription: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: COLORS.textSecondary,
-    maxWidth: 390,
-  },
-
-  /* ------------------------------------------------------------------------
-     Profile Strength
-     ------------------------------------------------------------------------ */
-
-  profileStrengthCard: {
-    marginHorizontal: 20,
-    marginBottom: 22,
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-
-  profileStrengthHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-
-  profileStrengthIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: COLORS.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-
-  profileStrengthContent: {
-    flex: 1,
-  },
-
-  profileStrengthTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 5,
-  },
-
-  profileStrengthTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-
-  profileStrengthPercentage: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-
-  profileStrengthDescription: {
-    fontSize: 12.5,
-    lineHeight: 18,
-    color: COLORS.textSecondary,
-  },
-
-  progressTrack: {
-    height: 7,
-    borderRadius: 10,
-    backgroundColor: '#E9EDF0',
-    overflow: 'hidden',
-    marginTop: 15,
-  },
-
-  progressFill: {
-    height: '100%',
-    borderRadius: 10,
-    backgroundColor: COLORS.brand,
-  },
-
-  profileStrengthFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-
-  suggestionContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  profileSuggestion: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginLeft: 6,
-  },
-
-  /* ------------------------------------------------------------------------
-     Quick Actions
-     ------------------------------------------------------------------------ */
-
-  quickActionsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-
-  sectionSubtitle: {
-    fontSize: 12.5,
-    color: COLORS.textSecondary,
-    marginTop: 4,
-  },
-
-  quickActionsGrid: {
-    flexDirection: 'row',
-    marginTop: 12,
-    gap: 9,
-  },
-
-  quickAction: {
-    flex: 1,
-    minHeight: 90,
-    borderRadius: 14,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  quickActionIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
-    backgroundColor: COLORS.brandLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-
-  quickActionText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    textAlign: 'center',
-  },
-
-  /* ------------------------------------------------------------------------
-     Section Header
-     ------------------------------------------------------------------------ */
-
-  sectionHeader: {
-    paddingHorizontal: 20,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  sectionAction: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-  },
-
-  /* ------------------------------------------------------------------------
-     Opportunity
-     ------------------------------------------------------------------------ */
-
-  opportunityCard: {
-    marginHorizontal: 20,
-    marginBottom: 25,
-    padding: 16,
-    borderRadius: 17,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-
-  opportunityHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-
-  companyLogo: {
-    width: 46,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: COLORS.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 11,
-  },
-
-  companyLogoText: {
-    color: COLORS.white,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-
-  opportunityMain: {
-    flex: 1,
-    paddingRight: 8,
-  },
-
-  opportunityTitle: {
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-
-  companyName: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-
-  opportunityLocation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 5,
-  },
-
-  locationText: {
-    fontSize: 11.5,
-    color: COLORS.textMuted,
-    marginLeft: 3,
-  },
-
-  matchBadge: {
-    minWidth: 54,
-    paddingVertical: 7,
-    paddingHorizontal: 6,
-    borderRadius: 10,
-    backgroundColor: COLORS.successLight,
-    alignItems: 'center',
-  },
-
-  matchNumber: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: COLORS.success,
-  },
-
-  matchText: {
-    fontSize: 7.5,
-    fontWeight: '800',
-    color: COLORS.success,
-    marginTop: 1,
-  },
-
-  matchExplanation: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginTop: 14,
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: '#F5F7F9',
-  },
-
-  matchExplanationText: {
-    flex: 1,
-    fontSize: 11,
-    lineHeight: 16,
-    color: COLORS.textSecondary,
-    marginLeft: 7,
-  },
-
-  skillsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-    marginTop: 13,
-  },
-
-  skillTag: {
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: COLORS.brandLight,
-  },
-
-  skillTagText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-
-  opportunityDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: 14,
-  },
-
-  opportunityFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  opportunityType: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-
-  closingText: {
-    fontSize: 10.5,
-    color: COLORS.textMuted,
-    marginTop: 3,
-  },
-
-  viewButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.brand,
-    borderRadius: 9,
-    paddingHorizontal: 11,
-    paddingVertical: 9,
-  },
-
-  viewButtonText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: COLORS.white,
-    marginRight: 5,
-  },
-
-  /* ------------------------------------------------------------------------
-     Events
-     ------------------------------------------------------------------------ */
-
-  horizontalContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 25,
-    gap: 10,
-  },
-
-  eventCard: {
-    width: 270,
-    minHeight: 128,
-    padding: 13,
-    borderRadius: 15,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    flexDirection: 'row',
-  },
-
-  eventDateContainer: {
-    width: 52,
-    height: 59,
-    borderRadius: 11,
-    backgroundColor: COLORS.brandLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 11,
-  },
-
-  eventMonth: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: COLORS.textSecondary,
-  },
-
-  eventDay: {
-    fontSize: 23,
-    lineHeight: 26,
-    fontWeight: '900',
-    color: COLORS.textPrimary,
-  },
-
-  eventContent: {
-    flex: 1,
-  },
-
-  eventCategory: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: COLORS.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-
-  eventTitle: {
-    fontSize: 13,
-    lineHeight: 17,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    marginBottom: 7,
-  },
-
-  eventMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
-  },
-
-  eventMetaText: {
-    flex: 1,
-    fontSize: 10,
-    color: COLORS.textMuted,
-    marginLeft: 4,
-  },
-
-  /* ------------------------------------------------------------------------
-     Connections
-     ------------------------------------------------------------------------ */
-
-  connectionCard: {
-    width: 165,
-    padding: 14,
-    borderRadius: 15,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-  },
-
-  connectionAvatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: COLORS.brandLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 9,
-  },
-
-  connectionAvatarText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-
-  connectionName: {
-    width: '100%',
-    fontSize: 13,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    textAlign: 'center',
-  },
-
-  connectionRole: {
-    width: '100%',
-    fontSize: 10.5,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginTop: 3,
-  },
-
-  connectionProgramme: {
-    width: '100%',
-    fontSize: 9.5,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-    marginTop: 3,
-  },
-
-  connectButton: {
-    marginTop: 11,
-    minWidth: 108,
-    paddingVertical: 8,
-    paddingHorizontal: 9,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  connectButtonText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginLeft: 5,
-  },
-
-  /* ------------------------------------------------------------------------
-     Feed Heading
-     ------------------------------------------------------------------------ */
-
-  feedHeading: {
-    paddingHorizontal: 20,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  /* ------------------------------------------------------------------------
-     Create Post
-     ------------------------------------------------------------------------ */
-
-  createPostCard: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    padding: 12,
-    borderRadius: 14,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  currentUserAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  currentUserInitials: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: COLORS.white,
-  },
-
-  postInput: {
-    flex: 1,
-    height: 38,
-    justifyContent: 'center',
-    paddingHorizontal: 11,
-  },
-
-  postPlaceholder: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-  },
-
-  postCreateIcon: {
-    width: 35,
-    height: 35,
-    borderRadius: 9,
-    backgroundColor: COLORS.brandLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  /* ------------------------------------------------------------------------
-     Feed Post
-     ------------------------------------------------------------------------ */
-
-  postCard: {
-    marginHorizontal: 20,
-    marginTop: 10,
-    borderRadius: 15,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    overflow: 'hidden',
-  },
-
-  postHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 15,
-  },
-
-  postAvatar: {
-    width: 43,
-    height: 43,
-    borderRadius: 22,
-    backgroundColor: COLORS.brandLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-
-  postAvatarText: {
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-
-  postAuthorContainer: {
-    flex: 1,
-  },
-
-  postAuthor: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-
-  postHeadline: {
-    fontSize: 10.5,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-
-  postTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
-  },
-
-  postTime: {
-    fontSize: 9.5,
-    color: COLORS.textMuted,
-  },
-
-  postVisibility: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-    marginHorizontal: 4,
-  },
-
-  moreButton: {
-    padding: 2,
-  },
-
-  postContent: {
-    paddingHorizontal: 15,
-    paddingBottom: 14,
-    fontSize: 13,
-    lineHeight: 20,
-    color: COLORS.textPrimary,
-  },
-
-  engagementSummary: {
-    paddingHorizontal: 15,
-    paddingBottom: 11,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  likeSummary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  likeIcon: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: COLORS.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 5,
-  },
-
-  engagementText: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-  },
-
-  postDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
-
-  postActions: {
-    minHeight: 48,
-    paddingHorizontal: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  postAction: {
-    flex: 1,
-    height: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-  },
-
-  postActionText: {
-    fontSize: 10.5,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-
-  postActionTextActive: {
-    color: COLORS.textPrimary,
-    fontWeight: '800',
-  },
-
-  bookmarkButton: {
-    width: 38,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  /* ------------------------------------------------------------------------
-     Bottom
-     ------------------------------------------------------------------------ */
-
-  bottomSpacing: {
-    height: 30,
-  },
-});
+const styles =
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor:
+        COLORS.background,
+    },
+
+    loadingScreen: {
+      flex: 1,
+      justifyContent:
+        "center",
+      alignItems:
+        "center",
+      backgroundColor:
+        COLORS.background,
+    },
+
+    loadingText: {
+      marginTop: 10,
+      fontSize: 13,
+      color:
+        COLORS.textSecondary,
+    },
+
+    listContent: {
+      paddingTop: 0,
+    },
+
+    /* Welcome */
+
+    welcomeSection: {
+      paddingHorizontal:
+        20,
+      paddingTop: 22,
+      paddingBottom: 18,
+    },
+
+    greeting: {
+      fontSize: 14,
+      fontWeight:
+        "600",
+      color:
+        COLORS.textSecondary,
+      marginBottom: 7,
+    },
+
+    welcomeTitle: {
+      fontSize: 26,
+      lineHeight: 32,
+      fontWeight:
+        "800",
+      color:
+        COLORS.textPrimary,
+      letterSpacing:
+        -0.4,
+      marginBottom: 8,
+    },
+
+    welcomeDescription: {
+      fontSize: 14,
+      lineHeight: 21,
+      color:
+        COLORS.textSecondary,
+      maxWidth: 390,
+    },
+
+    /* Profile Strength */
+
+    profileStrengthCard: {
+      marginHorizontal:
+        20,
+      marginBottom: 22,
+      padding: 16,
+      borderRadius: 16,
+      backgroundColor:
+        COLORS.white,
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+    },
+
+    profileStrengthHeader: {
+      flexDirection:
+        "row",
+      alignItems:
+        "flex-start",
+    },
+
+    profileStrengthIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor:
+        COLORS.brand,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginRight: 12,
+    },
+
+    profileStrengthContent: {
+      flex: 1,
+    },
+
+    profileStrengthTitleRow: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "space-between",
+      marginBottom: 5,
+    },
+
+    profileStrengthTitle: {
+      fontSize: 15,
+      fontWeight:
+        "700",
+      color:
+        COLORS.textPrimary,
+    },
+
+    profileStrengthPercentage: {
+      fontSize: 15,
+      fontWeight:
+        "800",
+      color:
+        COLORS.textPrimary,
+    },
+
+    profileStrengthDescription: {
+      fontSize: 12.5,
+      lineHeight: 18,
+      color:
+        COLORS.textSecondary,
+    },
+
+    progressTrack: {
+      height: 7,
+      borderRadius: 10,
+      backgroundColor:
+        "#E9EDF0",
+      overflow:
+        "hidden",
+      marginTop: 15,
+    },
+
+    progressFill: {
+      height: "100%",
+      borderRadius: 10,
+      backgroundColor:
+        COLORS.brand,
+    },
+
+    profileStrengthFooter: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "space-between",
+      marginTop: 12,
+    },
+
+    suggestionContainer: {
+      flex: 1,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      paddingRight: 10,
+    },
+
+    profileSuggestion: {
+      flex: 1,
+      fontSize: 12,
+      fontWeight:
+        "600",
+      color:
+        COLORS.textSecondary,
+      marginLeft: 6,
+    },
+
+    /* Quick Actions */
+
+    quickActionsSection: {
+      paddingHorizontal:
+        20,
+      marginBottom: 24,
+    },
+
+    sectionTitle: {
+      fontSize: 17,
+      fontWeight:
+        "800",
+      color:
+        COLORS.textPrimary,
+    },
+
+    sectionSubtitle: {
+      fontSize: 12.5,
+      color:
+        COLORS.textSecondary,
+      marginTop: 4,
+    },
+
+    quickActionsGrid: {
+      flexDirection:
+        "row",
+      marginTop: 12,
+      gap: 9,
+    },
+
+    quickAction: {
+      flex: 1,
+      minHeight: 90,
+      borderRadius: 14,
+      backgroundColor:
+        COLORS.white,
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+      paddingHorizontal:
+        8,
+      paddingVertical:
+        12,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    quickActionIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 11,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginBottom: 8,
+    },
+
+    quickActionText: {
+      fontSize: 11.5,
+      fontWeight:
+        "700",
+      color:
+        COLORS.textPrimary,
+      textAlign:
+        "center",
+    },
+
+    /* Section Header */
+
+    sectionHeader: {
+      paddingHorizontal:
+        20,
+      marginBottom: 12,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "space-between",
+    },
+
+    sectionAction: {
+      fontSize: 12.5,
+      fontWeight:
+        "700",
+      color:
+        COLORS.textSecondary,
+    },
+
+    /* Opportunity */
+
+    opportunityCard: {
+      marginHorizontal:
+        20,
+      marginBottom: 25,
+      padding: 16,
+      borderRadius: 17,
+      backgroundColor:
+        COLORS.white,
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+    },
+
+    opportunityHeader: {
+      flexDirection:
+        "row",
+      alignItems:
+        "flex-start",
+    },
+
+    companyLogo: {
+      width: 46,
+      height: 46,
+      borderRadius: 12,
+      backgroundColor:
+        COLORS.brand,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginRight: 11,
+    },
+
+    companyLogoText: {
+      color:
+        COLORS.white,
+      fontSize: 13,
+      fontWeight:
+        "800",
+    },
+
+    opportunityMain: {
+      flex: 1,
+      paddingRight: 8,
+    },
+
+    opportunityTitle: {
+      fontSize: 15,
+      lineHeight: 20,
+      fontWeight:
+        "800",
+      color:
+        COLORS.textPrimary,
+    },
+
+    companyName: {
+      fontSize: 12.5,
+      fontWeight:
+        "600",
+      color:
+        COLORS.textSecondary,
+      marginTop: 2,
+    },
+
+    opportunityLocation: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      marginTop: 5,
+    },
+
+    locationText: {
+      fontSize: 11.5,
+      color:
+        COLORS.textMuted,
+      marginLeft: 3,
+    },
+
+    matchBadge: {
+      minWidth: 54,
+      paddingVertical: 7,
+      paddingHorizontal: 6,
+      borderRadius: 10,
+      backgroundColor:
+        COLORS.successLight,
+      alignItems:
+        "center",
+    },
+
+    matchNumber: {
+      fontSize: 15,
+      fontWeight:
+        "900",
+      color:
+        COLORS.success,
+    },
+
+    matchText: {
+      fontSize: 7.5,
+      fontWeight:
+        "800",
+      color:
+        COLORS.success,
+      marginTop: 1,
+    },
+
+    matchExplanation: {
+      flexDirection:
+        "row",
+      alignItems:
+        "flex-start",
+      marginTop: 14,
+      padding: 10,
+      borderRadius: 10,
+      backgroundColor:
+        "#F5F7F9",
+    },
+
+    matchExplanationText: {
+      flex: 1,
+      fontSize: 11,
+      lineHeight: 16,
+      color:
+        COLORS.textSecondary,
+      marginLeft: 7,
+    },
+
+    skillsContainer: {
+      flexDirection:
+        "row",
+      flexWrap:
+        "wrap",
+      gap: 7,
+      marginTop: 13,
+    },
+
+    skillTag: {
+      paddingHorizontal:
+        9,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor:
+        COLORS.brandLight,
+    },
+
+    skillTagText: {
+      fontSize: 10.5,
+      fontWeight:
+        "700",
+      color:
+        COLORS.textPrimary,
+    },
+
+    opportunityDivider: {
+      height: 1,
+      backgroundColor:
+        COLORS.border,
+      marginVertical: 14,
+    },
+
+    opportunityFooter: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "space-between",
+    },
+
+    opportunityType: {
+      fontSize: 11.5,
+      fontWeight:
+        "700",
+      color:
+        COLORS.textPrimary,
+    },
+
+    closingText: {
+      fontSize: 10.5,
+      color:
+        COLORS.textMuted,
+      marginTop: 3,
+    },
+
+    viewButton: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      backgroundColor:
+        COLORS.brand,
+      borderRadius: 9,
+      paddingHorizontal:
+        11,
+      paddingVertical: 9,
+    },
+
+    viewButtonText: {
+      fontSize: 10.5,
+      fontWeight:
+        "700",
+      color:
+        COLORS.white,
+      marginRight: 5,
+    },
+
+    /* Events */
+
+    horizontalContainer: {
+      paddingHorizontal:
+        20,
+      paddingBottom: 25,
+      gap: 10,
+    },
+
+    eventCard: {
+      width: 270,
+      minHeight: 128,
+      padding: 13,
+      borderRadius: 15,
+      backgroundColor:
+        COLORS.white,
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+      flexDirection:
+        "row",
+    },
+
+    eventDateContainer: {
+      width: 52,
+      height: 59,
+      borderRadius: 11,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginRight: 11,
+    },
+
+    eventMonth: {
+      fontSize: 8.5,
+      fontWeight:
+        "800",
+      color:
+        COLORS.textSecondary,
+    },
+
+    eventDay: {
+      fontSize: 23,
+      lineHeight: 26,
+      fontWeight:
+        "900",
+      color:
+        COLORS.textPrimary,
+    },
+
+    eventContent: {
+      flex: 1,
+    },
+
+    eventCategory: {
+      fontSize: 9,
+      fontWeight:
+        "800",
+      color:
+        COLORS.textSecondary,
+      textTransform:
+        "uppercase",
+      letterSpacing: 0.5,
+      marginBottom: 4,
+    },
+
+    eventTitle: {
+      fontSize: 13,
+      lineHeight: 17,
+      fontWeight:
+        "800",
+      color:
+        COLORS.textPrimary,
+      marginBottom: 7,
+    },
+
+    eventMeta: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      marginTop: 3,
+    },
+
+    eventMetaText: {
+      flex: 1,
+      fontSize: 10,
+      color:
+        COLORS.textMuted,
+      marginLeft: 4,
+    },
+
+    /* Connections */
+
+    connectionCard: {
+      width: 165,
+      padding: 14,
+      borderRadius: 15,
+      backgroundColor:
+        COLORS.white,
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+      alignItems:
+        "center",
+    },
+
+    connectionImage: {
+      width: 54,
+      height: 54,
+      borderRadius: 27,
+      marginBottom: 9,
+      backgroundColor:
+        COLORS.brandLight,
+    },
+
+    connectionAvatar: {
+      width: 54,
+      height: 54,
+      borderRadius: 27,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginBottom: 9,
+    },
+
+    connectionAvatarText: {
+      fontSize: 14,
+      fontWeight:
+        "800",
+      color:
+        COLORS.textPrimary,
+    },
+
+    connectionName: {
+      width: "100%",
+      fontSize: 13,
+      fontWeight:
+        "800",
+      color:
+        COLORS.textPrimary,
+      textAlign:
+        "center",
+    },
+
+    connectionRole: {
+      width: "100%",
+      fontSize: 10.5,
+      color:
+        COLORS.textSecondary,
+      textAlign:
+        "center",
+      marginTop: 3,
+    },
+
+    connectionProgramme: {
+      width: "100%",
+      fontSize: 9.5,
+      color:
+        COLORS.textMuted,
+      textAlign:
+        "center",
+      marginTop: 3,
+    },
+
+    connectButton: {
+      marginTop: 11,
+      minWidth: 108,
+      minHeight: 34,
+      paddingVertical: 8,
+      paddingHorizontal: 9,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    connectedButton: {
+      backgroundColor:
+        COLORS.brandLight,
+    },
+
+    connectButtonText: {
+      fontSize: 10.5,
+      fontWeight:
+        "700",
+      color:
+        COLORS.textPrimary,
+      marginLeft: 5,
+    },
+
+    noSuggestions: {
+      marginHorizontal:
+        20,
+      marginBottom: 25,
+      padding: 18,
+      borderRadius: 15,
+      backgroundColor:
+        COLORS.white,
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+      alignItems:
+        "center",
+    },
+
+    noSuggestionsIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginBottom: 9,
+    },
+
+    noSuggestionsTitle: {
+      fontSize: 14,
+      fontWeight:
+        "800",
+      color:
+        COLORS.textPrimary,
+    },
+
+    noSuggestionsText: {
+      marginTop: 5,
+      fontSize: 11.5,
+      lineHeight: 17,
+      textAlign:
+        "center",
+      color:
+        COLORS.textSecondary,
+      maxWidth: 280,
+    },
+
+    exploreNetworkButton: {
+      marginTop: 12,
+      paddingHorizontal:
+        15,
+      paddingVertical: 9,
+      borderRadius: 9,
+      backgroundColor:
+        COLORS.brand,
+    },
+
+    exploreNetworkText: {
+      color:
+        COLORS.white,
+      fontSize: 11,
+      fontWeight:
+        "700",
+    },
+
+    /* Feed Heading */
+
+    feedHeading: {
+      paddingHorizontal:
+        20,
+      marginBottom: 12,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "space-between",
+    },
+
+    /* Create Post */
+
+    createPostCard: {
+      marginHorizontal:
+        20,
+      marginBottom: 12,
+      padding: 12,
+      borderRadius: 14,
+      backgroundColor:
+        COLORS.white,
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+    },
+
+    currentUserAvatar: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor:
+        COLORS.brand,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    currentUserImage: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor:
+        COLORS.brandLight,
+    },
+
+    currentUserInitials: {
+      fontSize: 10,
+      fontWeight:
+        "800",
+      color:
+        COLORS.white,
+    },
+
+    postInput: {
+      flex: 1,
+      height: 38,
+      justifyContent:
+        "center",
+      paddingHorizontal:
+        11,
+    },
+
+    postPlaceholder: {
+      fontSize: 12,
+      color:
+        COLORS.textMuted,
+    },
+
+    postCreateIcon: {
+      width: 35,
+      height: 35,
+      borderRadius: 9,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    /* Feed Post */
+
+    postCard: {
+      marginHorizontal:
+        20,
+      marginTop: 10,
+      borderRadius: 15,
+      backgroundColor:
+        COLORS.white,
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+      overflow:
+        "hidden",
+    },
+
+    postHeader: {
+      flexDirection:
+        "row",
+      alignItems:
+        "flex-start",
+      padding: 15,
+    },
+
+    postAvatar: {
+      width: 43,
+      height: 43,
+      borderRadius: 22,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginRight: 10,
+    },
+
+    postAvatarText: {
+      fontSize: 11.5,
+      fontWeight:
+        "800",
+      color:
+        COLORS.textPrimary,
+    },
+
+    postAuthorContainer: {
+      flex: 1,
+    },
+
+    postAuthor: {
+      fontSize: 13,
+      fontWeight:
+        "800",
+      color:
+        COLORS.textPrimary,
+    },
+
+    postHeadline: {
+      fontSize: 10.5,
+      color:
+        COLORS.textSecondary,
+      marginTop: 2,
+    },
+
+    postTimeRow: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      marginTop: 3,
+    },
+
+    postTime: {
+      fontSize: 9.5,
+      color:
+        COLORS.textMuted,
+    },
+
+    postVisibility: {
+      fontSize: 10,
+      color:
+        COLORS.textMuted,
+      marginHorizontal: 4,
+    },
+
+    moreButton: {
+      padding: 2,
+    },
+
+    postContent: {
+      paddingHorizontal:
+        15,
+      paddingBottom: 14,
+      fontSize: 13,
+      lineHeight: 20,
+      color:
+        COLORS.textPrimary,
+    },
+
+    engagementSummary: {
+      paddingHorizontal:
+        15,
+      paddingBottom: 11,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "space-between",
+    },
+
+    likeSummary: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+    },
+
+    likeIcon: {
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+      backgroundColor:
+        COLORS.brand,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginRight: 5,
+    },
+
+    engagementText: {
+      fontSize: 10,
+      color:
+        COLORS.textMuted,
+    },
+
+    postDivider: {
+      height: 1,
+      backgroundColor:
+        COLORS.border,
+    },
+
+    postActions: {
+      minHeight: 48,
+      paddingHorizontal: 7,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+    },
+
+    postAction: {
+      flex: 1,
+      height: 42,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      gap: 5,
+    },
+
+    postActionText: {
+      fontSize: 10.5,
+      fontWeight:
+        "600",
+      color:
+        COLORS.textSecondary,
+    },
+
+    postActionTextActive: {
+      color:
+        COLORS.textPrimary,
+      fontWeight:
+        "800",
+    },
+
+    bookmarkButton: {
+      width: 38,
+      height: 42,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    bottomSpacing: {
+      height: 30,
+    },
+  });

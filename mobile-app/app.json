@@ -4,11 +4,11 @@
     "slug": "mobile-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/rf_logo.jpg",
     "scheme": "richfieldsocial",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/rf_logo.jpg"
     },
     "android": {
       "adaptiveIcon": {
@@ -33,9 +33,17 @@
           "imageWidth": 76
         }
       ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Richfield Connect to use your microphone for Richfield AI."
+        }
+      ],
       "expo-web-browser",
       "expo-sqlite",
-      "expo-video"
+      "expo-video",
+      "expo-audio",
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,
