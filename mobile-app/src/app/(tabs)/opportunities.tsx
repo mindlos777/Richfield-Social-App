@@ -1,1 +1,1 @@
-export { default } from "../../../src/screens/OpportunitiesScreen";
+export { default } from "../../screens/OpportunitiesScreen";

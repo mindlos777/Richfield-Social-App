@@ -1,44 +1,82 @@
-import React, { useEffect, useState } from 'react';
+import React, {
+  useCallback,
+  useState,
+} from "react";
+
 import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  Pressable,
-  ScrollView,
-  Modal,
-  Alert,
   ActivityIndicator,
-  RefreshControl,
   Dimensions,
+  Image,
+  Linking,
+  Modal,
   Platform,
-} from 'react-native';
-import { router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../lib/supabase';
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-const { width } = Dimensions.get('window');
+import {
+  router,
+  useFocusEffect,
+} from "expo-router";
 
-const PRIMARY = '#0300cf';
+import { Ionicons } from "@expo/vector-icons";
+import { useVideoPlayer, VideoView } from "expo-video";
+import { supabase } from "../lib/supabase";
+
+const { width } = Dimensions.get("window");
+
+const PRIMARY = "#0300cf";
 const DRAWER_WIDTH = width * 0.75;
 
 type ProfilePost = {
   id: string;
-  image_url: string;
+  image_url: string | null;
+  content: string | null;
+  media_type: string | null;
+  visibility: string;
   created_at: string;
 };
 
-export default function ProfileScreen() {
-  const [menuVisible, setMenuVisible] = useState(false);
-  const [createVisible, setCreateVisible] = useState(false);
+type UserProfile = {
+  fullName: string;
+  username: string;
+  bio: string;
+  avatar: string | null;
 
-  const [profile, setProfile] = useState({
-    fullName: 'Your Name',
-    username: '@yourusername',
-    bio: 'Information Technology student | Building my future in tech.',
-    avatar: null,
-  });
+  programme: string;
+  campus: string;
+  yearOfStudy: number | null;
+
+  linkedin: string | null;
+  github: string | null;
+  instagram: string | null;
+  website: string | null;
+};
+
+export default function ProfileScreen() {
+  const [menuVisible, setMenuVisible] =
+    useState(false);
+
+  const [profile, setProfile] =
+    useState<UserProfile>({
+      fullName: "Your Name",
+      username: "@yourusername",
+      bio: "",
+      avatar: null,
+
+      programme: "",
+      campus: "",
+      yearOfStudy: null,
+
+      linkedin: null,
+      github: null,
+      instagram: null,
+      website: null,
+    });
 
   const [stats, setStats] = useState({
     posts: 0,
@@ -46,15 +84,20 @@ export default function ProfileScreen() {
     following: 0,
   });
 
-  const [posts, setPosts] = useState<ProfilePost[]>([]);
+  const [posts, setPosts] =
+    useState<ProfilePost[]>([]);
 
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [creatingPost, setCreatingPost] = useState(false);
+  const [loading, setLoading] =
+    useState(true);
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+    }, [])
+  );
 
   async function loadProfile() {
     try {
@@ -65,70 +108,181 @@ export default function ProfileScreen() {
       } = await supabase.auth.getUser();
 
       if (!user) {
-        setLoading(false);
         return;
       }
 
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+      const [
+        profileResult,
+        studentResult,
+        postCountResult,
+        followerResult,
+        followingResult,
+        postsResult,
+      ] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select(`
+            full_name,
+            username,
+            bio,
+            avatar_url,
+            linkedin_url,
+            github_url,
+            instagram_url,
+            website_url
+          `)
+          .eq("id", user.id)
+          .single(),
 
-      if (profileData) {
-        setProfile({
-          fullName: profileData.full_name || 'Your Name',
-          username:
-            profileData.username ||
-            `@${profileData.full_name?.toLowerCase().replace(/\s+/g, '') || 'student'}`,
-          bio:
-            profileData.bio ||
-            'Information Technology student | Building my future in tech.',
-          avatar: profileData.avatar_url || null,
-        });
+        supabase
+          .from("student_profiles")
+          .select(`
+            programme,
+            campus,
+            year_of_study
+          `)
+          .eq("user_id", user.id)
+          .maybeSingle(),
+
+        supabase
+          .from("posts")
+          .select("*", {
+            count: "exact",
+            head: true,
+          })
+          .eq("user_id", user.id),
+
+        supabase
+          .from("follows")
+          .select("*", {
+            count: "exact",
+            head: true,
+          })
+          .eq("following_id", user.id),
+
+        supabase
+          .from("follows")
+          .select("*", {
+            count: "exact",
+            head: true,
+          })
+          .eq("follower_id", user.id),
+
+        supabase
+          .from("posts")
+          .select(`
+            id,
+            image_url,
+            content,
+            media_type,
+            visibility,
+            created_at
+          `)
+          .eq("user_id", user.id)
+          .order("created_at", {
+            ascending: false,
+          }),
+      ]);
+
+      if (profileResult.error) {
+        throw profileResult.error;
       }
 
-      const { count: postCount } = await supabase
-        .from('posts')
-        .select('*', {
-          count: 'exact',
-          head: true,
-        })
-        .eq('user_id', user.id);
+      if (studentResult.error) {
+        console.log(
+          "Student profile error:",
+          studentResult.error
+        );
+      }
 
-      const { count: followerCount } = await supabase
-        .from('follows')
-        .select('*', {
-          count: 'exact',
-          head: true,
-        })
-        .eq('following_id', user.id);
+      if (postsResult.error) {
+        console.log(
+          "Posts error:",
+          postsResult.error
+        );
+      }
 
-      const { count: followingCount } = await supabase
-        .from('follows')
-        .select('*', {
-          count: 'exact',
-          head: true,
-        })
-        .eq('follower_id', user.id);
+      const profileData =
+        profileResult.data;
 
-      setStats({
-        posts: postCount || 0,
-        followers: followerCount || 0,
-        following: followingCount || 0,
+      const studentData =
+        studentResult.data;
+
+      const fallbackUsername =
+        profileData.full_name
+          ?.toLowerCase()
+          .replace(/\s+/g, "") ||
+        "student";
+
+      const username =
+        profileData.username ||
+        `@${fallbackUsername}`;
+
+      setProfile({
+        fullName:
+          profileData.full_name ||
+          "Your Name",
+
+        username:
+          username.startsWith("@")
+            ? username
+            : `@${username}`,
+
+        bio:
+          profileData.bio || "",
+
+        avatar:
+          profileData.avatar_url ||
+          null,
+
+        programme:
+          studentData?.programme ||
+          "",
+
+        campus:
+          studentData?.campus ||
+          "",
+
+        yearOfStudy:
+          studentData?.year_of_study ||
+          null,
+
+        linkedin:
+          profileData.linkedin_url ||
+          null,
+
+        github:
+          profileData.github_url ||
+          null,
+
+        instagram:
+          profileData.instagram_url ||
+          null,
+
+        website:
+          profileData.website_url ||
+          null,
       });
 
-      const { data: postData } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', {
-          ascending: false,
-        });
+      setStats({
+        posts:
+          postCountResult.count || 0,
 
-      setPosts(postData || []);
+        followers:
+          followerResult.count || 0,
+
+        following:
+          followingResult.count || 0,
+      });
+
+      setPosts(
+        postsResult.data || []
+      );
     } catch (error) {
-      console.log('Profile loading error:', error);
+      console.log(
+        "Profile loading error:",
+        error
+      );
     } finally {
       setLoading(false);
     }
@@ -136,160 +290,104 @@ export default function ProfileScreen() {
 
   async function refreshProfile() {
     setRefreshing(true);
+
     await loadProfile();
+
     setRefreshing(false);
   }
 
-  async function openCamera() {
-    try {
-      const permission =
-        await ImagePicker.requestCameraPermissionsAsync();
-
-      if (!permission.granted) {
-        Alert.alert(
-          'Camera permission required',
-          'Please allow camera access in your device settings to take a photo.',
-          [
-            {
-              text: 'Cancel',
-              style: 'cancel',
-            },
-            {
-              text: 'Settings',
-              onPress: () => {
-                if (Platform.OS !== 'web') {
-                  ImagePicker.requestCameraPermissionsAsync();
-                }
-              },
-            },
-          ]
-        );
-        return;
-      }
-
-      setCreateVisible(false);
-
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        quality: 0.85,
-      });
-
-      if (!result.canceled && result.assets?.length > 0) {
-        await createPost(result.assets[0].uri);
-      }
-    } catch (error) {
-      Alert.alert(
-        'Camera error',
-        'Something went wrong while opening the camera.'
-      );
-    }
-  }
-
-  async function openGallery() {
-    try {
-      const permission =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (!permission.granted) {
-        Alert.alert(
-          'Gallery permission required',
-          'Please allow photo library access in your device settings.',
-          [
-            {
-              text: 'Cancel',
-              style: 'cancel',
-            },
-            {
-              text: 'OK',
-            },
-          ]
-        );
-        return;
-      }
-
-      setCreateVisible(false);
-
-      const result =
-        await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images'],
-          allowsEditing: true,
-          quality: 0.85,
-        });
-
-      if (!result.canceled && result.assets?.length > 0) {
-        await createPost(result.assets[0].uri);
-      }
-    } catch (error) {
-      Alert.alert(
-        'Gallery error',
-        'Something went wrong while opening your gallery.'
-      );
-    }
-  }
-
-  async function createPost(imageUri: string) {
-    try {
-      setCreatingPost(true);
-
-      /*
-       * Supabase Storage upload will be connected here.
-       *
-       * For now we keep the selected image locally so the
-       * profile flow can be tested before Storage is configured.
-       */
-
-      const temporaryPost = {
-        id: Date.now().toString(),
-        image_url: imageUri,
-        created_at: new Date().toISOString(),
-      };
-
-      setPosts(current => [temporaryPost, ...current]);
-
-      setStats(current => ({
-        ...current,
-        posts: current.posts + 1,
-      }));
-    } catch (error) {
-      Alert.alert(
-        'Post failed',
-        'Your post could not be created.'
-      );
-    } finally {
-      setCreatingPost(false);
-    }
-  }
-
   function openFollowers() {
-    router.push('/(student)/followers');
+    router.push(
+      "/(student)/followers"
+    );
   }
 
   function openFollowing() {
-    router.push('/(student)/following');
+    router.push(
+      "/(student)/following"
+    );
   }
 
   function openSettings() {
     setMenuVisible(false);
-    router.push('/(student)/settings');
+
+    router.push(
+      "/(student)/settings"
+    );
   }
 
   function openActivity() {
     setMenuVisible(false);
-    router.push('/(student)/activity');
+
+    router.push(
+      "/(student)/activity"
+    );
   }
 
   function openPortfolio() {
-    router.push('../(student)/portfolio');
+    setMenuVisible(false);
+
+    router.push(
+      "/(student)/portfolio"
+    );
   }
 
-  function showCreateOptions() {
-    setCreateVisible(true);
+  function createPost() {
+    router.push(
+      "/(student)/create-post"
+    );
   }
+
+  function openPost(
+    post: ProfilePost
+  ) {
+    router.push({
+      pathname:
+        "/(student)/post/[id]" as never,
+
+      params: {
+        id: post.id,
+      },
+    });
+  }
+
+  async function openLink(
+    value: string | null
+  ) {
+    if (!value) return;
+
+    let url = value.trim();
+
+    if (
+      !url.startsWith("http://") &&
+      !url.startsWith("https://")
+    ) {
+      url = `https://${url}`;
+    }
+
+    try {
+      await Linking.openURL(url);
+    } catch (error) {
+      console.log(
+        "Could not open link:",
+        error
+      );
+    }
+  }
+
+  const hasSocials =
+    Boolean(profile.linkedin) ||
+    Boolean(profile.github) ||
+    Boolean(profile.instagram) ||
+    Boolean(profile.website);
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View
+        style={
+          styles.loadingContainer
+        }
+      >
         <ActivityIndicator
           size="large"
           color={PRIMARY}
@@ -301,25 +399,37 @@ export default function ProfileScreen() {
   return (
     <View style={styles.screen}>
       <ScrollView
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={
+          false
+        }
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={refreshProfile}
+            onRefresh={
+              refreshProfile
+            }
             tintColor={PRIMARY}
           />
         }
       >
-        {/* HEADER */}
-
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>
+        <View
+          style={styles.header}
+        >
+          <Text
+            style={
+              styles.headerTitle
+            }
+          >
             Profile
           </Text>
 
           <Pressable
-            onPress={() => setMenuVisible(true)}
-            style={styles.headerButton}
+            onPress={() =>
+              setMenuVisible(true)
+            }
+            style={
+              styles.headerButton
+            }
           >
             <Ionicons
               name="menu-outline"
@@ -329,21 +439,42 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
 
-        {/* PROFILE */}
-
-        <View style={styles.profileSection}>
-          <View style={styles.profileTop}>
-            <View style={styles.avatarContainer}>
+        <View
+          style={
+            styles.profileSection
+          }
+        >
+          <View
+            style={
+              styles.profileTop
+            }
+          >
+            <View
+              style={
+                styles.avatarContainer
+              }
+            >
               {profile.avatar ? (
                 <Image
                   source={{
-                    uri: profile.avatar,
+                    uri:
+                      profile.avatar,
                   }}
-                  style={styles.avatar}
+                  style={
+                    styles.avatar
+                  }
                 />
               ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Text style={styles.avatarText}>
+                <View
+                  style={
+                    styles.avatarPlaceholder
+                  }
+                >
+                  <Text
+                    style={
+                      styles.avatarText
+                    }
+                  >
                     {profile.fullName
                       .charAt(0)
                       .toUpperCase()}
@@ -352,80 +483,250 @@ export default function ProfileScreen() {
               )}
             </View>
 
-            <View style={styles.statsContainer}>
-              <View style={styles.stat}>
-                <Text style={styles.statNumber}>
+            <View
+              style={
+                styles.statsContainer
+              }
+            >
+              <View
+                style={styles.stat}
+              >
+                <Text
+                  style={
+                    styles.statNumber
+                  }
+                >
                   {stats.posts}
                 </Text>
 
-                <Text style={styles.statLabel}>
+                <Text
+                  style={
+                    styles.statLabel
+                  }
+                >
                   Posts
                 </Text>
               </View>
 
               <Pressable
                 style={styles.stat}
-                onPress={openFollowers}
+                onPress={
+                  openFollowers
+                }
               >
-                <Text style={styles.statNumber}>
+                <Text
+                  style={
+                    styles.statNumber
+                  }
+                >
                   {stats.followers}
                 </Text>
 
-                <Text style={styles.statLabel}>
+                <Text
+                  style={
+                    styles.statLabel
+                  }
+                >
                   Followers
                 </Text>
               </Pressable>
 
               <Pressable
                 style={styles.stat}
-                onPress={openFollowing}
+                onPress={
+                  openFollowing
+                }
               >
-                <Text style={styles.statNumber}>
+                <Text
+                  style={
+                    styles.statNumber
+                  }
+                >
                   {stats.following}
                 </Text>
 
-                <Text style={styles.statLabel}>
+                <Text
+                  style={
+                    styles.statLabel
+                  }
+                >
                   Following
                 </Text>
               </Pressable>
             </View>
           </View>
 
-          <View style={styles.profileInfo}>
-            <Text style={styles.name}>
+          <View
+            style={
+              styles.profileInfo
+            }
+          >
+            <Text
+              style={styles.name}
+            >
               {profile.fullName}
             </Text>
 
-            <Text style={styles.username}>
+            <Text
+              style={
+                styles.username
+              }
+            >
               {profile.username}
             </Text>
 
-            <Text style={styles.bio}>
-              {profile.bio}
-            </Text>
+            {profile.bio ? (
+              <Text
+                style={styles.bio}
+              >
+                {profile.bio}
+              </Text>
+            ) : null}
+
+            {(profile.programme ||
+              profile.campus) && (
+              <View
+                style={
+                  styles.educationInfo
+                }
+              >
+                {profile.programme ? (
+                  <View
+                    style={
+                      styles.educationRow
+                    }
+                  >
+                    <Ionicons
+                      name="school-outline"
+                      size={17}
+                      color="#555"
+                    />
+
+                    <Text
+                      style={
+                        styles.educationText
+                      }
+                    >
+                      {
+                        profile.programme
+                      }
+                    </Text>
+                  </View>
+                ) : null}
+
+                {profile.campus ? (
+                  <View
+                    style={
+                      styles.educationRow
+                    }
+                  >
+                    <Ionicons
+                      name="location-outline"
+                      size={17}
+                      color="#555"
+                    />
+
+                    <Text
+                      style={
+                        styles.educationText
+                      }
+                    >
+                      {profile.campus}
+                      {profile.yearOfStudy
+                        ? ` · Year ${profile.yearOfStudy}`
+                        : ""}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
+
+            {hasSocials && (
+              <View
+                style={
+                  styles.socialRow
+                }
+              >
+                {profile.linkedin && (
+                  <SocialButton
+                    icon="logo-linkedin"
+                    onPress={() =>
+                      openLink(
+                        profile.linkedin
+                      )
+                    }
+                  />
+                )}
+
+                {profile.github && (
+                  <SocialButton
+                    icon="logo-github"
+                    onPress={() =>
+                      openLink(
+                        profile.github
+                      )
+                    }
+                  />
+                )}
+
+                {profile.instagram && (
+                  <SocialButton
+                    icon="logo-instagram"
+                    onPress={() =>
+                      openLink(
+                        profile.instagram
+                      )
+                    }
+                  />
+                )}
+
+                {profile.website && (
+                  <SocialButton
+                    icon="globe-outline"
+                    onPress={() =>
+                      openLink(
+                        profile.website
+                      )
+                    }
+                  />
+                )}
+              </View>
+            )}
           </View>
 
-          {/* EDIT PROFILE */}
-
           <Pressable
-            style={styles.editButton}
+            style={
+              styles.editButton
+            }
             onPress={() =>
-              router.push('/(student)/edit-profile')
+              router.push(
+                "/(student)/edit-profile"
+              )
             }
           >
-            <Text style={styles.editButtonText}>
+            <Text
+              style={
+                styles.editButtonText
+              }
+            >
               Edit profile
             </Text>
           </Pressable>
         </View>
 
-        {/* PORTFOLIO */}
-
         <Pressable
-          style={styles.portfolioCard}
-          onPress={openPortfolio}
+          style={
+            styles.portfolioCard
+          }
+          onPress={
+            openPortfolio
+          }
         >
-          <View style={styles.portfolioIcon}>
+          <View
+            style={
+              styles.portfolioIcon
+            }
+          >
             <Ionicons
               name="briefcase-outline"
               size={23}
@@ -433,13 +734,26 @@ export default function ProfileScreen() {
             />
           </View>
 
-          <View style={styles.portfolioContent}>
-            <Text style={styles.portfolioTitle}>
+          <View
+            style={
+              styles.portfolioContent
+            }
+          >
+            <Text
+              style={
+                styles.portfolioTitle
+              }
+            >
               My Portfolio
             </Text>
 
-            <Text style={styles.portfolioSubtitle}>
-              Projects, skills, achievements and experience
+            <Text
+              style={
+                styles.portfolioSubtitle
+              }
+            >
+              Projects, skills,
+              achievements and experience
             </Text>
           </View>
 
@@ -450,25 +764,37 @@ export default function ProfileScreen() {
           />
         </Pressable>
 
-        {/* POSTS HEADER */}
-
-        <View style={styles.postsHeader}>
+        <View
+          style={
+            styles.postsHeader
+          }
+        >
           <Ionicons
             name="grid-outline"
-            size={22}
+            size={21}
             color="#111"
           />
 
-          <Text style={styles.postsTitle}>
+          <Text
+            style={
+              styles.postsTitle
+            }
+          >
             Posts
           </Text>
         </View>
 
-        {/* POSTS */}
-
         {posts.length === 0 ? (
-          <View style={styles.emptyPosts}>
-            <View style={styles.emptyIcon}>
+          <View
+            style={
+              styles.emptyPosts
+            }
+          >
+            <View
+              style={
+                styles.emptyIcon
+              }
+            >
               <Ionicons
                 name="camera-outline"
                 size={30}
@@ -476,48 +802,91 @@ export default function ProfileScreen() {
               />
             </View>
 
-            <Text style={styles.emptyTitle}>
+            <Text
+              style={
+                styles.emptyTitle
+              }
+            >
               No posts yet
             </Text>
 
-            <Text style={styles.emptyText}>
-              Share your projects, achievements and
-              student journey.
+            <Text
+              style={
+                styles.emptyText
+              }
+            >
+              Share your projects,
+              achievements and student
+              journey.
             </Text>
 
             <Pressable
-              style={styles.firstPostButton}
-              onPress={showCreateOptions}
+              style={
+                styles.firstPostButton
+              }
+              onPress={createPost}
             >
-              <Text style={styles.firstPostButtonText}>
+              <Text
+                style={
+                  styles.firstPostButtonText
+                }
+              >
                 Create your first post
               </Text>
             </Pressable>
           </View>
         ) : (
-          <View style={styles.postsGrid}>
-            {posts.map(post => (
-              <Pressable
-                key={post.id}
-                style={styles.post}
-              >
-                <Image
-                  source={{
-                    uri: post.image_url,
-                  }}
-                  style={styles.postImage}
-                />
-              </Pressable>
-            ))}
+          <View
+            style={
+              styles.postsGrid
+            }
+          >
+            {posts.map(
+              (post) => (
+                <Pressable
+                  key={post.id}
+                  style={
+                    styles.post
+                  }
+                  onPress={() =>
+                    openPost(post)
+                  }
+                >
+                  {post.image_url && (
+                    <>
+                      {post.media_type === "video" ? (
+                        <PostVideo
+                          uri={post.image_url}
+                        />
+                      ) : (
+                        <Image
+                          source={{
+                            uri: post.image_url,
+                          }}
+                          style={styles.postMedia}
+                          resizeMode="contain"
+                          onError={(event) => {
+                            console.log(
+                              "Image loading error:",
+                              event.nativeEvent.error
+                            );
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                </Pressable>
+              )
+            )}
           </View>
         )}
       </ScrollView>
 
-      {/* CREATE POST BUTTON */}
-
       <Pressable
-        style={styles.floatingButton}
-        onPress={showCreateOptions}
+        style={
+          styles.floatingButton
+        }
+        onPress={createPost}
       >
         <Ionicons
           name="add"
@@ -526,28 +895,50 @@ export default function ProfileScreen() {
         />
       </Pressable>
 
-      {/* SIDE MENU */}
-
       <Modal
         visible={menuVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setMenuVisible(false)}
+        onRequestClose={() =>
+          setMenuVisible(false)
+        }
       >
-        <View style={styles.menuOverlay}>
+        <View
+          style={
+            styles.menuOverlay
+          }
+        >
           <Pressable
-            style={styles.blurArea}
-            onPress={() => setMenuVisible(false)}
+            style={
+              styles.blurArea
+            }
+            onPress={() =>
+              setMenuVisible(false)
+            }
           />
 
-          <View style={styles.sideMenu}>
-            <View style={styles.menuHeader}>
-              <Text style={styles.menuTitle}>
+          <View
+            style={
+              styles.sideMenu
+            }
+          >
+            <View
+              style={
+                styles.menuHeader
+              }
+            >
+              <Text
+                style={
+                  styles.menuTitle
+                }
+              >
                 Account
               </Text>
 
               <Pressable
-                onPress={() => setMenuVisible(false)}
+                onPress={() =>
+                  setMenuVisible(false)
+                }
               >
                 <Ionicons
                   name="close"
@@ -557,17 +948,32 @@ export default function ProfileScreen() {
               </Pressable>
             </View>
 
-            <View style={styles.menuProfile}>
+            <View
+              style={
+                styles.menuProfile
+              }
+            >
               {profile.avatar ? (
                 <Image
                   source={{
-                    uri: profile.avatar,
+                    uri:
+                      profile.avatar,
                   }}
-                  style={styles.menuAvatar}
+                  style={
+                    styles.menuAvatar
+                  }
                 />
               ) : (
-                <View style={styles.menuAvatarPlaceholder}>
-                  <Text style={styles.menuAvatarText}>
+                <View
+                  style={
+                    styles.menuAvatarPlaceholder
+                  }
+                >
+                  <Text
+                    style={
+                      styles.menuAvatarText
+                    }
+                  >
                     {profile.fullName
                       .charAt(0)
                       .toUpperCase()}
@@ -575,284 +981,242 @@ export default function ProfileScreen() {
                 </View>
               )}
 
-              <View>
-                <Text style={styles.menuName}>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={
+                    styles.menuName
+                  }
+                >
                   {profile.fullName}
                 </Text>
 
-                <Text style={styles.menuUsername}>
+                <Text
+                  style={
+                    styles.menuUsername
+                  }
+                >
                   {profile.username}
                 </Text>
+
+                {profile.programme ? (
+                  <Text
+                    style={
+                      styles.menuProgramme
+                    }
+                    numberOfLines={1}
+                  >
+                    {
+                      profile.programme
+                    }
+                  </Text>
+                ) : null}
               </View>
             </View>
 
-            <View style={styles.menuDivider} />
-
-            <Pressable
-              style={styles.menuItem}
-              onPress={openSettings}
-            >
-              <Ionicons
-                name="settings-outline"
-                size={23}
-                color="#222"
-              />
-
-              <Text style={styles.menuItemText}>
-                Settings
-              </Text>
-
-              <Ionicons
-                name="chevron-forward"
-                size={19}
-                color="#999"
-              />
-            </Pressable>
-
-            <Pressable
-              style={styles.menuItem}
-              onPress={openActivity}
-            >
-              <Ionicons
-                name="time-outline"
-                size={23}
-                color="#222"
-              />
-
-              <Text style={styles.menuItemText}>
-                Activity
-              </Text>
-
-              <Ionicons
-                name="chevron-forward"
-                size={19}
-                color="#999"
-              />
-            </Pressable>
-
-            <Pressable
-              style={styles.menuItem}
-              onPress={openPortfolio}
-            >
-              <Ionicons
-                name="briefcase-outline"
-                size={23}
-                color="#222"
-              />
-
-              <Text style={styles.menuItemText}>
-                Portfolio
-              </Text>
-
-              <Ionicons
-                name="chevron-forward"
-                size={19}
-                color="#999"
-              />
-            </Pressable>
-
-            <Pressable
-              style={styles.menuItem}
-              onPress={openFollowers}
-            >
-              <Ionicons
-                name="people-outline"
-                size={23}
-                color="#222"
-              />
-
-              <Text style={styles.menuItemText}>
-                Followers
-              </Text>
-
-              <Text style={styles.menuCount}>
-                {stats.followers}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={styles.menuItem}
-              onPress={openFollowing}
-            >
-              <Ionicons
-                name="person-add-outline"
-                size={23}
-                color="#222"
-              />
-
-              <Text style={styles.menuItemText}>
-                Following
-              </Text>
-
-              <Text style={styles.menuCount}>
-                {stats.following}
-              </Text>
-            </Pressable>
-
-            <View style={styles.menuBottom}>
-              <Text style={styles.menuVersion}>
-                Richfield Connect
-              </Text>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* CREATE POST MODAL */}
-
-      <Modal
-        visible={createVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() =>
-          setCreateVisible(false)
-        }
-      >
-        <Pressable
-          style={styles.createOverlay}
-          onPress={() => setCreateVisible(false)}
-        >
-          <Pressable
-            style={styles.createSheet}
-            onPress={event =>
-              event.stopPropagation()
-            }
-          >
-            <View style={styles.sheetHandle} />
-
-            <Text style={styles.sheetTitle}>
-              Create a post
-            </Text>
-
-            <Text style={styles.sheetSubtitle}>
-              Share something with your professional
-              network.
-            </Text>
-
-            <Pressable
-              style={styles.createOption}
-              onPress={openCamera}
-              disabled={creatingPost}
-            >
-              <View style={styles.createOptionIcon}>
-                <Ionicons
-                  name="camera"
-                  size={23}
-                  color="#fff"
-                />
-              </View>
-
-              <View style={styles.createOptionText}>
-                <Text style={styles.createOptionTitle}>
-                  Camera
-                </Text>
-
-                <Text style={styles.createOptionSubtitle}>
-                  Take a new photo
-                </Text>
-              </View>
-
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color="#999"
-              />
-            </Pressable>
-
-            <Pressable
-              style={styles.createOption}
-              onPress={openGallery}
-              disabled={creatingPost}
-            >
-              <View style={styles.createOptionIcon}>
-                <Ionicons
-                  name="images"
-                  size={23}
-                  color="#fff"
-                />
-              </View>
-
-              <View style={styles.createOptionText}>
-                <Text style={styles.createOptionTitle}>
-                  Gallery
-                </Text>
-
-                <Text style={styles.createOptionSubtitle}>
-                  Choose from your photos
-                </Text>
-              </View>
-
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color="#999"
-              />
-            </Pressable>
-
-            <Pressable
-              style={styles.cancelButton}
-              onPress={() => setCreateVisible(false)}
-            >
-              <Text style={styles.cancelText}>
-                Cancel
-              </Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {creatingPost && (
-        <View style={styles.uploadingOverlay}>
-          <View style={styles.uploadingBox}>
-            <ActivityIndicator
-              size="large"
-              color={PRIMARY}
+            <View
+              style={
+                styles.menuDivider
+              }
             />
 
-            <Text style={styles.uploadingText}>
-              Creating post...
-            </Text>
+            <MenuItem
+              icon="settings-outline"
+              title="Settings"
+              onPress={
+                openSettings
+              }
+            />
+
+            <MenuItem
+              icon="time-outline"
+              title="Activity"
+              onPress={
+                openActivity
+              }
+            />
+
+            <MenuItem
+              icon="briefcase-outline"
+              title="Portfolio"
+              onPress={
+                openPortfolio
+              }
+            />
+
+            <MenuItem
+              icon="people-outline"
+              title="Followers"
+              value={
+                stats.followers
+              }
+              onPress={() => {
+                setMenuVisible(false);
+                openFollowers();
+              }}
+            />
+
+            <MenuItem
+              icon="person-add-outline"
+              title="Following"
+              value={
+                stats.following
+              }
+              onPress={() => {
+                setMenuVisible(false);
+                openFollowing();
+              }}
+            />
+
+            <View
+              style={
+                styles.menuBottom
+              }
+            >
+              <Text
+                style={
+                  styles.menuVersion
+                }
+              >
+                Richfield Social
+              </Text>
+            </View>
           </View>
         </View>
-      )}
+      </Modal>
     </View>
+  );
+}
+
+function SocialButton({
+  icon,
+  onPress,
+}: {
+  icon:
+    keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={
+        styles.socialButton
+      }
+      onPress={onPress}
+    >
+      <Ionicons
+        name={icon}
+        size={20}
+        color="#222"
+      />
+    </Pressable>
+  );
+}
+
+function MenuItem({
+  icon,
+  title,
+  value,
+  onPress,
+}: {
+  icon:
+    keyof typeof Ionicons.glyphMap;
+  title: string;
+  value?: number;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={styles.menuItem}
+      onPress={onPress}
+    >
+      <Ionicons
+        name={icon}
+        size={23}
+        color="#222"
+      />
+
+      <Text
+        style={
+          styles.menuItemText
+        }
+      >
+        {title}
+      </Text>
+
+      {value !== undefined ? (
+        <Text
+          style={
+            styles.menuCount
+          }
+        >
+          {value}
+        </Text>
+      ) : (
+        <Ionicons
+          name="chevron-forward"
+          size={19}
+          color="#999"
+        />
+      )}
+    </Pressable>
+  );
+}
+
+// Post Video
+function PostVideo({
+  uri,
+}: {
+  uri: string;
+}) {
+  const player =
+    useVideoPlayer(uri, player => {
+      player.loop = false;
+    });
+
+  return (
+    <VideoView
+      player={player}
+      style={styles.postMedia}
+      nativeControls
+      contentFit="contain"
+    />
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
   },
 
   loadingContainer: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
   },
 
   header: {
     height: 62,
     paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent:
+      "space-between",
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: "#eee",
   },
 
   headerButton: {
     width: 42,
     height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   headerTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#111',
+    fontWeight: "700",
+    color: "#111",
   },
 
   profileSection: {
@@ -862,58 +1226,60 @@ const styles = StyleSheet.create({
   },
 
   profileTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
 
   avatarContainer: {
     width: 92,
     height: 92,
     borderRadius: 46,
-    overflow: 'hidden',
+    overflow: "hidden",
     marginRight: 24,
   },
 
   avatar: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
 
   avatarPlaceholder: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
     borderRadius: 46,
-    backgroundColor: PRIMARY,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor:
+      PRIMARY,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   avatarText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 34,
-    fontWeight: '800',
+    fontWeight: "800",
   },
 
   statsContainer: {
     flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent:
+      "space-between",
   },
 
   stat: {
-    alignItems: 'center',
+    alignItems: "center",
     minWidth: 60,
   },
 
   statNumber: {
     fontSize: 19,
-    fontWeight: '800',
-    color: '#111',
+    fontWeight: "800",
+    color: "#111",
   },
 
   statLabel: {
     fontSize: 12,
-    color: '#666',
+    color: "#666",
     marginTop: 4,
   },
 
@@ -923,8 +1289,8 @@ const styles = StyleSheet.create({
 
   name: {
     fontSize: 19,
-    fontWeight: '800',
-    color: '#111',
+    fontWeight: "800",
+    color: "#111",
   },
 
   username: {
@@ -934,26 +1300,61 @@ const styles = StyleSheet.create({
   },
 
   bio: {
-    color: '#444',
+    color: "#444",
     fontSize: 14,
     lineHeight: 20,
     marginTop: 9,
   },
 
+  educationInfo: {
+    marginTop: 12,
+    gap: 7,
+  },
+
+  educationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  educationText: {
+    color: "#555",
+    fontSize: 13,
+    marginLeft: 7,
+    flex: 1,
+  },
+
+  socialRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 14,
+  },
+
+  socialButton: {
+    width: 37,
+    height: 37,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+  },
+
   editButton: {
     height: 40,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: "#ddd",
     borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginTop: 16,
   },
 
   editButtonText: {
-    fontWeight: '700',
+    fontWeight: "700",
     fontSize: 14,
-    color: '#222',
+    color: "#222",
   },
 
   portfolioCard: {
@@ -961,20 +1362,22 @@ const styles = StyleSheet.create({
     marginBottom: 22,
     padding: 16,
     borderRadius: 14,
-    backgroundColor: '#f6f6fb',
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor:
+      "#f6f6fb",
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: '#e7e7f3',
+    borderColor: "#e7e7f3",
   },
 
   portfolioIcon: {
     width: 46,
     height: 46,
     borderRadius: 12,
-    backgroundColor: PRIMARY,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor:
+      PRIMARY,
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 13,
   },
 
@@ -984,13 +1387,13 @@ const styles = StyleSheet.create({
 
   portfolioTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#111',
+    fontWeight: "800",
+    color: "#111",
   },
 
   portfolioSubtitle: {
     fontSize: 12,
-    color: '#666',
+    color: "#666",
     marginTop: 3,
     lineHeight: 17,
   },
@@ -999,36 +1402,52 @@ const styles = StyleSheet.create({
     height: 50,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: '#eee',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
+    borderColor: "#eee",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
     gap: 8,
   },
 
   postsTitle: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: "700",
   },
 
   postsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
   },
 
   post: {
     width: width / 3,
     height: width / 3,
     padding: 1,
+    backgroundColor: "#eee",
   },
 
   postImage: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
+  },
+
+  textPostPreview: {
+    flex: 1,
+    backgroundColor:
+      "#F5F5FA",
+    padding: 12,
+    justifyContent: "center",
+  },
+
+  textPostPreviewText: {
+    color: "#222",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "600",
   },
 
   emptyPosts: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingHorizontal: 35,
     paddingVertical: 45,
   },
@@ -1038,28 +1457,29 @@ const styles = StyleSheet.create({
     height: 62,
     borderRadius: 31,
     borderWidth: 1,
-    borderColor: '#ddd',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: "#ddd",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 15,
   },
 
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '800',
-    color: '#111',
+    fontWeight: "800",
+    color: "#111",
   },
 
   emptyText: {
-    textAlign: 'center',
-    color: '#777',
+    textAlign: "center",
+    color: "#777",
     fontSize: 13,
     lineHeight: 19,
     marginTop: 7,
   },
 
   firstPostButton: {
-    backgroundColor: PRIMARY,
+    backgroundColor:
+      PRIMARY,
     paddingHorizontal: 18,
     paddingVertical: 11,
     borderRadius: 9,
@@ -1067,21 +1487,22 @@ const styles = StyleSheet.create({
   },
 
   firstPostButtonText: {
-    color: '#fff',
-    fontWeight: '700',
+    color: "#fff",
+    fontWeight: "700",
     fontSize: 13,
   },
 
   floatingButton: {
-    position: 'absolute',
+    position: "absolute",
     right: 20,
     bottom: 25,
     width: 57,
     height: 57,
     borderRadius: 29,
-    backgroundColor: PRIMARY,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor:
+      PRIMARY,
+    alignItems: "center",
+    justifyContent: "center",
     elevation: 7,
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -1093,45 +1514,44 @@ const styles = StyleSheet.create({
 
   menuOverlay: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: "row",
   },
 
   blurArea: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor:
+      "rgba(0,0,0,0.55)",
   },
 
   sideMenu: {
     width: DRAWER_WIDTH,
-    height: '100%',
-    backgroundColor: '#fff',
-    paddingTop: Platform.OS === 'ios' ? 55 : 35,
+    height: "100%",
+    backgroundColor: "#fff",
+    paddingTop:
+      Platform.OS === "ios"
+        ? 55
+        : 35,
     paddingHorizontal: 20,
     elevation: 20,
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: {
-      width: -4,
-      height: 0,
-    },
   },
 
   menuHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent:
+      "space-between",
     marginBottom: 25,
   },
 
   menuTitle: {
     fontSize: 25,
-    fontWeight: '800',
-    color: '#111',
+    fontWeight: "800",
+    color: "#111",
   },
 
   menuProfile: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 22,
   },
 
@@ -1146,165 +1566,94 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: PRIMARY,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor:
+      PRIMARY,
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 12,
   },
 
   menuAvatarText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: "800",
   },
 
   menuName: {
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: "800",
   },
 
   menuUsername: {
-    color: '#777',
+    color: "#777",
     fontSize: 12,
     marginTop: 2,
   },
 
+  menuProgramme: {
+    color: "#999",
+    fontSize: 11,
+    marginTop: 3,
+  },
+
   menuDivider: {
     height: 1,
-    backgroundColor: '#eee',
+    backgroundColor: "#eee",
     marginBottom: 10,
   },
 
   menuItem: {
     height: 58,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
 
   menuItemText: {
     flex: 1,
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: "600",
     marginLeft: 15,
-    color: '#222',
+    color: "#222",
   },
 
   menuCount: {
-    color: '#888',
+    color: "#888",
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 
   menuBottom: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justifyContent: "flex-end",
     paddingBottom: 30,
   },
 
   menuVersion: {
-    color: '#aaa',
+    color: "#aaa",
     fontSize: 12,
   },
-
-  createOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
+  videoThumbnail: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#222",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
-  createSheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 22,
-    paddingBottom: 35,
+  videoBadge: {
+    position: "absolute",
+    right: 7,
+    top: 7,
+    width: 27,
+    height: 27,
+    borderRadius: 14,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-
-  sheetHandle: {
-    width: 42,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#ccc',
-    alignSelf: 'center',
-    marginBottom: 22,
-  },
-
-  sheetTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#111',
-  },
-
-  sheetSubtitle: {
-    color: '#777',
-    fontSize: 13,
-    marginTop: 5,
-    marginBottom: 20,
-  },
-
-  createOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 13,
-  },
-
-  createOptionIcon: {
-    width: 45,
-    height: 45,
-    borderRadius: 12,
-    backgroundColor: PRIMARY,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 13,
-  },
-
-  createOptionText: {
-    flex: 1,
-  },
-
-  createOptionTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-
-  createOptionSubtitle: {
-    color: '#777',
-    fontSize: 12,
-    marginTop: 3,
-  },
-
-  cancelButton: {
-    height: 50,
-    backgroundColor: '#f2f2f2',
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 15,
-  },
-
-  cancelText: {
-    fontWeight: '700',
-    fontSize: 15,
-  },
-
-  uploadingOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  uploadingBox: {
-    backgroundColor: '#fff',
-    padding: 25,
-    borderRadius: 15,
-    alignItems: 'center',
-    minWidth: 170,
-  },
-
-  uploadingText: {
-    marginTop: 12,
-    fontWeight: '700',
+  postMedia: {
+    width: "100%",
+    aspectRatio: 1,
+    backgroundColor: "#000",
   },
 });
-
