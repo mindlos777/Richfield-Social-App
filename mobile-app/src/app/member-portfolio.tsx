@@ -1,6 +1,5 @@
 import React, {
   useCallback,
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -29,26 +28,41 @@ import { supabase } from "../lib/supabase";
 
 const PRIMARY = "#0300cf";
 
+type RawPortfolioProject = {
+  id: string;
+  title?: string | null;
+  description?: string | null;
+  url?: string | null;
+  project_url?: string | null;
+  skills?: string[] | null;
+  created_at?: string | null;
+};
+
 type PortfolioProject = {
   id: string;
   title: string;
   description: string;
-  project_url: string | null;
-  skills: string[] | null;
-  created_at?: string | null;
+  url: string | null;
+  skills: string[];
+  created_at: string | null;
 };
 
-type Params = {
-  userId?: string;
-};
-
-export default function PortfolioScreen() {
-  const params = useLocalSearchParams<Params>();
+export default function MemberPortfolioScreen() {
+  const params =
+    useLocalSearchParams<{
+      userId?: string | string[];
+      name?: string | string[];
+    }>();
 
   const routeUserId =
-    typeof params.userId === "string"
-      ? params.userId
-      : "";
+    Array.isArray(params.userId)
+      ? params.userId[0] || ""
+      : params.userId || "";
+
+  const routeName =
+    Array.isArray(params.name)
+      ? params.name[0] || ""
+      : params.name || "";
 
   const [currentUserId, setCurrentUserId] =
     useState("");
@@ -57,7 +71,7 @@ export default function PortfolioScreen() {
     useState("");
 
   const [profileName, setProfileName] =
-    useState("");
+    useState(routeName);
 
   const [projects, setProjects] =
     useState<PortfolioProject[]>([]);
@@ -65,8 +79,10 @@ export default function PortfolioScreen() {
   const [loading, setLoading] =
     useState(true);
 
-  const [refreshing, setRefreshing] =
-    useState(false);
+  const [
+    refreshing,
+    setRefreshing,
+  ] = useState(false);
 
   const [showForm, setShowForm] =
     useState(false);
@@ -86,16 +102,38 @@ export default function PortfolioScreen() {
   const [skills, setSkills] =
     useState("");
 
-  const isOwner = useMemo(() => {
-    return (
-      !!currentUserId &&
-      !!targetUserId &&
-      currentUserId === targetUserId
-    );
-  }, [
-    currentUserId,
-    targetUserId,
-  ]);
+  const isOwner =
+    useMemo(() => {
+      return (
+        !!currentUserId &&
+        !!targetUserId &&
+        currentUserId ===
+          targetUserId
+      );
+    }, [
+      currentUserId,
+      targetUserId,
+    ]);
+
+  const normalizeProject = (
+    item: RawPortfolioProject
+  ): PortfolioProject => ({
+    id: item.id,
+    title:
+      item.title || "Untitled project",
+    description:
+      item.description || "",
+    url:
+      item.url ??
+      item.project_url ??
+      null,
+    skills:
+      Array.isArray(item.skills)
+        ? item.skills
+        : [],
+    created_at:
+      item.created_at || null,
+  });
 
   const loadPortfolio =
     useCallback(async () => {
@@ -105,7 +143,8 @@ export default function PortfolioScreen() {
         const {
           data: { user },
           error: authError,
-        } = await supabase.auth.getUser();
+        } =
+          await supabase.auth.getUser();
 
         if (authError) {
           throw authError;
@@ -117,12 +156,17 @@ export default function PortfolioScreen() {
           );
         }
 
-        setCurrentUserId(user.id);
+        setCurrentUserId(
+          user.id
+        );
 
         const personId =
-          routeUserId || user.id;
+          routeUserId ||
+          user.id;
 
-        setTargetUserId(personId);
+        setTargetUserId(
+          personId
+        );
 
         const [
           profileResult,
@@ -135,40 +179,51 @@ export default function PortfolioScreen() {
             .maybeSingle(),
 
           supabase
-            .from("portfolio_items")
-            .select(`
-              id,
-              title,
-              description,
-              project_url,
-              skills,
-              created_at
-            `)
-            .eq("user_id", personId)
-            .order("created_at", {
-              ascending: false,
-            }),
+            .from(
+              "portfolio_items"
+            )
+            .select("*")
+            .eq(
+              "user_id",
+              personId
+            )
+            .order(
+              "created_at",
+              {
+                ascending: false,
+              }
+            ),
         ]);
 
-        if (profileResult.error) {
+        if (
+          profileResult.error
+        ) {
           console.log(
             "Portfolio profile error:",
             profileResult.error
           );
         }
 
-        if (portfolioResult.error) {
+        if (
+          portfolioResult.error
+        ) {
           throw portfolioResult.error;
         }
 
         setProfileName(
-          profileResult.data?.full_name ||
+          profileResult.data
+            ?.full_name ||
+            routeName ||
             ""
         );
 
         setProjects(
-          (portfolioResult.data ||
-            []) as PortfolioProject[]
+          (
+            portfolioResult.data ||
+            []
+          ).map(
+            normalizeProject
+          )
         );
       } catch (error) {
         console.log(
@@ -188,19 +243,16 @@ export default function PortfolioScreen() {
         setLoading(false);
         setRefreshing(false);
       }
-    }, [routeUserId]);
+    }, [
+      routeUserId,
+      routeName,
+    ]);
 
   useFocusEffect(
     useCallback(() => {
       loadPortfolio();
     }, [loadPortfolio])
   );
-
-  useEffect(() => {
-    if (!isOwner) {
-      setShowForm(false);
-    }
-  }, [isOwner]);
 
   async function refreshPortfolio() {
     setRefreshing(true);
@@ -239,43 +291,59 @@ export default function PortfolioScreen() {
     try {
       setSaving(true);
 
-      const skillsArray = skills
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
+      const skillsArray =
+        skills
+          .split(",")
+          .map((item) =>
+            item.trim()
+          )
+          .filter(Boolean);
+
+      const insertData: Record<
+        string,
+        unknown
+      > = {
+        user_id:
+          currentUserId,
+        title:
+          title.trim(),
+        description:
+          description.trim(),
+        skills:
+          skillsArray,
+      };
+
+      if (
+        projectUrl.trim()
+      ) {
+        insertData.url =
+          projectUrl.trim();
+      }
 
       const {
         data,
         error,
-      } = await supabase
-        .from("portfolio_items")
-        .insert({
-          user_id: currentUserId,
-          title: title.trim(),
-          description:
-            description.trim(),
-          project_url:
-            projectUrl.trim() || null,
-          skills: skillsArray,
-        })
-        .select(`
-          id,
-          title,
-          description,
-          project_url,
-          skills,
-          created_at
-        `)
-        .single();
+      } =
+        await supabase
+          .from(
+            "portfolio_items"
+          )
+          .insert(insertData)
+          .select("*")
+          .single();
 
       if (error) {
         throw error;
       }
 
-      setProjects((current) => [
-        data as PortfolioProject,
-        ...current,
-      ]);
+      setProjects(
+        (current) => [
+          normalizeProject(
+            data as RawPortfolioProject
+          ),
+          ...current,
+        ]
+      );
 
       resetForm();
 
@@ -317,45 +385,56 @@ export default function PortfolioScreen() {
         },
         {
           text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const {
-                error,
-              } = await supabase
-                .from(
-                  "portfolio_items"
-                )
-                .delete()
-                .eq("id", id)
-                .eq(
-                  "user_id",
-                  currentUserId
+          style:
+            "destructive",
+          onPress:
+            async () => {
+              try {
+                const {
+                  error,
+                } =
+                  await supabase
+                    .from(
+                      "portfolio_items"
+                    )
+                    .delete()
+                    .eq(
+                      "id",
+                      id
+                    )
+                    .eq(
+                      "user_id",
+                      currentUserId
+                    );
+
+                if (error) {
+                  throw error;
+                }
+
+                setProjects(
+                  (
+                    current
+                  ) =>
+                    current.filter(
+                      (
+                        project
+                      ) =>
+                        project.id !==
+                        id
+                    )
+                );
+              } catch (error) {
+                console.log(
+                  "Delete project error:",
+                  error
                 );
 
-              if (error) {
-                throw error;
+                Alert.alert(
+                  "Error",
+                  "Unable to delete this project."
+                );
               }
-
-              setProjects(
-                (current) =>
-                  current.filter(
-                    (project) =>
-                      project.id !== id
-                  )
-              );
-            } catch (error) {
-              console.log(
-                "Delete project error:",
-                error
-              );
-
-              Alert.alert(
-                "Error",
-                "Unable to delete this project."
-              );
-            }
-          },
+            },
         },
       ]
     );
@@ -364,32 +443,29 @@ export default function PortfolioScreen() {
   async function openProject(
     url: string
   ) {
-    let value = url.trim();
+    let value =
+      url.trim();
 
     if (!value) {
       return;
     }
 
     if (
-      !value.startsWith("http://") &&
-      !value.startsWith("https://")
+      !value.startsWith(
+        "http://"
+      ) &&
+      !value.startsWith(
+        "https://"
+      )
     ) {
-      value = `https://${value}`;
+      value =
+        `https://${value}`;
     }
 
     try {
-      const supported =
-        await Linking.canOpenURL(value);
-
-      if (!supported) {
-        Alert.alert(
-          "Invalid link",
-          "This project link could not be opened."
-        );
-        return;
-      }
-
-      await Linking.openURL(value);
+      await Linking.openURL(
+        value
+      );
     } catch (error) {
       console.log(
         "Open project error:",
@@ -403,19 +479,12 @@ export default function PortfolioScreen() {
     }
   }
 
-  const screenTitle = isOwner
-    ? "My Portfolio"
-    : profileName
-      ? `${profileName}'s Portfolio`
-      : "Portfolio";
-
-  const emptyTitle = isOwner
-    ? "Your portfolio is empty"
-    : "No portfolio projects yet";
-
-  const emptyText = isOwner
-    ? "Showcase your projects, skills and work to your professional network."
-    : "This member has not added any portfolio projects yet.";
+  const screenTitle =
+    isOwner
+      ? "My Portfolio"
+      : profileName
+        ? `${profileName}'s Portfolio`
+        : "Portfolio";
 
   if (loading) {
     return (
@@ -434,9 +503,13 @@ export default function PortfolioScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.topBar}>
+      <View
+        style={styles.topBar}
+      >
         <Pressable
-          style={styles.headerButton}
+          style={
+            styles.headerButton
+          }
           onPress={() =>
             router.back()
           }
@@ -454,22 +527,23 @@ export default function PortfolioScreen() {
           }
         >
           <Text
-            style={styles.topTitle}
+            style={
+              styles.topTitle
+            }
             numberOfLines={1}
           >
             {screenTitle}
           </Text>
 
-          {!isOwner &&
-            profileName && (
-              <Text
-                style={
-                  styles.viewOnlyText
-                }
-              >
-                View only
-              </Text>
-            )}
+          {!isOwner && (
+            <Text
+              style={
+                styles.viewOnlyText
+              }
+            >
+              View only
+            </Text>
+          )}
         </View>
 
         <View
@@ -499,92 +573,111 @@ export default function PortfolioScreen() {
                 color={PRIMARY}
               />
             </Pressable>
-          ) : (
-            <View />
-          )}
+          ) : null}
         </View>
       </View>
 
-      {isOwner && showForm && (
-        <View
-          style={styles.projectForm}
-        >
-          <Text
+      {isOwner &&
+        showForm && (
+          <View
             style={
-              styles.sectionTitle
+              styles.projectForm
             }
           >
-            Add project
-          </Text>
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
+              Add project
+            </Text>
 
-          <TextInput
-            placeholder="Project title *"
-            placeholderTextColor="#999"
-            value={title}
-            onChangeText={setTitle}
-            style={styles.input}
-          />
+            <TextInput
+              placeholder="Project title *"
+              placeholderTextColor="#999"
+              value={title}
+              onChangeText={
+                setTitle
+              }
+              style={
+                styles.input
+              }
+            />
 
-          <TextInput
-            placeholder="Description *"
-            placeholderTextColor="#999"
-            value={description}
-            onChangeText={
-              setDescription
-            }
-            multiline
-            textAlignVertical="top"
-            style={[
-              styles.input,
-              styles.descriptionInput,
-            ]}
-          />
+            <TextInput
+              placeholder="Description *"
+              placeholderTextColor="#999"
+              value={
+                description
+              }
+              onChangeText={
+                setDescription
+              }
+              multiline
+              textAlignVertical="top"
+              style={[
+                styles.input,
+                styles.descriptionInput,
+              ]}
+            />
 
-          <TextInput
-            placeholder="Project URL"
-            placeholderTextColor="#999"
-            value={projectUrl}
-            onChangeText={
-              setProjectUrl
-            }
-            autoCapitalize="none"
-            keyboardType="url"
-            style={styles.input}
-          />
+            <TextInput
+              placeholder="Project URL"
+              placeholderTextColor="#999"
+              value={
+                projectUrl
+              }
+              onChangeText={
+                setProjectUrl
+              }
+              autoCapitalize="none"
+              keyboardType="url"
+              style={
+                styles.input
+              }
+            />
 
-          <TextInput
-            placeholder="Skills e.g. React, JavaScript, SQL"
-            placeholderTextColor="#999"
-            value={skills}
-            onChangeText={setSkills}
-            style={styles.input}
-          />
+            <TextInput
+              placeholder="Skills e.g. React, JavaScript, SQL"
+              placeholderTextColor="#999"
+              value={skills}
+              onChangeText={
+                setSkills
+              }
+              style={
+                styles.input
+              }
+            />
 
-          <Pressable
-            style={[
-              styles.primaryButton,
-              saving &&
-                styles.disabledButton,
-            ]}
-            onPress={addProject}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator
-                color="#fff"
-              />
-            ) : (
-              <Text
-                style={
-                  styles.primaryButtonText
-                }
-              >
-                Add project
-              </Text>
-            )}
-          </Pressable>
-        </View>
-      )}
+            <Pressable
+              style={[
+                styles.primaryButton,
+                saving &&
+                  styles.disabledButton,
+              ]}
+              onPress={
+                addProject
+              }
+              disabled={
+                saving
+              }
+            >
+              {saving ? (
+                <ActivityIndicator
+                  color="#fff"
+                />
+              ) : (
+                <Text
+                  style={
+                    styles.primaryButtonText
+                  }
+                >
+                  Add project
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        )}
 
       <ScrollView
         showsVerticalScrollIndicator={
@@ -592,7 +685,9 @@ export default function PortfolioScreen() {
         }
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            refreshing={
+              refreshing
+            }
             onRefresh={
               refreshPortfolio
             }
@@ -603,7 +698,8 @@ export default function PortfolioScreen() {
           styles.portfolioList
         }
       >
-        {projects.length === 0 ? (
+        {projects.length ===
+        0 ? (
           <View
             style={
               styles.emptyState
@@ -626,7 +722,9 @@ export default function PortfolioScreen() {
                 styles.emptyTitle
               }
             >
-              {emptyTitle}
+              {isOwner
+                ? "Your portfolio is empty"
+                : "No portfolio projects yet"}
             </Text>
 
             <Text
@@ -634,7 +732,9 @@ export default function PortfolioScreen() {
                 styles.emptyText
               }
             >
-              {emptyText}
+              {isOwner
+                ? "Showcase your projects, skills and work to your professional network."
+                : "This member has not added any portfolio projects yet."}
             </Text>
 
             {isOwner && (
@@ -643,7 +743,9 @@ export default function PortfolioScreen() {
                   styles.emptyButton
                 }
                 onPress={() =>
-                  setShowForm(true)
+                  setShowForm(
+                    true
+                  )
                 }
               >
                 <Ionicons
@@ -713,7 +815,9 @@ export default function PortfolioScreen() {
                     styles.projectTitle
                   }
                 >
-                  {project.title}
+                  {
+                    project.title
+                  }
                 </Text>
 
                 <Text
@@ -726,8 +830,9 @@ export default function PortfolioScreen() {
                   }
                 </Text>
 
-                {!!project.skills
-                  ?.length && (
+                {project.skills
+                  .length >
+                  0 && (
                   <View
                     style={
                       styles.skillsContainer
@@ -749,7 +854,9 @@ export default function PortfolioScreen() {
                               styles.skillText
                             }
                           >
-                            {skill}
+                            {
+                              skill
+                            }
                           </Text>
                         </View>
                       )
@@ -757,14 +864,14 @@ export default function PortfolioScreen() {
                   </View>
                 )}
 
-                {project.project_url && (
+                {project.url && (
                   <Pressable
                     style={
                       styles.projectLink
                     }
                     onPress={() =>
                       openProject(
-                        project.project_url!
+                        project.url!
                       )
                     }
                   >

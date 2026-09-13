@@ -328,7 +328,7 @@ export default function ProfileScreen() {
     setMenuVisible(false);
 
     router.push(
-      "/(student)/portfolio"
+      "/member-portfolio"
     );
   }
 

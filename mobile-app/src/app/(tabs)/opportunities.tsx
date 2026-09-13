@@ -1,1 +1,3 @@
-export { default } from "../../screens/OpportunitiesScreen";
+import OpportunitiesScreen from "../../screens/OpportunitiesScreen";
+
+export default OpportunitiesScreen;

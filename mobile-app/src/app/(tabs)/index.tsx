@@ -13,22 +13,43 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 
-import { Ionicons } from "@expo/vector-icons";
-import { router, useFocusEffect } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  Ionicons,
+} from "@expo/vector-icons";
 
-import { supabase } from "../../lib/supabase";
+import {
+  router,
+  useFocusEffect,
+} from "expo-router";
 
-/* ==========================================================================
-   TYPES
-   ========================================================================== */
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
 
-type IconName = React.ComponentProps<typeof Ionicons>["name"];
+import {
+  supabase,
+} from "../../lib/supabase";
+
+const PRIMARY = "#0300cf";
+
+const COLORS = {
+  background: "#F5F7F9",
+  white: "#FFFFFF",
+  textPrimary: "#111111",
+  textSecondary: "#626C76",
+  textMuted: "#939BA3",
+  border: "#E4E8EC",
+  brand: PRIMARY,
+  brandLight: "#EEEEFF",
+  success: "#287A52",
+  successLight: "#EAF6EF",
+};
 
 type UserRole =
   | "student"
@@ -40,6 +61,7 @@ type HomeProfile = {
   id: string;
   full_name: string | null;
   username: string | null;
+  headline: string | null;
   role: UserRole | null;
   avatar_url: string | null;
   bio: string | null;
@@ -50,171 +72,126 @@ type HomeProfile = {
   website_url?: string | null;
 };
 
-type FeedPost = {
-  id: string;
-  author: string;
-  initials: string;
-  headline: string;
-  time: string;
-  content: string;
-  likes: number;
-  comments: number;
-  shares: number;
-  liked: boolean;
-};
-
-type Opportunity = {
-  title: string;
-  company: string;
-  companyInitials: string;
-  location: string;
-  type: string;
-  match: number;
-  closingDate: string;
-  skills: string[];
-};
-
-type EventItem = {
-  id: string;
-  title: string;
-  date: string;
-  month: string;
-  time: string;
-  location: string;
-  category: string;
-};
-
 type SuggestedConnection = {
   id: string;
   full_name: string | null;
   username: string | null;
+  headline: string | null;
   role: UserRole | null;
   avatar_url: string | null;
   bio: string | null;
 };
 
-/* ==========================================================================
-   TEMPORARY DATA
-
-   Posts, opportunities and events stay temporary until we confirm the
-   existing Supabase table schemas.
-
-   Profiles and follows ARE connected to Supabase.
-   ========================================================================== */
-
-const initialPosts: FeedPost[] = [
-  {
-    id: "post-1",
-    author: "Thabo Mokoena",
-    initials: "TM",
-    headline: "Software Engineer · Richfield Alumni",
-    time: "2h",
-    content:
-      "Excited to share that I have started a new role as a Backend Software Engineer. One thing I learnt during my transition from university into industry is that consistently building projects matters just as much as completing coursework.",
-    likes: 42,
-    comments: 8,
-    shares: 3,
-    liked: false,
-  },
-  {
-    id: "post-2",
-    author: "Richfield Career Development",
-    initials: "RC",
-    headline: "Career Development",
-    time: "5h",
-    content:
-      "Applications are now open for the upcoming industry networking session. Students interested in software development, cloud computing and cybersecurity are encouraged to attend.",
-    likes: 76,
-    comments: 14,
-    shares: 11,
-    liked: false,
-  },
-  {
-    id: "post-3",
-    author: "Lerato Nkosi",
-    initials: "LN",
-    headline: "BSc IT · Final Year Student",
-    time: "1d",
-    content:
-      "Just completed my first full-stack project using React, Node.js and PostgreSQL. Looking forward to connecting with other students working on interesting software projects.",
-    likes: 31,
-    comments: 6,
-    shares: 2,
-    liked: false,
-  },
-];
-
-const recommendedOpportunity: Opportunity = {
-  title: "Graduate Software Developer",
-  company: "Tech Solutions Africa",
-  companyInitials: "TS",
-  location: "Johannesburg, Gauteng",
-  type: "Graduate Programme",
-  match: 92,
-  closingDate: "18 Sep 2026",
-  skills: ["Java", "Spring Boot", "REST APIs"],
+type RawPost = {
+  id: string;
+  user_id: string;
+  content: string | null;
+  image_url: string | null;
+  media_type: string | null;
+  visibility: string | null;
+  created_at: string;
 };
 
-const upcomingEvents: EventItem[] = [
-  {
-    id: "event-1",
-    title: "Technology Career Fair",
-    date: "18",
-    month: "SEP",
-    time: "10:00",
-    location: "Richfield Centurion Campus",
-    category: "Career Fair",
-  },
-  {
-    id: "event-2",
-    title: "Building Your Developer Portfolio",
-    date: "22",
-    month: "SEP",
-    time: "14:00",
-    location: "Online",
-    category: "Workshop",
-  },
-  {
-    id: "event-3",
-    title: "Industry Networking Evening",
-    date: "26",
-    month: "SEP",
-    time: "17:30",
-    location: "Richfield Sandton Campus",
-    category: "Networking",
-  },
-];
+type FeedPost = RawPost & {
+  author: HomeProfile | null;
 
-/* ==========================================================================
-   HELPERS
-   ========================================================================== */
+  likeCount: number;
+  commentCount: number;
+  shareCount: number;
 
-function getInitials(name: string | null) {
+  liked: boolean;
+
+  rankingScore: number;
+};
+
+type Opportunity = {
+  id: string;
+  business_id: string;
+
+  title: string;
+  description: string;
+
+  opportunity_type: string;
+
+  location: string | null;
+  work_mode: string | null;
+
+  required_skills: string[];
+  programme_keywords: string[];
+
+  application_url: string | null;
+  closing_date: string | null;
+
+  status: string;
+  created_at: string;
+
+  company_name: string;
+};
+
+type EventItem = {
+  id: string;
+  created_by: string;
+
+  title: string;
+  description: string | null;
+
+  event_type: string | null;
+
+  location: string | null;
+
+  starts_at: string;
+  ends_at: string | null;
+
+  registration_url: string | null;
+
+  relevant_programmes: string[];
+  relevant_roles: string[];
+
+  image_url: string | null;
+
+  status: string;
+
+  created_at: string;
+};
+
+function getInitials(
+  name: string | null
+) {
   if (!name) {
     return "U";
   }
 
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+  const pieces =
+    name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
 
-  if (parts.length === 0) {
+  if (pieces.length === 0) {
     return "U";
   }
 
-  if (parts.length === 1) {
-    return parts[0].charAt(0).toUpperCase();
+  if (pieces.length === 1) {
+    return pieces[0]
+      .charAt(0)
+      .toUpperCase();
   }
 
-  return `${parts[0]
-    .charAt(0)
-    .toUpperCase()}${parts[parts.length - 1]
-    .charAt(0)
-    .toUpperCase()}`;
+  return (
+    pieces[0]
+      .charAt(0)
+      .toUpperCase() +
+    pieces[
+      pieces.length - 1
+    ]
+      .charAt(0)
+      .toUpperCase()
+  );
 }
 
-function getRoleLabel(role: UserRole | null) {
+function getRoleLabel(
+  role: UserRole | null
+) {
   switch (role) {
     case "student":
       return "Student";
@@ -226,7 +203,7 @@ function getRoleLabel(role: UserRole | null) {
       return "Business";
 
     case "admin":
-      return "Admin";
+      return "Richfield";
 
     default:
       return "Member";
@@ -234,7 +211,8 @@ function getRoleLabel(role: UserRole | null) {
 }
 
 function getGreeting() {
-  const hour = new Date().getHours();
+  const hour =
+    new Date().getHours();
 
   if (hour < 12) {
     return "Good morning";
@@ -247,380 +225,1270 @@ function getGreeting() {
   return "Good evening";
 }
 
-/* ==========================================================================
-   MAIN HOME SCREEN
-   ========================================================================== */
+function formatRelativeTime(
+  value: string
+) {
+  const created =
+    new Date(value);
+
+  const seconds =
+    Math.floor(
+      (Date.now() -
+        created.getTime()) /
+        1000
+    );
+
+  if (seconds < 60) {
+    return "now";
+  }
+
+  const minutes =
+    Math.floor(
+      seconds / 60
+    );
+
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  const hours =
+    Math.floor(
+      minutes / 60
+    );
+
+  if (hours < 24) {
+    return `${hours}h`;
+  }
+
+  const days =
+    Math.floor(
+      hours / 24
+    );
+
+  if (days < 7) {
+    return `${days}d`;
+  }
+
+  return created.toLocaleDateString(
+    "en-ZA",
+    {
+      day: "numeric",
+      month: "short",
+    }
+  );
+}
+
+function formatOpportunityType(
+  value: string
+) {
+  switch (value) {
+    case "internship":
+      return "Internship";
+
+    case "learnership":
+      return "Learnership";
+
+    case "part_time":
+      return "Part-time";
+
+    case "graduate":
+      return "Graduate Programme";
+
+    case "job":
+      return "Job";
+
+    default:
+      return value;
+  }
+}
+
+function formatDate(
+  value?: string | null
+) {
+  if (!value) {
+    return "No closing date";
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return value;
+  }
+
+  return date.toLocaleDateString(
+    "en-ZA",
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }
+  );
+}
+
+function getEventMonth(
+  startsAt: string
+) {
+  return new Date(
+    startsAt
+  )
+    .toLocaleDateString(
+      "en-ZA",
+      {
+        month: "short",
+      }
+    )
+    .toUpperCase();
+}
+
+function getEventDay(
+  startsAt: string
+) {
+  return new Date(
+    startsAt
+  ).getDate();
+}
+
+function getEventTime(
+  startsAt: string
+) {
+  return new Date(
+    startsAt
+  ).toLocaleTimeString(
+    "en-ZA",
+    {
+      hour: "2-digit",
+      minute: "2-digit",
+    }
+  );
+}
+
+/* =========================================================
+   HOME
+   ========================================================= */
 
 export default function HomeScreen() {
-  const [posts, setPosts] =
-    useState<FeedPost[]>(initialPosts);
+  const [
+    profile,
+    setProfile,
+  ] =
+    useState<HomeProfile | null>(
+      null
+    );
 
-  const [profile, setProfile] =
-    useState<HomeProfile | null>(null);
+  const [
+    posts,
+    setPosts,
+  ] =
+    useState<FeedPost[]>([]);
 
-  const [suggestions, setSuggestions] =
-    useState<SuggestedConnection[]>([]);
+  const [
+    opportunities,
+    setOpportunities,
+  ] =
+    useState<Opportunity[]>([]);
 
-  const [following, setFollowing] =
+  const [
+    events,
+    setEvents,
+  ] =
+    useState<EventItem[]>([]);
+
+  const [
+    suggestions,
+    setSuggestions,
+  ] =
+    useState<
+      SuggestedConnection[]
+    >([]);
+
+  const [
+    following,
+    setFollowing,
+  ] =
     useState<string[]>([]);
 
-  const [loading, setLoading] =
+  const [
+    loading,
+    setLoading,
+  ] =
     useState(true);
 
-  const [refreshing, setRefreshing] =
+  const [
+    refreshing,
+    setRefreshing,
+  ] =
     useState(false);
 
-  const [followLoading, setFollowLoading] =
+  const [
+    followLoading,
+    setFollowLoading,
+  ] =
     useState<string[]>([]);
 
-  /* ------------------------------------------------------------------------
-     LOAD PROFILE
-     ------------------------------------------------------------------------ */
+  const [
+    likeLoading,
+    setLikeLoading,
+  ] =
+    useState<string[]>([]);
 
-  const loadProfile = useCallback(
-    async (userId: string) => {
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("profiles")
-        .select(`
-          id,
-          full_name,
-          username,
-          role,
-          avatar_url,
-          bio,
-          linkedin_url,
-          github_url,
-          instagram_url,
-          website_url
-        `)
-        .eq("id", userId)
-        .single();
+  /* =========================================================
+     PROFILE
+     ========================================================= */
 
-      if (error) {
-        throw error;
-      }
+  const loadProfile =
+    useCallback(
+      async (
+        userId: string
+      ) => {
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .from(
+              "profiles"
+            )
+            .select(
+              `
+              id,
+              full_name,
+              username,
+              headline,
+              role,
+              avatar_url,
+              bio,
+              linkedin_url,
+              github_url,
+              instagram_url,
+              website_url
+              `
+            )
+            .eq(
+              "id",
+              userId
+            )
+            .single();
 
-      setProfile(data as HomeProfile);
-
-      return data as HomeProfile;
-    },
-    []
-  );
-
-  /* ------------------------------------------------------------------------
-     LOAD FOLLOWING
-     ------------------------------------------------------------------------ */
-
-  const loadFollowing = useCallback(
-    async (userId: string) => {
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("follows")
-        .select("following_id")
-        .eq("follower_id", userId);
-
-      if (error) {
-        throw error;
-      }
-
-      const ids = (data || []).map(
-        (item) => item.following_id
-      );
-
-      setFollowing(ids);
-
-      return ids;
-    },
-    []
-  );
-
-  /* ------------------------------------------------------------------------
-     LOAD SUGGESTIONS
-     ------------------------------------------------------------------------ */
-
-  const loadSuggestions = useCallback(
-    async (
-      userId: string,
-      followedIds: string[]
-    ) => {
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("profiles")
-        .select(`
-          id,
-          full_name,
-          username,
-          role,
-          avatar_url,
-          bio
-        `)
-        .neq("id", userId)
-        .eq("status", "active")
-        .in("role", [
-          "student",
-          "alumni",
-          "business",
-        ])
-        .order("full_name", {
-          ascending: true,
-        })
-        .limit(20);
-
-      if (error) {
-        throw error;
-      }
-
-      const availablePeople = (
-        (data || []) as SuggestedConnection[]
-      )
-        .filter(
-          (person) =>
-            !followedIds.includes(person.id)
-        )
-        .slice(0, 6);
-
-      setSuggestions(availablePeople);
-    },
-    []
-  );
-
-  /* ------------------------------------------------------------------------
-     LOAD HOME
-     ------------------------------------------------------------------------ */
-
-  const loadHome = useCallback(
-    async (showLoader = false) => {
-      try {
-        if (showLoader) {
-          setLoading(true);
+        if (error) {
+          throw error;
         }
+
+        const result =
+          data as HomeProfile;
+
+        setProfile(
+          result
+        );
+
+        return result;
+      },
+      []
+    );
+
+  /* =========================================================
+     FOLLOWING
+     ========================================================= */
+
+  const loadFollowing =
+    useCallback(
+      async (
+        userId: string
+      ) => {
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .from(
+              "follows"
+            )
+            .select(
+              "following_id"
+            )
+            .eq(
+              "follower_id",
+              userId
+            );
+
+        if (error) {
+          throw error;
+        }
+
+        const ids =
+          (
+            data || []
+          ).map(
+            item =>
+              item.following_id
+          );
+
+        setFollowing(
+          ids
+        );
+
+        return ids;
+      },
+      []
+    );
+
+  /* =========================================================
+     PEOPLE
+     ========================================================= */
+
+  const loadSuggestions =
+    useCallback(
+      async (
+        userId: string,
+        followedIds:
+          string[]
+      ) => {
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .from(
+              "profiles"
+            )
+            .select(
+              `
+              id,
+              full_name,
+              username,
+              headline,
+              role,
+              avatar_url,
+              bio
+              `
+            )
+            .neq(
+              "id",
+              userId
+            )
+            .eq(
+              "status",
+              "active"
+            )
+            .in(
+              "role",
+              [
+                "student",
+                "alumni",
+                "business",
+              ]
+            )
+            .limit(30);
+
+        if (error) {
+          throw error;
+        }
+
+        const result =
+          (
+            data || []
+          )
+            .filter(
+              item =>
+                !followedIds.includes(
+                  item.id
+                )
+            )
+            .sort(
+              () =>
+                Math.random() -
+                0.5
+            )
+            .slice(
+              0,
+              8
+            ) as SuggestedConnection[];
+
+        setSuggestions(
+          result
+        );
+      },
+      []
+    );
+
+  /* =========================================================
+     FYP FEED
+     ========================================================= */
+
+  const loadFeed =
+    useCallback(
+      async (
+        userId: string,
+        followedIds:
+          string[]
+      ) => {
+        const {
+          data:
+            postData,
+          error:
+            postError,
+        } =
+          await supabase
+            .from(
+              "posts"
+            )
+            .select(
+              `
+              id,
+              user_id,
+              content,
+              image_url,
+              media_type,
+              visibility,
+              created_at
+              `
+            )
+            .order(
+              "created_at",
+              {
+                ascending:
+                  false,
+              }
+            )
+            .limit(100);
+
+        if (postError) {
+          throw postError;
+        }
+
+        const rawPosts =
+          (postData ||
+            []) as RawPost[];
+
+        if (
+          rawPosts.length ===
+          0
+        ) {
+          setPosts([]);
+          return;
+        }
+
+        const authorIds =
+          [
+            ...new Set(
+              rawPosts.map(
+                post =>
+                  post.user_id
+              )
+            ),
+          ];
+
+        const postIds =
+          rawPosts.map(
+            post =>
+              post.id
+          );
+
+        const [
+          profilesResult,
+          likesResult,
+          commentsResult,
+          sharesResult,
+        ] =
+          await Promise.all([
+            supabase
+              .from(
+                "profiles"
+              )
+              .select(
+                `
+                id,
+                full_name,
+                username,
+                headline,
+                role,
+                avatar_url,
+                bio
+                `
+              )
+              .in(
+                "id",
+                authorIds
+              ),
+
+            supabase
+              .from(
+                "post_likes"
+              )
+              .select(
+                "post_id,user_id"
+              )
+              .in(
+                "post_id",
+                postIds
+              ),
+
+            supabase
+              .from(
+                "post_comments"
+              )
+              .select(
+                "post_id"
+              )
+              .in(
+                "post_id",
+                postIds
+              ),
+
+            supabase
+              .from(
+                "post_shares"
+              )
+              .select(
+                "post_id"
+              )
+              .in(
+                "post_id",
+                postIds
+              ),
+          ]);
+
+        if (
+          profilesResult.error
+        ) {
+          throw profilesResult.error;
+        }
+
+        if (
+          likesResult.error
+        ) {
+          throw likesResult.error;
+        }
+
+        if (
+          commentsResult.error
+        ) {
+          throw commentsResult.error;
+        }
+
+        if (
+          sharesResult.error
+        ) {
+          throw sharesResult.error;
+        }
+
+        const authorMap =
+          new Map<
+            string,
+            HomeProfile
+          >();
+
+        (
+          profilesResult.data ||
+          []
+        ).forEach(
+          item => {
+            authorMap.set(
+              item.id,
+              item as HomeProfile
+            );
+          }
+        );
+
+        const likes =
+          likesResult.data ||
+          [];
+
+        const comments =
+          commentsResult.data ||
+          [];
+
+        const shares =
+          sharesResult.data ||
+          [];
+
+        const currentTime =
+          Date.now();
+
+        const feed =
+          rawPosts.map(
+            post => {
+              const postLikes =
+                likes.filter(
+                  item =>
+                    item.post_id ===
+                    post.id
+                );
+
+              const likeCount =
+                postLikes.length;
+
+              const commentCount =
+                comments.filter(
+                  item =>
+                    item.post_id ===
+                    post.id
+                ).length;
+
+              const shareCount =
+                shares.filter(
+                  item =>
+                    item.post_id ===
+                    post.id
+                ).length;
+
+              const liked =
+                postLikes.some(
+                  item =>
+                    item.user_id ===
+                    userId
+                );
+
+              const ageHours =
+                Math.max(
+                  0,
+                  (
+                    currentTime -
+                    new Date(
+                      post.created_at
+                    ).getTime()
+                  ) /
+                    3600000
+                );
+
+              /*
+               * Simple FYP ranking.
+               *
+               * Following:
+               * +50
+               *
+               * Like:
+               * +2
+               *
+               * Comment:
+               * +4
+               *
+               * Share:
+               * +5
+               *
+               * Newer posts:
+               * ranked higher
+               */
+
+              let rankingScore =
+                0;
+
+              if (
+                followedIds.includes(
+                  post.user_id
+                )
+              ) {
+                rankingScore +=
+                  50;
+              }
+
+              if (
+                post.user_id ===
+                userId
+              ) {
+                rankingScore +=
+                  8;
+              }
+
+              rankingScore +=
+                likeCount * 2;
+
+              rankingScore +=
+                commentCount *
+                4;
+
+              rankingScore +=
+                shareCount * 5;
+
+              rankingScore +=
+                Math.max(
+                  0,
+                  48 -
+                    ageHours
+                );
+
+              return {
+                ...post,
+
+                author:
+                  authorMap.get(
+                    post.user_id
+                  ) || null,
+
+                likeCount,
+
+                commentCount,
+
+                shareCount,
+
+                liked,
+
+                rankingScore,
+              };
+            }
+          );
+
+        feed.sort(
+          (a, b) =>
+            b.rankingScore -
+            a.rankingScore
+        );
+
+        setPosts(
+          feed
+        );
+      },
+      []
+    );
+
+  /* =========================================================
+     OPPORTUNITIES
+     ========================================================= */
+
+  const loadOpportunities =
+    useCallback(
+      async () => {
+        const today =
+          new Date()
+            .toISOString()
+            .slice(
+              0,
+              10
+            );
 
         const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
+          data,
+          error,
+        } =
+          await supabase
+            .from(
+              "opportunities"
+            )
+            .select(
+              `
+              id,
+              business_id,
+              title,
+              description,
+              opportunity_type,
+              location,
+              work_mode,
+              required_skills,
+              programme_keywords,
+              application_url,
+              closing_date,
+              status,
+              created_at
+              `
+            )
+            .eq(
+              "status",
+              "approved"
+            )
+            .or(
+              `closing_date.is.null,closing_date.gte.${today}`
+            )
+            .order(
+              "created_at",
+              {
+                ascending:
+                  false,
+              }
+            )
+            .limit(10);
 
-        if (userError) {
-          throw userError;
+        if (error) {
+          throw error;
         }
 
-        if (!user) {
-          setProfile(null);
-          setSuggestions([]);
-          setFollowing([]);
+        const rows =
+          data || [];
+
+        if (
+          rows.length ===
+          0
+        ) {
+          setOpportunities(
+            []
+          );
 
           return;
         }
 
-        await loadProfile(user.id);
+        const businessIds =
+          [
+            ...new Set(
+              rows.map(
+                item =>
+                  item.business_id
+              )
+            ),
+          ];
 
-        const followedIds =
-          await loadFollowing(user.id);
+        const {
+          data:
+            businesses,
+        } =
+          await supabase
+            .from(
+              "business_profiles"
+            )
+            .select(
+              `
+              user_id,
+              organisation_name
+              `
+            )
+            .in(
+              "user_id",
+              businessIds
+            );
 
-        await loadSuggestions(
-          user.id,
-          followedIds
+        const businessMap =
+          new Map<
+            string,
+            string
+          >();
+
+        (
+          businesses || []
+        ).forEach(
+          business => {
+            businessMap.set(
+              business.user_id,
+              business.organisation_name ||
+                "Business"
+            );
+          }
         );
-      } catch (error: any) {
-        console.log(
-          "Home error:",
-          error
-        );
 
-        Alert.alert(
-          "Home error",
-          error?.message ||
-            "Could not load your home page."
-        );
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [
-      loadProfile,
-      loadFollowing,
-      loadSuggestions,
-    ]
-  );
+        setOpportunities(
+          rows.map(
+            item => ({
+              ...item,
 
-  /* ------------------------------------------------------------------------
-     LOAD WHEN SCREEN OPENS
-     ------------------------------------------------------------------------ */
+              required_skills:
+                item.required_skills ||
+                [],
+
+              programme_keywords:
+                item.programme_keywords ||
+                [],
+
+              company_name:
+                businessMap.get(
+                  item.business_id
+                ) ||
+                "Richfield Partner",
+            })
+          ) as Opportunity[]
+        );
+      },
+      []
+    );
+
+  /* =========================================================
+     EVENTS
+     ========================================================= */
+
+  const loadEvents =
+    useCallback(
+      async (
+        currentProfile?:
+          HomeProfile | null
+      ) => {
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .from(
+              "events"
+            )
+            .select(
+              `
+              id,
+              created_by,
+              title,
+              description,
+              event_type,
+              location,
+              starts_at,
+              ends_at,
+              registration_url,
+              relevant_programmes,
+              relevant_roles,
+              image_url,
+              status,
+              created_at
+              `
+            )
+            .eq(
+              "status",
+              "published"
+            )
+            .gte(
+              "starts_at",
+              new Date()
+                .toISOString()
+            )
+            .order(
+              "starts_at",
+              {
+                ascending:
+                  true,
+              }
+            )
+            .limit(12);
+
+        if (error) {
+          throw error;
+        }
+
+        let result =
+          (
+            data || []
+          ) as EventItem[];
+
+        if (
+          currentProfile
+            ?.role
+        ) {
+          result =
+            result.filter(
+              event => {
+                const roles =
+                  event.relevant_roles ||
+                  [];
+
+                return (
+                  roles.length ===
+                    0 ||
+                  roles.includes(
+                    currentProfile.role!
+                  )
+                );
+              }
+            );
+        }
+
+        setEvents(
+          result
+        );
+      },
+      []
+    );
+
+  /* =========================================================
+     LOAD EVERYTHING
+     ========================================================= */
+
+  const loadHome =
+    useCallback(
+      async (
+        showLoader =
+          false
+      ) => {
+        try {
+          if (
+            showLoader
+          ) {
+            setLoading(
+              true
+            );
+          }
+
+          const {
+            data: {
+              user,
+            },
+            error:
+              userError,
+          } =
+            await supabase.auth.getUser();
+
+          if (
+            userError
+          ) {
+            throw userError;
+          }
+
+          if (!user) {
+            return;
+          }
+
+          const currentProfile =
+            await loadProfile(
+              user.id
+            );
+
+          const followedIds =
+            await loadFollowing(
+              user.id
+            );
+
+          await Promise.all([
+            loadFeed(
+              user.id,
+              followedIds
+            ),
+
+            loadSuggestions(
+              user.id,
+              followedIds
+            ),
+
+            loadOpportunities(),
+
+            loadEvents(
+              currentProfile
+            ),
+          ]);
+        } catch (
+          error: any
+        ) {
+          console.log(
+            "Home loading error:",
+            error
+          );
+
+          Alert.alert(
+            "Home",
+            error?.message ||
+              "Could not load your feed."
+          );
+        } finally {
+          setLoading(
+            false
+          );
+
+          setRefreshing(
+            false
+          );
+        }
+      },
+      [
+        loadProfile,
+        loadFollowing,
+        loadFeed,
+        loadSuggestions,
+        loadOpportunities,
+        loadEvents,
+      ]
+    );
 
   useFocusEffect(
-    useCallback(() => {
-      loadHome(true);
-    }, [loadHome])
+    useCallback(
+      () => {
+        loadHome(
+          true
+        );
+      },
+      [
+        loadHome,
+      ]
+    )
   );
 
-  /* ------------------------------------------------------------------------
+  /* =========================================================
      REALTIME
-
-     Hackathon version uses Postgres Changes.
-
-     profiles and follows must be in:
-     supabase_realtime
-     ------------------------------------------------------------------------ */
+     ========================================================= */
 
   useEffect(() => {
-    if (!profile?.id) {
+    if (
+      !profile?.id
+    ) {
       return;
     }
 
     const userId =
       profile.id;
 
-    const profileChannel =
+    const channel =
       supabase
         .channel(
-          `home-profiles-${userId}`
+          `home-realtime-${userId}`
         )
+
         .on(
           "postgres_changes",
           {
             event: "*",
-            schema: "public",
-            table: "profiles",
+            schema:
+              "public",
+            table:
+              "posts",
           },
-          async () => {
-            try {
-              await loadProfile(
-                userId
-              );
-            } catch (error) {
-              console.log(
-                "Home realtime profile error:",
-                error
-              );
-            }
+          () => {
+            loadHome(
+              false
+            );
           }
         )
-        .subscribe((status) => {
-          console.log(
-            "Home profiles realtime:",
-            status
-          );
-        });
 
-    const followsChannel =
-      supabase
-        .channel(
-          `home-follows-${userId}`
-        )
         .on(
           "postgres_changes",
           {
             event: "*",
-            schema: "public",
-            table: "follows",
+            schema:
+              "public",
+            table:
+              "post_likes",
           },
-          async () => {
-            try {
-              const followedIds =
-                await loadFollowing(
-                  userId
-                );
-
-              await loadSuggestions(
-                userId,
-                followedIds
-              );
-            } catch (error) {
-              console.log(
-                "Home realtime follow error:",
-                error
-              );
-            }
+          () => {
+            loadHome(
+              false
+            );
           }
         )
-        .subscribe((status) => {
-          console.log(
-            "Home follows realtime:",
-            status
-          );
-        });
+
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "post_comments",
+          },
+          () => {
+            loadHome(
+              false
+            );
+          }
+        )
+
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "post_shares",
+          },
+          () => {
+            loadHome(
+              false
+            );
+          }
+        )
+
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "follows",
+          },
+          () => {
+            loadHome(
+              false
+            );
+          }
+        )
+
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "opportunities",
+          },
+          () => {
+            loadHome(
+              false
+            );
+          }
+        )
+
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "events",
+          },
+          () => {
+            loadHome(
+              false
+            );
+          }
+        )
+
+        .subscribe(
+          status => {
+            console.log(
+              "Home realtime:",
+              status
+            );
+          }
+        );
 
     return () => {
       supabase.removeChannel(
-        profileChannel
-      );
-
-      supabase.removeChannel(
-        followsChannel
+        channel
       );
     };
   }, [
     profile?.id,
-    loadProfile,
-    loadFollowing,
-    loadSuggestions,
+    loadHome,
   ]);
 
-  /* ------------------------------------------------------------------------
-     REFRESH
-     ------------------------------------------------------------------------ */
+  /* =========================================================
+     FOLLOW
+     ========================================================= */
 
-  const handleRefresh =
-    async () => {
-      setRefreshing(true);
+  async function toggleFollow(
+    profileId: string
+  ) {
+    if (
+      !profile?.id
+    ) {
+      return;
+    }
 
-      await loadHome(false);
-    };
+    if (
+      followLoading.includes(
+        profileId
+      )
+    ) {
+      return;
+    }
 
-  /* ------------------------------------------------------------------------
-     FOLLOW / UNFOLLOW
-     ------------------------------------------------------------------------ */
-
-  const toggleFollow =
-    async (
-      profileId: string
-    ) => {
-      if (!profile?.id) {
-        return;
-      }
-
-      if (
-        followLoading.includes(
-          profileId
-        )
-      ) {
-        return;
-      }
-
-      const isFollowing =
-        following.includes(
-          profileId
-        );
-
-      setFollowLoading(
-        (previous) => [
-          ...previous,
-          profileId,
-        ]
+    const isFollowing =
+      following.includes(
+        profileId
       );
 
-      try {
-        if (isFollowing) {
-          setFollowing(
-            (previous) =>
-              previous.filter(
-                (id) =>
-                  id !== profileId
-              )
-          );
+    setFollowLoading(
+      current => [
+        ...current,
+        profileId,
+      ]
+    );
 
-          const {
-            error,
-          } = await supabase
-            .from("follows")
+    try {
+      if (
+        isFollowing
+      ) {
+        const {
+          error,
+        } =
+          await supabase
+            .from(
+              "follows"
+            )
             .delete()
             .eq(
               "follower_id",
@@ -631,26 +1499,26 @@ export default function HomeScreen() {
               profileId
             );
 
-          if (error) {
-            throw error;
-          }
-        } else {
-          setFollowing(
-            (previous) =>
-              previous.includes(
-                profileId
-              )
-                ? previous
-                : [
-                    ...previous,
-                    profileId,
-                  ]
-          );
+        if (error) {
+          throw error;
+        }
 
-          const {
-            error,
-          } = await supabase
-            .from("follows")
+        setFollowing(
+          current =>
+            current.filter(
+              id =>
+                id !==
+                profileId
+            )
+        );
+      } else {
+        const {
+          error,
+        } =
+          await supabase
+            .from(
+              "follows"
+            )
             .insert({
               follower_id:
                 profile.id,
@@ -659,89 +1527,254 @@ export default function HomeScreen() {
                 profileId,
             });
 
-          if (
-            error &&
-            error.code !==
-              "23505"
-          ) {
-            throw error;
-          }
-
-          setSuggestions(
-            (previous) =>
-              previous.filter(
-                (item) =>
-                  item.id !==
-                  profileId
-              )
-          );
+        if (
+          error &&
+          error.code !==
+            "23505"
+        ) {
+          throw error;
         }
-      } catch (error: any) {
-        console.log(
-          "Home follow error:",
-          error
+
+        setFollowing(
+          current =>
+            current.includes(
+              profileId
+            )
+              ? current
+              : [
+                  ...current,
+                  profileId,
+                ]
         );
 
-        await loadHome(false);
-
-        Alert.alert(
-          "Unable to update",
-          error?.message ||
-            "Could not update this connection."
-        );
-      } finally {
-        setFollowLoading(
-          (previous) =>
-            previous.filter(
-              (id) =>
-                id !== profileId
+        setSuggestions(
+          current =>
+            current.filter(
+              item =>
+                item.id !==
+                profileId
             )
         );
       }
-    };
+    } catch (
+      error: any
+    ) {
+      Alert.alert(
+        "Connection",
+        error?.message ||
+          "Could not update this connection."
+      );
 
-  /* ------------------------------------------------------------------------
-     TEMPORARY POST LIKE
-
-     This stays local until we connect the existing post/like schema.
-     ------------------------------------------------------------------------ */
-
-  const handleLike =
-    (postId: string) => {
-      setPosts(
-        (currentPosts) =>
-          currentPosts.map(
-            (post) => {
-              if (
-                post.id !==
-                postId
-              ) {
-                return post;
-              }
-
-              return {
-                ...post,
-
-                liked:
-                  !post.liked,
-
-                likes:
-                  post.liked
-                    ? Math.max(
-                        0,
-                        post.likes - 1
-                      )
-                    : post.likes +
-                      1,
-              };
-            }
+      loadHome(
+        false
+      );
+    } finally {
+      setFollowLoading(
+        current =>
+          current.filter(
+            id =>
+              id !==
+              profileId
           )
+      );
+    }
+  }
+
+  /* =========================================================
+     LIKE
+     ========================================================= */
+
+  async function toggleLike(
+    post: FeedPost
+  ) {
+    if (
+      !profile?.id
+    ) {
+      return;
+    }
+
+    if (
+      likeLoading.includes(
+        post.id
+      )
+    ) {
+      return;
+    }
+
+    setLikeLoading(
+      current => [
+        ...current,
+        post.id,
+      ]
+    );
+
+    const nextLiked =
+      !post.liked;
+
+    setPosts(
+      current =>
+        current.map(
+          item =>
+            item.id ===
+            post.id
+              ? {
+                  ...item,
+
+                  liked:
+                    nextLiked,
+
+                  likeCount:
+                    nextLiked
+                      ? item.likeCount +
+                        1
+                      : Math.max(
+                          0,
+                          item.likeCount -
+                            1
+                        ),
+                }
+              : item
+        )
+    );
+
+    try {
+      if (
+        post.liked
+      ) {
+        const {
+          error,
+        } =
+          await supabase
+            .from(
+              "post_likes"
+            )
+            .delete()
+            .eq(
+              "post_id",
+              post.id
+            )
+            .eq(
+              "user_id",
+              profile.id
+            );
+
+        if (error) {
+          throw error;
+        }
+      } else {
+        const {
+          error,
+        } =
+          await supabase
+            .from(
+              "post_likes"
+            )
+            .insert({
+              post_id:
+                post.id,
+
+              user_id:
+                profile.id,
+            });
+
+        if (
+          error &&
+          error.code !==
+            "23505"
+        ) {
+          throw error;
+        }
+      }
+    } catch (
+      error: any
+    ) {
+      console.log(
+        "Like error:",
+        error
+      );
+
+      loadHome(
+        false
+      );
+    } finally {
+      setLikeLoading(
+        current =>
+          current.filter(
+            id =>
+              id !==
+              post.id
+          )
+      );
+    }
+  }
+
+  /* =========================================================
+     SHARE
+     ========================================================= */
+
+  async function sharePost(
+    post: FeedPost
+  ) {
+    if (
+      !profile?.id
+    ) {
+      return;
+    }
+
+    try {
+      const author =
+        post.author
+          ?.full_name ||
+        "a Richfield member";
+
+      await Share.share({
+        message:
+          post.content
+            ? `${author}: ${post.content}`
+            : `View this post from ${author} on Richfield Connect.`,
+      });
+
+      await supabase
+        .from(
+          "post_shares"
+        )
+        .insert({
+          post_id:
+            post.id,
+
+          user_id:
+            profile.id,
+        });
+    } catch (
+      error
+    ) {
+      console.log(
+        "Share error:",
+        error
+      );
+    }
+  }
+
+  const handleRefresh =
+    async () => {
+      setRefreshing(
+        true
+      );
+
+      await loadHome(
+        false
       );
     };
 
-  /* ------------------------------------------------------------------------
-     LOADING
-     ------------------------------------------------------------------------ */
+  const recommendedOpportunity =
+    useMemo(
+      () =>
+        opportunities[0] ||
+        null,
+      [
+        opportunities,
+      ]
+    );
 
   if (loading) {
     return (
@@ -753,7 +1786,7 @@ export default function HomeScreen() {
         <ActivityIndicator
           size="large"
           color={
-            COLORS.brand
+            PRIMARY
           }
         />
 
@@ -762,33 +1795,31 @@ export default function HomeScreen() {
             styles.loadingText
           }
         >
-          Loading your home...
+          Loading your feed...
         </Text>
       </SafeAreaView>
     );
   }
-
-  /* ------------------------------------------------------------------------
-     UI
-     ------------------------------------------------------------------------ */
 
   return (
     <SafeAreaView
       style={
         styles.safeArea
       }
-      edges={["bottom"]}
+      edges={[
+        "bottom",
+      ]}
     >
       <FlatList
-        data={posts}
-        keyExtractor={(
-          item
-        ) => item.id}
+        data={
+          posts
+        }
+        keyExtractor={
+          item =>
+            item.id
+        }
         showsVerticalScrollIndicator={
           false
-        }
-        contentContainerStyle={
-          styles.listContent
         }
         refreshControl={
           <RefreshControl
@@ -800,10 +1831,19 @@ export default function HomeScreen() {
             }
           />
         }
+        contentContainerStyle={
+          styles.listContent
+        }
         ListHeaderComponent={
-          <HomeContentHeader
+          <HomeHeader
             profile={
               profile
+            }
+            opportunity={
+              recommendedOpportunity
+            }
+            events={
+              events
             }
             suggestions={
               suggestions
@@ -814,7 +1854,7 @@ export default function HomeScreen() {
             followLoading={
               followLoading
             }
-            onToggleFollow={
+            onFollow={
               toggleFollow
             }
           />
@@ -823,19 +1863,60 @@ export default function HomeScreen() {
           item,
         }) => (
           <FeedPostCard
-            post={item}
+            post={
+              item
+            }
+            likeLoading={likeLoading.includes(
+              item.id
+            )}
             onLike={() =>
-              handleLike(
-                item.id
+              toggleLike(
+                item
+              )
+            }
+            onShare={() =>
+              sharePost(
+                item
               )
             }
           />
         )}
-        ListFooterComponent={
+        ListEmptyComponent={
           <View
             style={
-              styles.bottomSpacing
+              styles.emptyFeed
             }
+          >
+            <Ionicons
+              name="newspaper-outline"
+              size={40}
+              color="#AAA"
+            />
+
+            <Text
+              style={
+                styles.emptyFeedTitle
+              }
+            >
+              Your feed is quiet
+            </Text>
+
+            <Text
+              style={
+                styles.emptyFeedText
+              }
+            >
+              Follow people or create a
+              post to get your FYP
+              started.
+            </Text>
+          </View>
+        }
+        ListFooterComponent={
+          <View
+            style={{
+              height: 80,
+            }}
           />
         }
       />
@@ -843,22 +1924,35 @@ export default function HomeScreen() {
   );
 }
 
-/* ==========================================================================
-   HOME CONTENT HEADER
-   ========================================================================== */
+/* =========================================================
+   HOME HEADER
+   ========================================================= */
 
-function HomeContentHeader({
+function HomeHeader({
   profile,
+  opportunity,
+  events,
   suggestions,
   following,
   followLoading,
-  onToggleFollow,
+  onFollow,
 }: {
   profile: HomeProfile | null;
-  suggestions: SuggestedConnection[];
+
+  opportunity:
+    | Opportunity
+    | null;
+
+  events: EventItem[];
+
+  suggestions:
+    SuggestedConnection[];
+
   following: string[];
+
   followLoading: string[];
-  onToggleFollow: (
+
+  onFollow: (
     userId: string
   ) => void;
 }) {
@@ -889,7 +1983,8 @@ function HomeContentHeader({
             styles.welcomeTitle
           }
         >
-          Build your professional future.
+          Build your professional
+          future.
         </Text>
 
         <Text
@@ -897,338 +1992,151 @@ function HomeContentHeader({
             styles.welcomeDescription
           }
         >
-          Connect with students, alumni and industry professionals while discovering opportunities that match your career goals.
+          Connect, learn, share and
+          discover opportunities across
+          the Richfield community.
         </Text>
       </View>
 
-      <ProfileStrengthCard
-        profile={profile}
-      />
-
       <QuickActions />
 
-      <SectionHeader
-        title="Recommended for you"
-        action="View all"
-        onPress={() =>
-          router.push(
-            "/opportunities"
-          )
-        }
-      />
+      {opportunity ? (
+        <>
+          <SectionHeader
+            title="Recommended for you"
+            action="View all"
+            onPress={() =>
+              router.push(
+                "/opportunities"
+              )
+            }
+          />
 
-      <OpportunityCard
-        opportunity={
-          recommendedOpportunity
-        }
-      />
+          <OpportunityCard
+            opportunity={
+              opportunity
+            }
+          />
+        </>
+      ) : null}
 
-      <SectionHeader
-        title="Upcoming events"
-      />
+      {events.length >
+      0 ? (
+        <>
+          <SectionHeader
+            title="Upcoming events"
+          />
 
-      <EventsSection />
+          <EventsSection
+            events={
+              events
+            }
+          />
+        </>
+      ) : null}
 
-      <SectionHeader
-        title="People you may know"
-        action="View network"
-        onPress={() =>
-          router.push(
-            "/network"
-          )
-        }
-      />
+      {suggestions.length >
+      0 ? (
+        <>
+          <SectionHeader
+            title="People you may know"
+            action="View network"
+            onPress={() =>
+              router.push(
+                "/network"
+              )
+            }
+          />
 
-      <SuggestedConnections
-        suggestions={
-          suggestions
-        }
-        following={
-          following
-        }
-        followLoading={
-          followLoading
-        }
-        onToggleFollow={
-          onToggleFollow
-        }
-      />
+          <SuggestedConnections
+            suggestions={
+              suggestions
+            }
+            following={
+              following
+            }
+            followLoading={
+              followLoading
+            }
+            onFollow={
+              onFollow
+            }
+          />
+        </>
+      ) : null}
 
       <View
         style={
-          styles.feedHeading
+          styles.feedHeader
         }
       >
         <View>
           <Text
             style={
-              styles.sectionTitle
+              styles.feedTitle
             }
           >
-            Professional feed
+            For you
           </Text>
 
           <Text
             style={
-              styles.sectionSubtitle
+              styles.feedSubtitle
             }
           >
-            Updates from your Richfield community
+            Posts selected from your
+            Richfield community
           </Text>
         </View>
       </View>
 
       <CreatePostCard
-        profile={profile}
+        profile={
+          profile
+        }
       />
     </View>
   );
 }
 
-/* ==========================================================================
-   PROFILE STRENGTH
-   ========================================================================== */
-
-function ProfileStrengthCard({
-  profile,
-}: {
-  profile: HomeProfile | null;
-}) {
-  const fields = [
-    profile?.full_name,
-    profile?.username,
-    profile?.avatar_url,
-    profile?.bio,
-    profile?.linkedin_url,
-    profile?.github_url,
-    profile?.instagram_url,
-    profile?.website_url,
-  ];
-
-  const completedFields =
-    fields.filter(
-      (value) =>
-        typeof value ===
-          "string" &&
-        value.trim().length > 0
-    ).length;
-
-  const profileStrength =
-    fields.length > 0
-      ? Math.round(
-          (completedFields /
-            fields.length) *
-            100
-        )
-      : 0;
-
-  const missing: string[] =
-    [];
-
-  if (
-    !profile?.avatar_url
-  ) {
-    missing.push(
-      "profile photo"
-    );
-  }
-
-  if (!profile?.bio) {
-    missing.push("bio");
-  }
-
-  if (
-    !profile?.linkedin_url
-  ) {
-    missing.push(
-      "LinkedIn"
-    );
-  }
-
-  if (
-    !profile?.github_url
-  ) {
-    missing.push(
-      "GitHub"
-    );
-  }
-
-  const suggestion =
-    missing.length > 0
-      ? `Add ${missing
-          .slice(0, 2)
-          .join(" and ")}`
-      : "Your profile is looking great";
-
-  return (
-    <Pressable
-      style={
-        styles.profileStrengthCard
-      }
-      onPress={() =>
-        router.push(
-          "/profile"
-        )
-      }
-    >
-      <View
-        style={
-          styles.profileStrengthHeader
-        }
-      >
-        <View
-          style={
-            styles.profileStrengthIcon
-          }
-        >
-          <Ionicons
-            name="person-outline"
-            size={20}
-            color={
-              COLORS.white
-            }
-          />
-        </View>
-
-        <View
-          style={
-            styles.profileStrengthContent
-          }
-        >
-          <View
-            style={
-              styles.profileStrengthTitleRow
-            }
-          >
-            <Text
-              style={
-                styles.profileStrengthTitle
-              }
-            >
-              Profile strength
-            </Text>
-
-            <Text
-              style={
-                styles.profileStrengthPercentage
-              }
-            >
-              {
-                profileStrength
-              }
-              %
-            </Text>
-          </View>
-
-          <Text
-            style={
-              styles.profileStrengthDescription
-            }
-          >
-            Complete your profile to stand out to students, alumni and employers.
-          </Text>
-        </View>
-      </View>
-
-      <View
-        style={
-          styles.progressTrack
-        }
-      >
-        <View
-          style={[
-            styles.progressFill,
-            {
-              width:
-                `${profileStrength}%`,
-            },
-          ]}
-        />
-      </View>
-
-      <View
-        style={
-          styles.profileStrengthFooter
-        }
-      >
-        <View
-          style={
-            styles.suggestionContainer
-          }
-        >
-          <Ionicons
-            name="sparkles-outline"
-            size={15}
-            color={
-              COLORS.textSecondary
-            }
-          />
-
-          <Text
-            style={
-              styles.profileSuggestion
-            }
-          >
-            {suggestion}
-          </Text>
-        </View>
-
-        <Ionicons
-          name="chevron-forward"
-          size={17}
-          color={
-            COLORS.textSecondary
-          }
-        />
-      </View>
-    </Pressable>
-  );
-}
-
-/* ==========================================================================
+/* =========================================================
    QUICK ACTIONS
-   ========================================================================== */
+   ========================================================= */
 
 function QuickActions() {
-  const actions: {
-    title: string;
-    icon: IconName;
-    route?:
-      | "/opportunities"
-      | "/profile"
-      | "/network"
-      | "../ai-assistant"
-      | "../(student)/portfolio";
-  }[] = [
+  const actions = [
     {
-      title:
+      label:
         "Opportunities",
       icon:
-        "briefcase-outline",
+        "briefcase-outline" as const,
       route:
         "/opportunities",
     },
+
     {
-      title:
-        "Explore Alumni",
+      label:
+        "Network",
       icon:
-        "people-outline",
+        "people-outline" as const,
       route:
         "/network",
     },
+
     {
-      title:
+      label:
         "AI Assistant",
       icon:
-        "sparkles-outline",
-        route:
-          "../ai-assistant"
+        "sparkles-outline" as const,
+      route:
+        "../ai-assistant",
     },
+
     {
-      title:
+      label:
         "Portfolio",
       icon:
-        "folder-open-outline",
+        "folder-open-outline" as const,
       route:
         "../(student)/portfolio",
     },
@@ -1237,7 +2145,7 @@ function QuickActions() {
   return (
     <View
       style={
-        styles.quickActionsSection
+        styles.quickSection
       }
     >
       <Text
@@ -1250,31 +2158,27 @@ function QuickActions() {
 
       <View
         style={
-          styles.quickActionsGrid
+          styles.quickGrid
         }
       >
         {actions.map(
-          (action) => (
+          action => (
             <Pressable
               key={
-                action.title
+                action.label
               }
               style={
-                styles.quickAction
+                styles.quickItem
               }
-              onPress={() => {
-                if (
-                  action.route
-                ) {
-                  router.push(
-                    action.route
-                  );
-                }
-              }}
+              onPress={() =>
+                router.push(
+                  action.route as never
+                )
+              }
             >
               <View
                 style={
-                  styles.quickActionIcon
+                  styles.quickIcon
                 }
               >
                 <Ionicons
@@ -1283,18 +2187,18 @@ function QuickActions() {
                   }
                   size={21}
                   color={
-                    COLORS.textPrimary
+                    PRIMARY
                   }
                 />
               </View>
 
               <Text
                 style={
-                  styles.quickActionText
+                  styles.quickLabel
                 }
               >
                 {
-                  action.title
+                  action.label
                 }
               </Text>
             </Pressable>
@@ -1305,9 +2209,9 @@ function QuickActions() {
   );
 }
 
-/* ==========================================================================
-   SECTION HEADER
-   ========================================================================== */
+/* =========================================================
+   HEADINGS
+   ========================================================= */
 
 function SectionHeader({
   title,
@@ -1338,7 +2242,6 @@ function SectionHeader({
           onPress={
             onPress
           }
-          hitSlop={8}
         >
           <Text
             style={
@@ -1353,15 +2256,20 @@ function SectionHeader({
   );
 }
 
-/* ==========================================================================
+/* =========================================================
    OPPORTUNITY
-   ========================================================================== */
+   ========================================================= */
 
 function OpportunityCard({
   opportunity,
 }: {
   opportunity: Opportunity;
 }) {
+  const companyInitials =
+    getInitials(
+      opportunity.company_name
+    );
+
   return (
     <Pressable
       style={
@@ -1375,7 +2283,7 @@ function OpportunityCard({
     >
       <View
         style={
-          styles.opportunityHeader
+          styles.opportunityTop
         }
       >
         <View
@@ -1389,15 +2297,15 @@ function OpportunityCard({
             }
           >
             {
-              opportunity.companyInitials
+              companyInitials
             }
           </Text>
         </View>
 
         <View
-          style={
-            styles.opportunityMain
-          }
+          style={{
+            flex: 1,
+          }}
         >
           <Text
             style={
@@ -1418,13 +2326,13 @@ function OpportunityCard({
             }
           >
             {
-              opportunity.company
+              opportunity.company_name
             }
           </Text>
 
           <View
             style={
-              styles.opportunityLocation
+              styles.metaRow
             }
           >
             <Ionicons
@@ -1437,100 +2345,58 @@ function OpportunityCard({
 
             <Text
               style={
-                styles.locationText
+                styles.metaText
               }
             >
-              {
-                opportunity.location
-              }
+              {opportunity.location ||
+                "Location not specified"}
             </Text>
           </View>
         </View>
+      </View>
 
+      {opportunity
+        .required_skills
+        .length >
+      0 ? (
         <View
           style={
-            styles.matchBadge
+            styles.skillRow
           }
         >
-          <Text
-            style={
-              styles.matchNumber
-            }
-          >
-            {
-              opportunity.match
-            }
-            %
-          </Text>
-
-          <Text
-            style={
-              styles.matchText
-            }
-          >
-            MATCH
-          </Text>
+          {opportunity.required_skills
+            .slice(
+              0,
+              4
+            )
+            .map(
+              skill => (
+                <View
+                  key={
+                    skill
+                  }
+                  style={
+                    styles.skill
+                  }
+                >
+                  <Text
+                    style={
+                      styles.skillText
+                    }
+                  >
+                    {
+                      skill
+                    }
+                  </Text>
+                </View>
+              )
+            )}
         </View>
-      </View>
+      ) : null}
 
       <View
         style={
-          styles.matchExplanation
-        }
-      >
-        <Ionicons
-          name="sparkles-outline"
-          size={15}
-          color={
-            COLORS.textSecondary
-          }
-        />
-
-        <Text
-          style={
-            styles.matchExplanationText
-          }
-        >
-          Strong match based on your skills, programme and career interests.
-        </Text>
-      </View>
-
-      <View
-        style={
-          styles.skillsContainer
-        }
-      >
-        {opportunity.skills.map(
-          (skill) => (
-            <View
-              key={
-                skill
-              }
-              style={
-                styles.skillTag
-              }
-            >
-              <Text
-                style={
-                  styles.skillTagText
-                }
-              >
-                {skill}
-              </Text>
-            </View>
-          )
-        )}
-      </View>
-
-      <View
-        style={
-          styles.opportunityDivider
-        }
-      />
-
-      <View
-        style={
-          styles.opportunityFooter
+          styles.opportunityBottom
         }
       >
         <View>
@@ -1539,9 +2405,9 @@ function OpportunityCard({
               styles.opportunityType
             }
           >
-            {
-              opportunity.type
-            }
+            {formatOpportunityType(
+              opportunity.opportunity_type
+            )}
           </Text>
 
           <Text
@@ -1550,31 +2416,29 @@ function OpportunityCard({
             }
           >
             Closes{" "}
-            {
-              opportunity.closingDate
-            }
+            {formatDate(
+              opportunity.closing_date
+            )}
           </Text>
         </View>
 
         <View
           style={
-            styles.viewButton
+            styles.viewOpportunity
           }
         >
           <Text
             style={
-              styles.viewButtonText
+              styles.viewOpportunityText
             }
           >
-            View opportunity
+            View
           </Text>
 
           <Ionicons
             name="arrow-forward"
             size={15}
-            color={
-              COLORS.white
-            }
+            color="#FFF"
           />
         </View>
       </View>
@@ -1582,11 +2446,16 @@ function OpportunityCard({
   );
 }
 
-/* ==========================================================================
+/* =========================================================
    EVENTS
-   ========================================================================== */
+   No onPress intentionally.
+   ========================================================= */
 
-function EventsSection() {
+function EventsSection({
+  events,
+}: {
+  events: EventItem[];
+}) {
   return (
     <ScrollView
       horizontal
@@ -1594,11 +2463,11 @@ function EventsSection() {
         false
       }
       contentContainerStyle={
-        styles.horizontalContainer
+        styles.horizontalContent
       }
     >
-      {upcomingEvents.map(
-        (event) => (
+      {events.map(
+        event => (
           <View
             key={
               event.id
@@ -1607,109 +2476,139 @@ function EventsSection() {
               styles.eventCard
             }
           >
-            <View
-              style={
-                styles.eventDateContainer
-              }
-            >
-              <Text
+            {event.image_url ? (
+              <Image
+                source={{
+                  uri:
+                    event.image_url,
+                }}
                 style={
-                  styles.eventMonth
+                  styles.eventImage
                 }
-              >
-                {
-                  event.month
-                }
-              </Text>
-
-              <Text
-                style={
-                  styles.eventDay
-                }
-              >
-                {
-                  event.date
-                }
-              </Text>
-            </View>
-
-            <View
-              style={
-                styles.eventContent
-              }
-            >
-              <Text
-                style={
-                  styles.eventCategory
-                }
-              >
-                {
-                  event.category
-                }
-              </Text>
-
-              <Text
-                style={
-                  styles.eventTitle
-                }
-                numberOfLines={
-                  2
-                }
-              >
-                {
-                  event.title
-                }
-              </Text>
-
+              />
+            ) : (
               <View
                 style={
-                  styles.eventMeta
+                  styles.eventImageFallback
                 }
               >
                 <Ionicons
-                  name="time-outline"
-                  size={13}
+                  name="calendar-outline"
+                  size={30}
                   color={
-                    COLORS.textMuted
+                    PRIMARY
                   }
                 />
+              </View>
+            )}
+
+            <View
+              style={
+                styles.eventBody
+              }
+            >
+              <View
+                style={
+                  styles.eventDate
+                }
+              >
+                <Text
+                  style={
+                    styles.eventMonth
+                  }
+                >
+                  {getEventMonth(
+                    event.starts_at
+                  )}
+                </Text>
 
                 <Text
                   style={
-                    styles.eventMetaText
+                    styles.eventDay
                   }
                 >
-                  {
-                    event.time
-                  }
+                  {getEventDay(
+                    event.starts_at
+                  )}
                 </Text>
               </View>
 
               <View
-                style={
-                  styles.eventMeta
-                }
+                style={{
+                  flex: 1,
+                }}
               >
-                <Ionicons
-                  name="location-outline"
-                  size={13}
-                  color={
-                    COLORS.textMuted
+                <Text
+                  style={
+                    styles.eventCategory
                   }
-                />
+                >
+                  {event.event_type ||
+                    "Richfield Event"}
+                </Text>
 
                 <Text
                   style={
-                    styles.eventMetaText
+                    styles.eventTitle
                   }
                   numberOfLines={
-                    1
+                    2
                   }
                 >
                   {
-                    event.location
+                    event.title
                   }
                 </Text>
+
+                <View
+                  style={
+                    styles.eventMeta
+                  }
+                >
+                  <Ionicons
+                    name="time-outline"
+                    size={13}
+                    color={
+                      COLORS.textMuted
+                    }
+                  />
+
+                  <Text
+                    style={
+                      styles.eventMetaText
+                    }
+                  >
+                    {getEventTime(
+                      event.starts_at
+                    )}
+                  </Text>
+                </View>
+
+                <View
+                  style={
+                    styles.eventMeta
+                  }
+                >
+                  <Ionicons
+                    name="location-outline"
+                    size={13}
+                    color={
+                      COLORS.textMuted
+                    }
+                  />
+
+                  <Text
+                    style={
+                      styles.eventMetaText
+                    }
+                    numberOfLines={
+                      1
+                    }
+                  >
+                    {event.location ||
+                      "Location TBA"}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
@@ -1719,85 +2618,28 @@ function EventsSection() {
   );
 }
 
-/* ==========================================================================
-   CONNECTION SUGGESTIONS
-   ========================================================================== */
+/* =========================================================
+   PEOPLE
+   ========================================================= */
 
 function SuggestedConnections({
   suggestions,
   following,
   followLoading,
-  onToggleFollow,
+  onFollow,
 }: {
-  suggestions: SuggestedConnection[];
+  suggestions:
+    SuggestedConnection[];
+
   following: string[];
-  followLoading: string[];
-  onToggleFollow: (
+
+  followLoading:
+    string[];
+
+  onFollow: (
     userId: string
   ) => void;
 }) {
-  if (
-    suggestions.length ===
-    0
-  ) {
-    return (
-      <View
-        style={
-          styles.noSuggestions
-        }
-      >
-        <View
-          style={
-            styles.noSuggestionsIcon
-          }
-        >
-          <Ionicons
-            name="people-outline"
-            size={25}
-            color={
-              COLORS.textPrimary
-            }
-          />
-        </View>
-
-        <Text
-          style={
-            styles.noSuggestionsTitle
-          }
-        >
-          Explore your network
-        </Text>
-
-        <Text
-          style={
-            styles.noSuggestionsText
-          }
-        >
-          Find more students, alumni and industry professionals in the Network tab.
-        </Text>
-
-        <Pressable
-          style={
-            styles.exploreNetworkButton
-          }
-          onPress={() =>
-            router.push(
-              "/network"
-            )
-          }
-        >
-          <Text
-            style={
-              styles.exploreNetworkText
-            }
-          >
-            Explore network
-          </Text>
-        </Pressable>
-      </View>
-    );
-  }
-
   return (
     <ScrollView
       horizontal
@@ -1805,17 +2647,17 @@ function SuggestedConnections({
         false
       }
       contentContainerStyle={
-        styles.horizontalContainer
+        styles.horizontalContent
       }
     >
       {suggestions.map(
-        (person) => {
+        person => {
           const isFollowing =
             following.includes(
               person.id
             );
 
-          const isUpdating =
+          const updating =
             followLoading.includes(
               person.id
             );
@@ -1826,7 +2668,7 @@ function SuggestedConnections({
                 person.id
               }
               style={
-                styles.connectionCard
+                styles.personCard
               }
               onPress={() =>
                 router.push({
@@ -1847,18 +2689,18 @@ function SuggestedConnections({
                       person.avatar_url,
                   }}
                   style={
-                    styles.connectionImage
+                    styles.personAvatar
                   }
                 />
               ) : (
                 <View
                   style={
-                    styles.connectionAvatar
+                    styles.personFallback
                   }
                 >
                   <Text
                     style={
-                      styles.connectionAvatarText
+                      styles.personInitials
                     }
                   >
                     {getInitials(
@@ -1869,11 +2711,11 @@ function SuggestedConnections({
               )}
 
               <Text
-                style={
-                  styles.connectionName
-                }
                 numberOfLines={
                   1
+                }
+                style={
+                  styles.personName
                 }
               >
                 {person.full_name ||
@@ -1881,82 +2723,56 @@ function SuggestedConnections({
               </Text>
 
               <Text
-                style={
-                  styles.connectionRole
-                }
                 numberOfLines={
                   1
                 }
-              >
-                {getRoleLabel(
-                  person.role
-                )}
-              </Text>
-
-              <Text
                 style={
-                  styles.connectionProgramme
-                }
-                numberOfLines={
-                  1
+                  styles.personRole
                 }
               >
-                {person.username
-                  ? `@${person.username}`
-                  : "Richfield Connect"}
+                {person.headline ||
+                  getRoleLabel(
+                    person.role
+                  )}
               </Text>
 
               <Pressable
+                disabled={
+                  updating
+                }
                 style={[
-                  styles.connectButton,
+                  styles.followButton,
 
                   isFollowing &&
-                    styles.connectedButton,
+                    styles.followingButton,
                 ]}
-                disabled={
-                  isUpdating
-                }
-                onPress={(
-                  event
-                ) => {
-                  event.stopPropagation();
+                onPress={
+                  event => {
+                    event.stopPropagation();
 
-                  onToggleFollow(
-                    person.id
-                  );
-                }}
+                    onFollow(
+                      person.id
+                    );
+                  }
+                }
               >
-                {isUpdating ? (
+                {updating ? (
                   <ActivityIndicator
                     size="small"
                     color={
-                      COLORS.textPrimary
+                      PRIMARY
                     }
                   />
                 ) : (
-                  <>
-                    <Ionicons
-                      name={
-                        isFollowing
-                          ? "checkmark"
-                          : "person-add-outline"
-                      }
-                      size={15}
-                      color={
-                        COLORS.textPrimary
-                      }
-                    />
-
-                    <Text
-                      style={
-                        styles.connectButtonText
-                      }
-                    >
-                      {isFollowing
-                        ? "Following"
-                        : "Connect"}
-                    </Text>
-                  </>
+                  <Text
+                    style={
+                      styles.followButtonText
+                    }
+                  >
+                    {isFollowing
+                      ? "Following"
+                      : "Follow"}
+                  </Text>
                 )}
               </Pressable>
             </Pressable>
@@ -1967,23 +2783,24 @@ function SuggestedConnections({
   );
 }
 
-/* ==========================================================================
+/* =========================================================
    CREATE POST
-   ========================================================================== */
+   ========================================================= */
 
 function CreatePostCard({
   profile,
 }: {
-  profile: HomeProfile | null;
+  profile:
+    HomeProfile | null;
 }) {
   return (
     <Pressable
       style={
-        styles.createPostCard
+        styles.createPost
       }
       onPress={() =>
         router.push(
-          "/profile"
+          "/(student)/create-post"
         )
       }
     >
@@ -1994,18 +2811,18 @@ function CreatePostCard({
               profile.avatar_url,
           }}
           style={
-            styles.currentUserImage
+            styles.createAvatar
           }
         />
       ) : (
         <View
           style={
-            styles.currentUserAvatar
+            styles.createFallback
           }
         >
           <Text
             style={
-              styles.currentUserInitials
+              styles.createFallbackText
             }
           >
             {getInitials(
@@ -2018,48 +2835,78 @@ function CreatePostCard({
 
       <View
         style={
-          styles.postInput
+          styles.createInput
         }
       >
         <Text
           style={
-            styles.postPlaceholder
+            styles.createPlaceholder
           }
         >
-          Share a professional update...
+          Share something with your
+          community...
         </Text>
       </View>
 
-      <View
-        style={
-          styles.postCreateIcon
+      <Ionicons
+        name="images-outline"
+        size={21}
+        color={
+          PRIMARY
         }
-      >
-        <Ionicons
-          name="create-outline"
-          size={19}
-          color={
-            COLORS.textPrimary
-          }
-        />
-      </View>
+      />
     </Pressable>
   );
 }
 
-/* ==========================================================================
-   FEED POST
-
-   Still temporary until existing posts table is confirmed.
-   ========================================================================== */
+/* =========================================================
+   FYP POST
+   ========================================================= */
 
 function FeedPostCard({
   post,
+  likeLoading,
   onLike,
+  onShare,
 }: {
   post: FeedPost;
+
+  likeLoading: boolean;
+
   onLike: () => void;
+
+  onShare: () => void;
 }) {
+  const authorName =
+    post.author
+      ?.full_name ||
+    "Richfield Member";
+
+  const openAuthor =
+    () => {
+      router.push({
+        pathname:
+          "/(tabs)/profile",
+
+        params: {
+          userId:
+            post.user_id,
+        },
+      });
+    };
+
+  const openPost =
+    () => {
+      router.push({
+        pathname:
+          "/(student)/post/[id]" as never,
+
+        params: {
+          id: post.id,
+        },
+      });
+    };
+
   return (
     <View
       style={
@@ -2071,25 +2918,48 @@ function FeedPostCard({
           styles.postHeader
         }
       >
-        <View
-          style={
-            styles.postAvatar
+        <Pressable
+          onPress={
+            openAuthor
           }
         >
-          <Text
-            style={
-              styles.postAvatarText
-            }
-          >
-            {
-              post.initials
-            }
-          </Text>
-        </View>
+          {post.author
+            ?.avatar_url ? (
+            <Image
+              source={{
+                uri:
+                  post.author
+                    .avatar_url,
+              }}
+              style={
+                styles.postAvatarImage
+              }
+            />
+          ) : (
+            <View
+              style={
+                styles.postAvatar
+              }
+            >
+              <Text
+                style={
+                  styles.postAvatarText
+                }
+              >
+                {getInitials(
+                  authorName
+                )}
+              </Text>
+            </View>
+          )}
+        </Pressable>
 
-        <View
+        <Pressable
           style={
-            styles.postAuthorContainer
+            styles.postAuthorArea
+          }
+          onPress={
+            openAuthor
           }
         >
           <Text
@@ -2098,7 +2968,7 @@ function FeedPostCard({
             }
           >
             {
-              post.author
+              authorName
             }
           </Text>
 
@@ -2106,10 +2976,17 @@ function FeedPostCard({
             style={
               styles.postHeadline
             }
-          >
-            {
-              post.headline
+            numberOfLines={
+              1
             }
+          >
+            {post.author
+              ?.headline ||
+              getRoleLabel(
+                post.author
+                  ?.role ||
+                  null
+              )}
           </Text>
 
           <View
@@ -2122,72 +2999,129 @@ function FeedPostCard({
                 styles.postTime
               }
             >
-              {post.time}
+              {formatRelativeTime(
+                post.created_at
+              )}
             </Text>
 
             <Text
               style={
-                styles.postVisibility
+                styles.dot
               }
             >
               ·
             </Text>
 
             <Ionicons
-              name="globe-outline"
+              name={
+                post.visibility
+                  ?.toLowerCase() ===
+                "connections"
+                  ? "people-outline"
+                  : "earth-outline"
+              }
               size={12}
               color={
                 COLORS.textMuted
               }
             />
           </View>
-        </View>
-
-        <Pressable
-          style={
-            styles.moreButton
-          }
-          hitSlop={8}
-        >
-          <Ionicons
-            name="ellipsis-horizontal"
-            size={20}
-            color={
-              COLORS.textMuted
-            }
-          />
         </Pressable>
+
+        <Ionicons
+          name="ellipsis-horizontal"
+          size={20}
+          color={
+            COLORS.textMuted
+          }
+        />
       </View>
 
-      <Text
-        style={
-          styles.postContent
-        }
-      >
-        {post.content}
-      </Text>
+      {post.content ? (
+        <Pressable
+          onPress={
+            openPost
+          }
+        >
+          <Text
+            style={
+              styles.postContent
+            }
+          >
+            {
+              post.content
+            }
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {post.image_url &&
+      post.media_type !==
+        "video" ? (
+        <Pressable
+          onPress={
+            openPost
+          }
+        >
+          <Image
+            source={{
+              uri:
+                post.image_url,
+            }}
+            style={
+              styles.postImage
+            }
+            resizeMode="cover"
+          />
+        </Pressable>
+      ) : null}
+
+      {post.image_url &&
+      post.media_type ===
+        "video" ? (
+        <Pressable
+          style={
+            styles.videoCard
+          }
+          onPress={
+            openPost
+          }
+        >
+          <Ionicons
+            name="play-circle"
+            size={54}
+            color="#FFF"
+          />
+
+          <Text
+            style={
+              styles.videoLabel
+            }
+          >
+            Video post
+          </Text>
+        </Pressable>
+      ) : null}
 
       <View
         style={
-          styles.engagementSummary
+          styles.engagement
         }
       >
         <View
           style={
-            styles.likeSummary
+            styles.likesSummary
           }
         >
           <View
             style={
-              styles.likeIcon
+              styles.likeBubble
             }
           >
             <Ionicons
               name="thumbs-up"
               size={10}
-              color={
-                COLORS.white
-              }
+              color="#FFF"
             />
           </View>
 
@@ -2196,7 +3130,9 @@ function FeedPostCard({
               styles.engagementText
             }
           >
-            {post.likes}
+            {
+              post.likeCount
+            }
           </Text>
         </View>
 
@@ -2205,14 +3141,16 @@ function FeedPostCard({
             styles.engagementText
           }
         >
-          {post.comments} comments ·{" "}
-          {post.shares} shares
+          {post.commentCount}{" "}
+          comments ·{" "}
+          {post.shareCount}{" "}
+          shares
         </Text>
       </View>
 
       <View
         style={
-          styles.postDivider
+          styles.divider
         }
       />
 
@@ -2225,30 +3163,42 @@ function FeedPostCard({
           style={
             styles.postAction
           }
+          disabled={
+            likeLoading
+          }
           onPress={
             onLike
           }
         >
-          <Ionicons
-            name={
-              post.liked
-                ? "thumbs-up"
-                : "thumbs-up-outline"
-            }
-            size={19}
-            color={
-              post.liked
-                ? COLORS.textPrimary
-                : COLORS.textSecondary
-            }
-          />
+          {likeLoading ? (
+            <ActivityIndicator
+              size="small"
+              color={
+                PRIMARY
+              }
+            />
+          ) : (
+            <Ionicons
+              name={
+                post.liked
+                  ? "thumbs-up"
+                  : "thumbs-up-outline"
+              }
+              size={19}
+              color={
+                post.liked
+                  ? PRIMARY
+                  : COLORS.textSecondary
+              }
+            />
+          )}
 
           <Text
             style={[
               styles.postActionText,
 
               post.liked &&
-                styles.postActionTextActive,
+                styles.activeActionText,
             ]}
           >
             Like
@@ -2258,6 +3208,9 @@ function FeedPostCard({
         <Pressable
           style={
             styles.postAction
+          }
+          onPress={
+            openPost
           }
         >
           <Ionicons
@@ -2281,6 +3234,9 @@ function FeedPostCard({
           style={
             styles.postAction
           }
+          onPress={
+            onShare
+          }
         >
           <Ionicons
             name="share-social-outline"
@@ -2298,64 +3254,14 @@ function FeedPostCard({
             Share
           </Text>
         </Pressable>
-
-        <Pressable
-          style={
-            styles.bookmarkButton
-          }
-        >
-          <Ionicons
-            name="bookmark-outline"
-            size={19}
-            color={
-              COLORS.textSecondary
-            }
-          />
-        </Pressable>
       </View>
     </View>
   );
 }
 
-/* ==========================================================================
-   DESIGN TOKENS
-   ========================================================================== */
-
-const COLORS = {
-  background:
-    "#F5F7F9",
-
-  white:
-    "#FFFFFF",
-
-  textPrimary:
-    "#000000",
-
-  textSecondary:
-    "#5F6B76",
-
-  textMuted:
-    "#8A949E",
-
-  border:
-    "#E4E8EC",
-
-  brand:
-    "#0300cf",
-
-  brandLight:
-    "#EEF2F5",
-
-  success:
-    "#287A52",
-
-  successLight:
-    "#EAF6EF",
-};
-
-/* ==========================================================================
+/* =========================================================
    STYLES
-   ========================================================================== */
+   ========================================================= */
 
 const styles =
   StyleSheet.create({
@@ -2367,233 +3273,86 @@ const styles =
 
     loadingScreen: {
       flex: 1,
-      justifyContent:
-        "center",
-      alignItems:
-        "center",
       backgroundColor:
         COLORS.background,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
     },
 
     loadingText: {
       marginTop: 10,
-      fontSize: 13,
       color:
         COLORS.textSecondary,
+      fontSize: 13,
     },
 
     listContent: {
-      paddingTop: 0,
+      paddingBottom: 20,
     },
 
-    /* Welcome */
-
     welcomeSection: {
-      paddingHorizontal:
-        20,
+      paddingHorizontal: 20,
       paddingTop: 22,
-      paddingBottom: 18,
+      paddingBottom: 20,
     },
 
     greeting: {
       fontSize: 14,
-      fontWeight:
-        "600",
       color:
         COLORS.textSecondary,
+      fontWeight: "600",
       marginBottom: 7,
     },
 
     welcomeTitle: {
-      fontSize: 26,
-      lineHeight: 32,
-      fontWeight:
-        "800",
+      fontSize: 27,
+      lineHeight: 33,
+      fontWeight: "800",
       color:
         COLORS.textPrimary,
-      letterSpacing:
-        -0.4,
-      marginBottom: 8,
     },
 
     welcomeDescription: {
+      color:
+        COLORS.textSecondary,
       fontSize: 14,
-      lineHeight: 21,
-      color:
-        COLORS.textSecondary,
-      maxWidth: 390,
+      lineHeight: 20,
+      marginTop: 8,
     },
 
-    /* Profile Strength */
-
-    profileStrengthCard: {
-      marginHorizontal:
-        20,
-      marginBottom: 22,
-      padding: 16,
-      borderRadius: 16,
-      backgroundColor:
-        COLORS.white,
-      borderWidth: 1,
-      borderColor:
-        COLORS.border,
+    quickSection: {
+      paddingHorizontal: 20,
+      marginBottom: 25,
     },
 
-    profileStrengthHeader: {
+    quickGrid: {
       flexDirection:
         "row",
-      alignItems:
-        "flex-start",
-    },
-
-    profileStrengthIcon: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
-      backgroundColor:
-        COLORS.brand,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginRight: 12,
-    },
-
-    profileStrengthContent: {
-      flex: 1,
-    },
-
-    profileStrengthTitleRow: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      justifyContent:
-        "space-between",
-      marginBottom: 5,
-    },
-
-    profileStrengthTitle: {
-      fontSize: 15,
-      fontWeight:
-        "700",
-      color:
-        COLORS.textPrimary,
-    },
-
-    profileStrengthPercentage: {
-      fontSize: 15,
-      fontWeight:
-        "800",
-      color:
-        COLORS.textPrimary,
-    },
-
-    profileStrengthDescription: {
-      fontSize: 12.5,
-      lineHeight: 18,
-      color:
-        COLORS.textSecondary,
-    },
-
-    progressTrack: {
-      height: 7,
-      borderRadius: 10,
-      backgroundColor:
-        "#E9EDF0",
-      overflow:
-        "hidden",
-      marginTop: 15,
-    },
-
-    progressFill: {
-      height: "100%",
-      borderRadius: 10,
-      backgroundColor:
-        COLORS.brand,
-    },
-
-    profileStrengthFooter: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      justifyContent:
-        "space-between",
+      gap: 8,
       marginTop: 12,
     },
 
-    suggestionContainer: {
+    quickItem: {
       flex: 1,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      paddingRight: 10,
-    },
-
-    profileSuggestion: {
-      flex: 1,
-      fontSize: 12,
-      fontWeight:
-        "600",
-      color:
-        COLORS.textSecondary,
-      marginLeft: 6,
-    },
-
-    /* Quick Actions */
-
-    quickActionsSection: {
-      paddingHorizontal:
-        20,
-      marginBottom: 24,
-    },
-
-    sectionTitle: {
-      fontSize: 17,
-      fontWeight:
-        "800",
-      color:
-        COLORS.textPrimary,
-    },
-
-    sectionSubtitle: {
-      fontSize: 12.5,
-      color:
-        COLORS.textSecondary,
-      marginTop: 4,
-    },
-
-    quickActionsGrid: {
-      flexDirection:
-        "row",
-      marginTop: 12,
-      gap: 9,
-    },
-
-    quickAction: {
-      flex: 1,
-      minHeight: 90,
-      borderRadius: 14,
+      minHeight: 86,
       backgroundColor:
-        COLORS.white,
+        "#FFF",
+      borderRadius: 15,
       borderWidth: 1,
       borderColor:
         COLORS.border,
-      paddingHorizontal:
-        8,
-      paddingVertical:
-        12,
       alignItems:
         "center",
       justifyContent:
         "center",
+      padding: 7,
     },
 
-    quickActionIcon: {
-      width: 38,
-      height: 38,
+    quickIcon: {
+      width: 37,
+      height: 37,
       borderRadius: 11,
       backgroundColor:
         COLORS.brandLight,
@@ -2601,217 +3360,147 @@ const styles =
         "center",
       justifyContent:
         "center",
-      marginBottom: 8,
     },
 
-    quickActionText: {
-      fontSize: 11.5,
-      fontWeight:
-        "700",
-      color:
-        COLORS.textPrimary,
+    quickLabel: {
+      fontSize: 10.5,
+      fontWeight: "700",
       textAlign:
         "center",
+      marginTop: 7,
+      color:
+        COLORS.textPrimary,
     },
 
-    /* Section Header */
-
     sectionHeader: {
-      paddingHorizontal:
-        20,
-      marginBottom: 12,
+      paddingHorizontal: 20,
+      marginBottom: 11,
       flexDirection:
         "row",
-      alignItems:
-        "center",
       justifyContent:
         "space-between",
+      alignItems:
+        "center",
+    },
+
+    sectionTitle: {
+      fontSize: 17,
+      fontWeight: "800",
+      color:
+        COLORS.textPrimary,
     },
 
     sectionAction: {
-      fontSize: 12.5,
-      fontWeight:
-        "700",
-      color:
-        COLORS.textSecondary,
+      color: PRIMARY,
+      fontSize: 12,
+      fontWeight: "700",
     },
 
-    /* Opportunity */
-
     opportunityCard: {
-      marginHorizontal:
-        20,
-      marginBottom: 25,
-      padding: 16,
-      borderRadius: 17,
+      marginHorizontal: 20,
+      marginBottom: 26,
+      borderRadius: 18,
       backgroundColor:
-        COLORS.white,
+        "#FFF",
+      padding: 16,
       borderWidth: 1,
       borderColor:
         COLORS.border,
     },
 
-    opportunityHeader: {
+    opportunityTop: {
       flexDirection:
         "row",
-      alignItems:
-        "flex-start",
     },
 
     companyLogo: {
-      width: 46,
-      height: 46,
-      borderRadius: 12,
+      width: 47,
+      height: 47,
+      borderRadius: 14,
       backgroundColor:
-        COLORS.brand,
+        PRIMARY,
       alignItems:
         "center",
       justifyContent:
         "center",
-      marginRight: 11,
+      marginRight: 12,
     },
 
     companyLogoText: {
-      color:
-        COLORS.white,
-      fontSize: 13,
-      fontWeight:
-        "800",
-    },
-
-    opportunityMain: {
-      flex: 1,
-      paddingRight: 8,
+      color: "#FFF",
+      fontWeight: "900",
+      fontSize: 14,
     },
 
     opportunityTitle: {
-      fontSize: 15,
-      lineHeight: 20,
-      fontWeight:
-        "800",
+      fontSize: 16,
+      lineHeight: 21,
+      fontWeight: "800",
       color:
         COLORS.textPrimary,
     },
 
     companyName: {
       fontSize: 12.5,
-      fontWeight:
-        "600",
       color:
         COLORS.textSecondary,
-      marginTop: 2,
+      marginTop: 3,
     },
 
-    opportunityLocation: {
+    metaRow: {
       flexDirection:
         "row",
       alignItems:
         "center",
-      marginTop: 5,
+      marginTop: 6,
+      gap: 4,
     },
 
-    locationText: {
-      fontSize: 11.5,
+    metaText: {
+      fontSize: 11,
       color:
         COLORS.textMuted,
-      marginLeft: 3,
     },
 
-    matchBadge: {
-      minWidth: 54,
-      paddingVertical: 7,
-      paddingHorizontal: 6,
-      borderRadius: 10,
-      backgroundColor:
-        COLORS.successLight,
-      alignItems:
-        "center",
-    },
-
-    matchNumber: {
-      fontSize: 15,
-      fontWeight:
-        "900",
-      color:
-        COLORS.success,
-    },
-
-    matchText: {
-      fontSize: 7.5,
-      fontWeight:
-        "800",
-      color:
-        COLORS.success,
-      marginTop: 1,
-    },
-
-    matchExplanation: {
+    skillRow: {
       flexDirection:
         "row",
-      alignItems:
-        "flex-start",
-      marginTop: 14,
-      padding: 10,
-      borderRadius: 10,
-      backgroundColor:
-        "#F5F7F9",
+      flexWrap: "wrap",
+      gap: 6,
+      marginTop: 15,
     },
 
-    matchExplanationText: {
-      flex: 1,
-      fontSize: 11,
-      lineHeight: 16,
-      color:
-        COLORS.textSecondary,
-      marginLeft: 7,
-    },
-
-    skillsContainer: {
-      flexDirection:
-        "row",
-      flexWrap:
-        "wrap",
-      gap: 7,
-      marginTop: 13,
-    },
-
-    skillTag: {
-      paddingHorizontal:
-        9,
+    skill: {
+      paddingHorizontal: 9,
       paddingVertical: 6,
-      borderRadius: 8,
+      borderRadius: 9,
       backgroundColor:
         COLORS.brandLight,
     },
 
-    skillTagText: {
+    skillText: {
+      color: PRIMARY,
+      fontWeight: "700",
       fontSize: 10.5,
-      fontWeight:
-        "700",
-      color:
-        COLORS.textPrimary,
     },
 
-    opportunityDivider: {
-      height: 1,
-      backgroundColor:
-        COLORS.border,
-      marginVertical: 14,
-    },
-
-    opportunityFooter: {
+    opportunityBottom: {
       flexDirection:
         "row",
       alignItems:
         "center",
       justifyContent:
         "space-between",
+      marginTop: 15,
+      paddingTop: 14,
+      borderTopWidth: 1,
+      borderTopColor:
+        COLORS.border,
     },
 
     opportunityType: {
-      fontSize: 11.5,
-      fontWeight:
-        "700",
+      fontSize: 12,
+      fontWeight: "700",
       color:
         COLORS.textPrimary,
     },
@@ -2823,105 +3512,107 @@ const styles =
       marginTop: 3,
     },
 
-    viewButton: {
+    viewOpportunity: {
       flexDirection:
         "row",
       alignItems:
         "center",
+      gap: 5,
       backgroundColor:
-        COLORS.brand,
-      borderRadius: 9,
-      paddingHorizontal:
-        11,
+        PRIMARY,
+      borderRadius: 11,
       paddingVertical: 9,
+      paddingHorizontal: 13,
     },
 
-    viewButtonText: {
-      fontSize: 10.5,
-      fontWeight:
-        "700",
-      color:
-        COLORS.white,
-      marginRight: 5,
+    viewOpportunityText: {
+      color: "#FFF",
+      fontSize: 11,
+      fontWeight: "700",
     },
 
-    /* Events */
-
-    horizontalContainer: {
-      paddingHorizontal:
-        20,
+    horizontalContent: {
+      paddingHorizontal: 20,
       paddingBottom: 25,
-      gap: 10,
+      gap: 11,
     },
 
     eventCard: {
-      width: 270,
-      minHeight: 128,
-      padding: 13,
-      borderRadius: 15,
+      width: 285,
+      borderRadius: 18,
+      overflow: "hidden",
       backgroundColor:
-        COLORS.white,
+        "#FFF",
       borderWidth: 1,
       borderColor:
         COLORS.border,
-      flexDirection:
-        "row",
     },
 
-    eventDateContainer: {
-      width: 52,
-      height: 59,
-      borderRadius: 11,
+    eventImage: {
+      width: "100%",
+      height: 128,
+      backgroundColor:
+        "#EEE",
+    },
+
+    eventImageFallback: {
+      width: "100%",
+      height: 108,
       backgroundColor:
         COLORS.brandLight,
       alignItems:
         "center",
       justifyContent:
         "center",
-      marginRight: 11,
+    },
+
+    eventBody: {
+      flexDirection:
+        "row",
+      padding: 14,
+      gap: 12,
+    },
+
+    eventDate: {
+      width: 45,
+      height: 54,
+      borderRadius: 12,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
     },
 
     eventMonth: {
-      fontSize: 8.5,
-      fontWeight:
-        "800",
-      color:
-        COLORS.textSecondary,
+      color: PRIMARY,
+      fontSize: 9,
+      fontWeight: "800",
     },
 
     eventDay: {
-      fontSize: 23,
-      lineHeight: 26,
-      fontWeight:
-        "900",
+      fontSize: 18,
+      fontWeight: "900",
       color:
         COLORS.textPrimary,
-    },
-
-    eventContent: {
-      flex: 1,
     },
 
     eventCategory: {
+      color: PRIMARY,
       fontSize: 9,
-      fontWeight:
-        "800",
-      color:
-        COLORS.textSecondary,
+      fontWeight: "800",
       textTransform:
         "uppercase",
-      letterSpacing: 0.5,
-      marginBottom: 4,
     },
 
     eventTitle: {
-      fontSize: 13,
-      lineHeight: 17,
-      fontWeight:
-        "800",
       color:
         COLORS.textPrimary,
-      marginBottom: 7,
+      fontSize: 14,
+      fontWeight: "800",
+      lineHeight: 18,
+      marginTop: 3,
     },
 
     eventMeta: {
@@ -2929,292 +3620,185 @@ const styles =
         "row",
       alignItems:
         "center",
-      marginTop: 3,
+      gap: 4,
+      marginTop: 6,
     },
 
     eventMetaText: {
       flex: 1,
+      fontSize: 10.5,
+      color:
+        COLORS.textMuted,
+    },
+
+    personCard: {
+      width: 150,
+      borderRadius: 17,
+      padding: 13,
+      backgroundColor:
+        "#FFF",
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+      alignItems:
+        "center",
+    },
+
+    personAvatar: {
+      width: 57,
+      height: 57,
+      borderRadius: 29,
+    },
+
+    personFallback: {
+      width: 57,
+      height: 57,
+      borderRadius: 29,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    personInitials: {
+      color: PRIMARY,
+      fontWeight: "900",
+      fontSize: 17,
+    },
+
+    personName: {
+      width: "100%",
+      textAlign:
+        "center",
+      fontWeight: "800",
+      color:
+        COLORS.textPrimary,
+      fontSize: 12,
+      marginTop: 9,
+    },
+
+    personRole: {
+      width: "100%",
+      textAlign:
+        "center",
       fontSize: 10,
       color:
         COLORS.textMuted,
-      marginLeft: 4,
-    },
-
-    /* Connections */
-
-    connectionCard: {
-      width: 165,
-      padding: 14,
-      borderRadius: 15,
-      backgroundColor:
-        COLORS.white,
-      borderWidth: 1,
-      borderColor:
-        COLORS.border,
-      alignItems:
-        "center",
-    },
-
-    connectionImage: {
-      width: 54,
-      height: 54,
-      borderRadius: 27,
-      marginBottom: 9,
-      backgroundColor:
-        COLORS.brandLight,
-    },
-
-    connectionAvatar: {
-      width: 54,
-      height: 54,
-      borderRadius: 27,
-      backgroundColor:
-        COLORS.brandLight,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginBottom: 9,
-    },
-
-    connectionAvatarText: {
-      fontSize: 14,
-      fontWeight:
-        "800",
-      color:
-        COLORS.textPrimary,
-    },
-
-    connectionName: {
-      width: "100%",
-      fontSize: 13,
-      fontWeight:
-        "800",
-      color:
-        COLORS.textPrimary,
-      textAlign:
-        "center",
-    },
-
-    connectionRole: {
-      width: "100%",
-      fontSize: 10.5,
-      color:
-        COLORS.textSecondary,
-      textAlign:
-        "center",
       marginTop: 3,
     },
 
-    connectionProgramme: {
-      width: "100%",
-      fontSize: 9.5,
-      color:
-        COLORS.textMuted,
-      textAlign:
-        "center",
-      marginTop: 3,
-    },
-
-    connectButton: {
-      marginTop: 11,
-      minWidth: 108,
-      minHeight: 34,
-      paddingVertical: 8,
-      paddingHorizontal: 9,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor:
-        COLORS.border,
-      flexDirection:
-        "row",
+    followButton: {
+      marginTop: 10,
+      minWidth: 95,
+      height: 32,
+      borderRadius: 10,
+      backgroundColor:
+        COLORS.brandLight,
       alignItems:
         "center",
       justifyContent:
         "center",
     },
 
-    connectedButton: {
+    followingButton: {
       backgroundColor:
-        COLORS.brandLight,
+        "#F2F2F2",
     },
 
-    connectButtonText: {
+    followButtonText: {
+      color: PRIMARY,
       fontSize: 10.5,
-      fontWeight:
-        "700",
-      color:
-        COLORS.textPrimary,
-      marginLeft: 5,
+      fontWeight: "800",
     },
 
-    noSuggestions: {
-      marginHorizontal:
-        20,
-      marginBottom: 25,
-      padding: 18,
-      borderRadius: 15,
-      backgroundColor:
-        COLORS.white,
-      borderWidth: 1,
-      borderColor:
-        COLORS.border,
-      alignItems:
-        "center",
+    feedHeader: {
+      paddingHorizontal: 20,
+      paddingTop: 4,
+      paddingBottom: 12,
     },
 
-    noSuggestionsIcon: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      backgroundColor:
-        COLORS.brandLight,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginBottom: 9,
-    },
-
-    noSuggestionsTitle: {
-      fontSize: 14,
-      fontWeight:
-        "800",
+    feedTitle: {
+      fontSize: 21,
+      fontWeight: "900",
       color:
         COLORS.textPrimary,
     },
 
-    noSuggestionsText: {
-      marginTop: 5,
-      fontSize: 11.5,
-      lineHeight: 17,
-      textAlign:
-        "center",
-      color:
-        COLORS.textSecondary,
-      maxWidth: 280,
-    },
-
-    exploreNetworkButton: {
-      marginTop: 12,
-      paddingHorizontal:
-        15,
-      paddingVertical: 9,
-      borderRadius: 9,
-      backgroundColor:
-        COLORS.brand,
-    },
-
-    exploreNetworkText: {
-      color:
-        COLORS.white,
-      fontSize: 11,
-      fontWeight:
-        "700",
-    },
-
-    /* Feed Heading */
-
-    feedHeading: {
-      paddingHorizontal:
-        20,
-      marginBottom: 12,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      justifyContent:
-        "space-between",
-    },
-
-    /* Create Post */
-
-    createPostCard: {
-      marginHorizontal:
-        20,
-      marginBottom: 12,
-      padding: 12,
-      borderRadius: 14,
-      backgroundColor:
-        COLORS.white,
-      borderWidth: 1,
-      borderColor:
-        COLORS.border,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-    },
-
-    currentUserAvatar: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
-      backgroundColor:
-        COLORS.brand,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-    },
-
-    currentUserImage: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
-      backgroundColor:
-        COLORS.brandLight,
-    },
-
-    currentUserInitials: {
-      fontSize: 10,
-      fontWeight:
-        "800",
-      color:
-        COLORS.white,
-    },
-
-    postInput: {
-      flex: 1,
-      height: 38,
-      justifyContent:
-        "center",
-      paddingHorizontal:
-        11,
-    },
-
-    postPlaceholder: {
+    feedSubtitle: {
       fontSize: 12,
       color:
-        COLORS.textMuted,
+        COLORS.textSecondary,
+      marginTop: 3,
     },
 
-    postCreateIcon: {
-      width: 35,
-      height: 35,
-      borderRadius: 9,
+    createPost: {
+      marginHorizontal: 15,
+      marginBottom: 11,
+      padding: 12,
+      borderRadius: 16,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      gap: 10,
       backgroundColor:
-        COLORS.brandLight,
+        "#FFF",
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+    },
+
+    createAvatar: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+    },
+
+    createFallback: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
       alignItems:
         "center",
       justifyContent:
         "center",
+      backgroundColor:
+        COLORS.brandLight,
     },
 
-    /* Feed Post */
+    createFallbackText: {
+      color: PRIMARY,
+      fontWeight: "800",
+    },
 
-    postCard: {
-      marginHorizontal:
-        20,
-      marginTop: 10,
-      borderRadius: 15,
-      backgroundColor:
-        COLORS.white,
+    createInput: {
+      flex: 1,
+      minHeight: 40,
+      borderRadius: 21,
       borderWidth: 1,
       borderColor:
         COLORS.border,
-      overflow:
-        "hidden",
+      paddingHorizontal: 14,
+      justifyContent:
+        "center",
+    },
+
+    createPlaceholder: {
+      color:
+        COLORS.textMuted,
+      fontSize: 12,
+    },
+
+    postCard: {
+      backgroundColor:
+        "#FFF",
+      marginBottom: 10,
+      borderTopWidth: 1,
+      borderBottomWidth: 1,
+      borderColor:
+        COLORS.border,
     },
 
     postHeader: {
@@ -3222,7 +3806,9 @@ const styles =
         "row",
       alignItems:
         "flex-start",
-      padding: 15,
+      paddingHorizontal: 15,
+      paddingTop: 14,
+      paddingBottom: 10,
     },
 
     postAvatar: {
@@ -3235,33 +3821,39 @@ const styles =
         "center",
       justifyContent:
         "center",
-      marginRight: 10,
+    },
+
+    postAvatarImage: {
+      width: 43,
+      height: 43,
+      borderRadius: 22,
+      backgroundColor:
+        "#EEE",
     },
 
     postAvatarText: {
-      fontSize: 11.5,
-      fontWeight:
-        "800",
-      color:
-        COLORS.textPrimary,
+      color: PRIMARY,
+      fontSize: 13,
+      fontWeight: "900",
     },
 
-    postAuthorContainer: {
+    postAuthorArea: {
       flex: 1,
+      marginLeft: 10,
+      paddingRight: 10,
     },
 
     postAuthor: {
-      fontSize: 13,
-      fontWeight:
-        "800",
       color:
         COLORS.textPrimary,
+      fontSize: 13.5,
+      fontWeight: "800",
     },
 
     postHeadline: {
-      fontSize: 10.5,
       color:
         COLORS.textSecondary,
+      fontSize: 10.5,
       marginTop: 2,
     },
 
@@ -3279,31 +3871,49 @@ const styles =
         COLORS.textMuted,
     },
 
-    postVisibility: {
-      fontSize: 10,
+    dot: {
+      fontSize: 11,
       color:
         COLORS.textMuted,
       marginHorizontal: 4,
     },
 
-    moreButton: {
-      padding: 2,
-    },
-
     postContent: {
-      paddingHorizontal:
-        15,
+      paddingHorizontal: 15,
       paddingBottom: 14,
-      fontSize: 13,
-      lineHeight: 20,
       color:
         COLORS.textPrimary,
+      fontSize: 13.5,
+      lineHeight: 20,
     },
 
-    engagementSummary: {
-      paddingHorizontal:
-        15,
-      paddingBottom: 11,
+    postImage: {
+      width: "100%",
+      height: 360,
+      backgroundColor:
+        "#ECECEC",
+    },
+
+    videoCard: {
+      width: "100%",
+      height: 340,
+      backgroundColor:
+        "#151515",
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    videoLabel: {
+      color: "#FFF",
+      fontWeight: "700",
+      marginTop: 7,
+    },
+
+    engagement: {
+      minHeight: 41,
+      paddingHorizontal: 15,
       flexDirection:
         "row",
       alignItems:
@@ -3312,84 +3922,93 @@ const styles =
         "space-between",
     },
 
-    likeSummary: {
+    likesSummary: {
       flexDirection:
         "row",
       alignItems:
-        "center",
-    },
-
-    likeIcon: {
-      width: 18,
-      height: 18,
-      borderRadius: 9,
-      backgroundColor:
-        COLORS.brand,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginRight: 5,
-    },
-
-    engagementText: {
-      fontSize: 10,
-      color:
-        COLORS.textMuted,
-    },
-
-    postDivider: {
-      height: 1,
-      backgroundColor:
-        COLORS.border,
-    },
-
-    postActions: {
-      minHeight: 48,
-      paddingHorizontal: 7,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-    },
-
-    postAction: {
-      flex: 1,
-      height: 42,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      justifyContent:
         "center",
       gap: 5,
     },
 
-    postActionText: {
-      fontSize: 10.5,
-      fontWeight:
-        "600",
-      color:
-        COLORS.textSecondary,
-    },
-
-    postActionTextActive: {
-      color:
-        COLORS.textPrimary,
-      fontWeight:
-        "800",
-    },
-
-    bookmarkButton: {
-      width: 38,
-      height: 42,
+    likeBubble: {
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+      backgroundColor:
+        PRIMARY,
       alignItems:
         "center",
       justifyContent:
         "center",
     },
 
-    bottomSpacing: {
-      height: 30,
+    engagementText: {
+      fontSize: 10.5,
+      color:
+        COLORS.textMuted,
+    },
+
+    divider: {
+      height: 1,
+      backgroundColor:
+        COLORS.border,
+      marginHorizontal: 15,
+    },
+
+    postActions: {
+      minHeight: 48,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      paddingHorizontal: 5,
+    },
+
+    postAction: {
+      flex: 1,
+      height: 46,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      gap: 6,
+    },
+
+    postActionText: {
+      fontSize: 11,
+      color:
+        COLORS.textSecondary,
+      fontWeight: "600",
+    },
+
+    activeActionText: {
+      color: PRIMARY,
+      fontWeight: "800",
+    },
+
+    emptyFeed: {
+      paddingHorizontal: 30,
+      paddingVertical: 60,
+      alignItems:
+        "center",
+    },
+
+    emptyFeedTitle: {
+      marginTop: 12,
+      fontWeight: "800",
+      color:
+        COLORS.textPrimary,
+      fontSize: 17,
+    },
+
+    emptyFeedText: {
+      textAlign:
+        "center",
+      marginTop: 5,
+      color:
+        COLORS.textMuted,
+      lineHeight: 19,
     },
   });

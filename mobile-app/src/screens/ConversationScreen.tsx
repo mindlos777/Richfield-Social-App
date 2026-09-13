@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -19,22 +20,14 @@ import {
   View,
 } from "react-native";
 
-import {
-  SafeAreaView,
-} from "react-native-safe-area-context";
-
-import {
-  Ionicons,
-} from "@expo/vector-icons";
-
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import {
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
 
-import {
-  supabase,
-} from "../lib/supabase";
+import { supabase } from "../lib/supabase";
 
 import {
   blockUser,
@@ -51,281 +44,374 @@ import {
 import ConversationOptions from
   "../components/chat/ConversationOptions";
 
-const PRIMARY =
-  "#0300cf";
+const PRIMARY = "#0300cf";
+
+type UserRole =
+  | "student"
+  | "alumni"
+  | "business"
+  | "admin";
+
+type ParticipantProfile = {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+  role: UserRole | null;
+};
+
+function getInitials(name: string) {
+  const value = name.trim();
+
+  if (!value) {
+    return "U";
+  }
+
+  const parts = value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  return parts
+    .map(part =>
+      part.charAt(0).toUpperCase()
+    )
+    .join("");
+}
 
 export default function ConversationScreen() {
-  const router =
-    useRouter();
-
-  const params =
-    useLocalSearchParams();
+  const router = useRouter();
+  const params = useLocalSearchParams();
 
   const listRef =
-    useRef<
-      FlatList<Message>
-    >(null);
+    useRef<FlatList<Message>>(null);
 
-  const conversationId =
-    String(
-      params.id || ""
-    );
+  const conversationId = String(
+    params.id || ""
+  );
 
-  const otherUserId =
-    String(
-      params.userId || ""
-    );
+  const routeOtherUserId = String(
+    params.otherUserId ||
+      params.userId ||
+      ""
+  );
 
-  const name =
-    String(
-      params.name ||
-        "Conversation"
-    );
+  const routeName = String(
+    params.name || "Conversation"
+  );
 
-  const username =
-    String(
-      params.username || ""
-    );
+  const routeUsername = String(
+    params.username || ""
+  );
 
-  const image =
-    String(
-      params.image || ""
-    );
+  const routeImage = String(
+    params.image || ""
+  );
 
-  const role =
-    String(
-      params.role ||
-        "student"
-    ) as
-      | "student"
-      | "alumni"
-      | "business"
-      | "admin";
+  const routeRole = String(
+    params.role || "student"
+  ) as UserRole;
 
-  const [
-    currentUserId,
-    setCurrentUserId,
-  ] =
+  const [currentUserId, setCurrentUserId] =
     useState("");
 
-  const [
-    messages,
-    setMessages,
-  ] =
-    useState<Message[]>(
-      []
-    );
+  const [otherUserId, setOtherUserId] =
+    useState(routeOtherUserId);
 
-  const [
-    text,
-    setText,
-  ] =
+  const [name, setName] =
+    useState(routeName);
+
+  const [username, setUsername] =
+    useState(routeUsername);
+
+  const [image, setImage] =
+    useState(routeImage);
+
+  const [role, setRole] =
+    useState<UserRole>(routeRole);
+
+  const [messages, setMessages] =
+    useState<Message[]>([]);
+
+  const [text, setText] =
     useState("");
 
-  const [
-    loading,
-    setLoading,
-  ] =
+  const [loading, setLoading] =
     useState(true);
 
-  const [
-    sending,
-    setSending,
-  ] =
+  const [sending, setSending] =
     useState(false);
 
-  const [
-    optionsVisible,
-    setOptionsVisible,
-  ] =
+  const [optionsVisible, setOptionsVisible] =
     useState(false);
 
-  const [
-    blocked,
-    setBlocked,
-  ] =
+  const [blocked, setBlocked] =
     useState(
-      params.blocked ===
-        "true"
+      params.blocked === "true"
     );
 
-  const [
-    isMentor,
-    setIsMentor,
-  ] =
+  const [isMentor, setIsMentor] =
     useState(
-      params.isMentor ===
-        "true"
+      params.isMentor === "true"
     );
 
+  const displayUsername = useMemo(
+    () =>
+      username
+        ? username.replace(/^@/, "")
+        : "",
+    [username]
+  );
 
-  const loadConversation =
-    useCallback(
-      async () => {
-        try {
-          setLoading(
-            true
-          );
-
-          const user =
-            await getCurrentUser();
-
-          setCurrentUserId(
-            user.id
-          );
-
-          const data =
-            await loadMessages(
-              conversationId
-            );
-
-          setMessages(
-            data
-          );
-
-          await markConversationRead(
+  const loadParticipant = useCallback(
+    async (
+      myUserId: string
+    ) => {
+      try {
+        const {
+          data: members,
+          error: membersError,
+        } = await supabase
+          .from("conversation_members")
+          .select("user_id")
+          .eq(
+            "conversation_id",
             conversationId
           );
 
-        } catch (error) {
-          console.log(
-            "Load conversation error:",
-            error
+        if (membersError) {
+          throw membersError;
+        }
+
+        const memberIds =
+          (members || []).map(
+            item => item.user_id
           );
 
-          Alert.alert(
-            "Conversation error",
-            error instanceof Error
-              ? error.message
-              : "Unable to load conversation."
-          );
-        } finally {
-          setLoading(
-            false
+        const participantId =
+          memberIds.find(
+            id => id !== myUserId
+          ) || routeOtherUserId;
+
+        if (!participantId) {
+          return;
+        }
+
+        setOtherUserId(
+          participantId
+        );
+
+        const {
+          data: profileRows,
+          error: profileError,
+        } = await supabase
+          .from("profiles")
+          .select(`
+            id,
+            full_name,
+            username,
+            avatar_url,
+            role
+          `)
+          .eq("id", participantId)
+          .limit(1);
+
+        if (profileError) {
+          throw profileError;
+        }
+
+        const profile =
+          profileRows?.[0] as
+            | ParticipantProfile
+            | undefined;
+
+        if (!profile) {
+          return;
+        }
+
+        setName(
+          profile.full_name ||
+            routeName
+        );
+
+        setUsername(
+          profile.username ||
+            routeUsername
+        );
+
+        setImage(
+          profile.avatar_url ||
+            routeImage
+        );
+
+        setRole(
+          profile.role ||
+            routeRole
+        );
+      } catch (error) {
+        console.log(
+          "Participant load error:",
+          error
+        );
+      }
+    },
+    [
+      conversationId,
+      routeOtherUserId,
+      routeName,
+      routeUsername,
+      routeImage,
+      routeRole,
+    ]
+  );
+
+  const loadConversation = useCallback(
+    async () => {
+      try {
+        if (!conversationId) {
+          throw new Error(
+            "Conversation ID is missing."
           );
         }
-      },
-      [
-        conversationId,
-      ]
-    );
 
+        setLoading(true);
+
+        const user =
+          await getCurrentUser();
+
+        setCurrentUserId(
+          user.id
+        );
+
+        await loadParticipant(
+          user.id
+        );
+
+        const data =
+          await loadMessages(
+            conversationId
+          );
+
+        setMessages(data);
+
+        await markConversationRead(
+          conversationId
+        );
+      } catch (error) {
+        console.log(
+          "Load conversation error:",
+          error
+        );
+
+        Alert.alert(
+          "Conversation error",
+          error instanceof Error
+            ? error.message
+            : "Unable to load conversation."
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [
+      conversationId,
+      loadParticipant,
+    ]
+  );
 
   useEffect(() => {
-    if (
-      !conversationId
-    ) {
+    if (!conversationId) {
       return;
     }
 
     loadConversation();
-
   }, [
     conversationId,
     loadConversation,
   ]);
 
-
   useEffect(() => {
-    if (
-      !conversationId
-    ) {
+    if (!conversationId) {
       return;
     }
 
-    const channel =
-      supabase
-        .channel(
-          `conversation-${conversationId}`
-        )
+    const channel = supabase
+      .channel(
+        `conversation-${conversationId}`
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter:
+            `conversation_id=eq.${conversationId}`,
+        },
+        async payload => {
+          const newMessage =
+            payload.new as Message;
 
-        .on(
-          "postgres_changes",
+          setMessages(
+            current => {
+              const exists =
+                current.some(
+                  message =>
+                    message.id ===
+                    newMessage.id
+                );
 
-          {
-            event:
-              "INSERT",
-
-            schema:
-              "public",
-
-            table:
-              "messages",
-
-            filter:
-              `conversation_id=eq.${conversationId}`,
-          },
-
-          async payload => {
-            const newMessage =
-              payload.new as Message;
-
-            setMessages(
-              current => {
-                const exists =
-                  current.some(
-                    message =>
-                      message.id ===
-                      newMessage.id
-                  );
-
-                if (
-                  exists
-                ) {
-                  return current;
-                }
-
-                return [
-                  ...current,
-                  newMessage,
-                ];
+              if (exists) {
+                return current;
               }
-            );
 
-            if (
-              newMessage.sender_id !==
-              currentUserId
-            ) {
+              return [
+                ...current,
+                newMessage,
+              ];
+            }
+          );
+
+          if (
+            newMessage.sender_id !==
+            currentUserId
+          ) {
+            try {
               await markConversationRead(
                 conversationId
               );
+            } catch (error) {
+              console.log(
+                "Mark read error:",
+                error
+              );
             }
-
-            setTimeout(
-              () => {
-                listRef.current
-                  ?.scrollToEnd({
-                    animated:
-                      true,
-                  });
-              },
-              100
-            );
           }
-        )
 
-        .subscribe(
-          status => {
-            console.log(
-              "Realtime status:",
-              status
-            );
-          }
+          setTimeout(() => {
+            listRef.current
+              ?.scrollToEnd({
+                animated: true,
+              });
+          }, 100);
+        }
+      )
+      .subscribe(status => {
+        console.log(
+          "Realtime status:",
+          status
         );
-
+      });
 
     return () => {
-      supabase
-        .removeChannel(
-          channel
-        );
+      supabase.removeChannel(
+        channel
+      );
     };
-
   }, [
     conversationId,
     currentUserId,
   ]);
-
 
   async function handleSend() {
     const cleaned =
@@ -334,16 +420,14 @@ export default function ConversationScreen() {
     if (
       !cleaned ||
       sending ||
-      blocked
+      blocked ||
+      !conversationId
     ) {
       return;
     }
 
     try {
-      setSending(
-        true
-      );
-
+      setSending(true);
       setText("");
 
       await sendMessage(
@@ -351,15 +435,32 @@ export default function ConversationScreen() {
         cleaned
       );
 
+      const {
+        error: conversationError,
+      } = await supabase
+        .from("conversations")
+        .update({
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          "id",
+          conversationId
+        );
+
+      if (conversationError) {
+        console.log(
+          "Conversation timestamp error:",
+          conversationError
+        );
+      }
     } catch (error) {
       console.log(
         "Send error:",
         error
       );
 
-      setText(
-        cleaned
-      );
+      setText(cleaned);
 
       Alert.alert(
         "Message failed",
@@ -368,26 +469,26 @@ export default function ConversationScreen() {
           : "Unable to send message."
       );
     } finally {
-      setSending(
-        false
-      );
+      setSending(false);
     }
   }
 
-
   async function handleBlock() {
+    if (!otherUserId) {
+      Alert.alert(
+        "Block user",
+        "Unable to identify this user."
+      );
+      return;
+    }
+
     try {
-      if (
-        blocked
-      ) {
+      if (blocked) {
         await unblockUser(
           otherUserId
         );
 
-        setBlocked(
-          false
-        );
-
+        setBlocked(false);
         return;
       }
 
@@ -395,10 +496,7 @@ export default function ConversationScreen() {
         otherUserId
       );
 
-      setBlocked(
-        true
-      );
-
+      setBlocked(true);
     } catch (error) {
       Alert.alert(
         "Block error",
@@ -409,20 +507,22 @@ export default function ConversationScreen() {
     }
   }
 
-
   async function handleMentor() {
+    if (!otherUserId) {
+      Alert.alert(
+        "Mentor",
+        "Unable to identify this user."
+      );
+      return;
+    }
+
     try {
-      if (
-        isMentor
-      ) {
+      if (isMentor) {
         await removeMentorLabel(
           otherUserId
         );
 
-        setIsMentor(
-          false
-        );
-
+        setIsMentor(false);
         return;
       }
 
@@ -430,10 +530,7 @@ export default function ConversationScreen() {
         otherUserId
       );
 
-      setIsMentor(
-        true
-      );
-
+      setIsMentor(true);
     } catch (error) {
       Alert.alert(
         "Mentor error",
@@ -444,6 +541,18 @@ export default function ConversationScreen() {
     }
   }
 
+  function openProfile() {
+    if (!otherUserId) {
+      return;
+    }
+
+    router.push({
+      pathname: "../member/[id]",
+      params: {
+        id: otherUserId,
+      },
+    });
+  }
 
   function renderMessage({
     item,
@@ -458,7 +567,6 @@ export default function ConversationScreen() {
       <View
         style={[
           styles.messageRow,
-
           mine &&
             styles.myMessageRow,
         ]}
@@ -466,7 +574,6 @@ export default function ConversationScreen() {
         <View
           style={[
             styles.bubble,
-
             mine
               ? styles.myBubble
               : styles.otherBubble,
@@ -475,7 +582,6 @@ export default function ConversationScreen() {
           <Text
             style={[
               styles.messageText,
-
               mine &&
                 styles.myMessageText,
             ]}
@@ -486,7 +592,6 @@ export default function ConversationScreen() {
           <Text
             style={[
               styles.messageTime,
-
               mine &&
                 styles.myMessageTime,
             ]}
@@ -496,11 +601,8 @@ export default function ConversationScreen() {
             ).toLocaleTimeString(
               [],
               {
-                hour:
-                  "2-digit",
-
-                minute:
-                  "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
               }
             )}
           </Text>
@@ -509,28 +611,23 @@ export default function ConversationScreen() {
     );
   }
 
+  const initials =
+    getInitials(name);
 
   return (
     <SafeAreaView
-      style={
-        styles.safeArea
-      }
+      style={styles.safeArea}
     >
       <KeyboardAvoidingView
-        style={
-          styles.container
-        }
+        style={styles.container}
         behavior={
-          Platform.OS ===
-          "ios"
+          Platform.OS === "ios"
             ? "padding"
             : undefined
         }
       >
         <View
-          style={
-            styles.header
-          }
+          style={styles.header}
         >
           <Pressable
             style={
@@ -547,62 +644,76 @@ export default function ConversationScreen() {
             />
           </Pressable>
 
-          {!!image && (
-            <Image
-              source={{
-                uri: image,
-              }}
-              style={
-                styles.avatar
-              }
-            />
-          )}
-
-          <View
+          <Pressable
             style={
-              styles.headerInfo
+              styles.profileHeader
             }
+            onPress={openProfile}
           >
-            <View
-              style={
-                styles.nameRow
-              }
-            >
-              <Text
+            {image ? (
+              <Image
+                source={{
+                  uri: image,
+                }}
+                style={styles.avatar}
+              />
+            ) : (
+              <View
                 style={
-                  styles.name
-                }
-                numberOfLines={
-                  1
+                  styles.avatarFallback
                 }
               >
-                {name}
-              </Text>
+                <Text
+                  style={
+                    styles.avatarFallbackText
+                  }
+                >
+                  {initials}
+                </Text>
+              </View>
+            )}
 
-              {isMentor && (
-                <Ionicons
-                  name="star"
-                  size={14}
-                  color="#E0A000"
-                />
-              )}
-            </View>
-
-            <Text
+            <View
               style={
-                styles.role
+                styles.headerInfo
               }
             >
-              {role
-                .charAt(0)
-                .toUpperCase() +
-                role.slice(1)}
+              <View
+                style={
+                  styles.nameRow
+                }
+              >
+                <Text
+                  style={styles.name}
+                  numberOfLines={1}
+                >
+                  {name}
+                </Text>
 
-              {username
-                ? ` · @${username}`
-                : ""}
-            </Text>
-          </View>
+                {isMentor && (
+                  <Ionicons
+                    name="star"
+                    size={14}
+                    color="#E0A000"
+                  />
+                )}
+              </View>
+
+              <Text
+                style={styles.role}
+                numberOfLines={1}
+              >
+                {role
+                  .charAt(0)
+                  .toUpperCase() +
+                  role.slice(1)}
+
+                {displayUsername
+                  ? ` · @${displayUsername}`
+                  : ""}
+              </Text>
+            </View>
+          </Pressable>
 
           <Pressable
             style={
@@ -621,7 +732,6 @@ export default function ConversationScreen() {
             />
           </Pressable>
         </View>
-
 
         <View
           style={
@@ -643,12 +753,9 @@ export default function ConversationScreen() {
           </Text>
         </View>
 
-
         {loading ? (
           <View
-            style={
-              styles.loading
-            }
+            style={styles.loading}
           >
             <ActivityIndicator
               color={PRIMARY}
@@ -659,28 +766,63 @@ export default function ConversationScreen() {
             ref={listRef}
             data={messages}
             keyExtractor={
-              item =>
-                item.id
+              item => item.id
             }
             renderItem={
               renderMessage
             }
-            contentContainerStyle={
-              styles.messages
-            }
+            contentContainerStyle={[
+              styles.messages,
+              messages.length === 0 &&
+                styles.emptyMessages,
+            ]}
             showsVerticalScrollIndicator={
               false
             }
+            keyboardShouldPersistTaps="handled"
             onContentSizeChange={() =>
               listRef.current
                 ?.scrollToEnd({
-                  animated:
-                    false,
+                  animated: false,
                 })
+            }
+            ListEmptyComponent={
+              <View
+                style={
+                  styles.emptyConversation
+                }
+              >
+                <View
+                  style={
+                    styles.emptyIcon
+                  }
+                >
+                  <Ionicons
+                    name="chatbubble-ellipses-outline"
+                    size={30}
+                    color={PRIMARY}
+                  />
+                </View>
+
+                <Text
+                  style={
+                    styles.emptyTitle
+                  }
+                >
+                  Start the conversation
+                </Text>
+
+                <Text
+                  style={
+                    styles.emptyText
+                  }
+                >
+                  Send a message to begin chatting.
+                </Text>
+              </View>
             }
           />
         )}
-
 
         {blocked && (
           <View
@@ -699,26 +841,18 @@ export default function ConversationScreen() {
                 styles.blockedText
               }
             >
-              You blocked
-              this user.
+              You blocked this user.
             </Text>
           </View>
         )}
 
-
         <View
-          style={
-            styles.composer
-          }
+          style={styles.composer}
         >
           <TextInput
             value={text}
-            onChangeText={
-              setText
-            }
-            editable={
-              !blocked
-            }
+            onChangeText={setText}
+            editable={!blocked}
             placeholder={
               blocked
                 ? "Unblock to send a message"
@@ -726,17 +860,16 @@ export default function ConversationScreen() {
             }
             placeholderTextColor="#999"
             multiline
-            style={
-              styles.input
-            }
+            maxLength={3000}
+            style={styles.input}
           />
 
           <Pressable
             style={[
               styles.sendButton,
-
               (!text.trim() ||
-                blocked) &&
+                blocked ||
+                sending) &&
                 styles.sendDisabled,
             ]}
             disabled={
@@ -744,9 +877,7 @@ export default function ConversationScreen() {
               blocked ||
               sending
             }
-            onPress={
-              handleSend
-            }
+            onPress={handleSend}
           >
             {sending ? (
               <ActivityIndicator
@@ -763,44 +894,34 @@ export default function ConversationScreen() {
           </Pressable>
         </View>
 
-
         <ConversationOptions
           visible={
             optionsVisible
           }
           name={name}
           role={role}
-          blocked={
-            blocked
-          }
-          isMentor={
-            isMentor
-          }
+          blocked={blocked}
+          isMentor={isMentor}
           onClose={() =>
             setOptionsVisible(
               false
             )
           }
-          onBlock={
-            handleBlock
-          }
+          onBlock={handleBlock}
           onToggleMentor={
             handleMentor
           }
         />
-
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-
 const styles =
   StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor:
-        "#fff",
+      backgroundColor: "#fff",
     },
 
     container: {
@@ -809,25 +930,26 @@ const styles =
 
     header: {
       height: 67,
-      paddingHorizontal:
-        12,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      borderBottomWidth:
-        1,
+      paddingHorizontal: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      borderBottomWidth: 1,
       borderBottomColor:
         "#EFEFF2",
+      backgroundColor: "#fff",
     },
 
     headerButton: {
       width: 40,
       height: 40,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    profileHeader: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
     },
 
     avatar: {
@@ -837,24 +959,37 @@ const styles =
       marginLeft: 4,
     },
 
+    avatarFallback: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      marginLeft: 4,
+      backgroundColor: "#EEEEFF",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    avatarFallbackText: {
+      color: PRIMARY,
+      fontSize: 13,
+      fontWeight: "900",
+    },
+
     headerInfo: {
       flex: 1,
       marginLeft: 10,
     },
 
     nameRow: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
+      flexDirection: "row",
+      alignItems: "center",
       gap: 5,
     },
 
     name: {
       maxWidth: "90%",
       fontSize: 15,
-      fontWeight:
-        "800",
+      fontWeight: "800",
       color: "#161616",
     },
 
@@ -862,24 +997,19 @@ const styles =
       marginTop: 2,
       fontSize: 11,
       color: "#888",
+      textTransform: "capitalize",
     },
 
     securityNotice: {
-      alignSelf:
-        "center",
+      alignSelf: "center",
       marginTop: 10,
-      paddingHorizontal:
-        10,
-      paddingVertical:
-        5,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
       borderRadius: 9,
-      backgroundColor:
-        "#F4F4F6",
-      flexDirection:
-        "row",
+      backgroundColor: "#F4F4F6",
+      flexDirection: "row",
       gap: 5,
-      alignItems:
-        "center",
+      alignItems: "center",
     },
 
     securityText: {
@@ -889,54 +1019,73 @@ const styles =
 
     loading: {
       flex: 1,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
+      alignItems: "center",
+      justifyContent: "center",
     },
 
     messages: {
-      paddingHorizontal:
-        14,
-      paddingVertical:
-        15,
+      paddingHorizontal: 14,
+      paddingVertical: 15,
+      flexGrow: 1,
+    },
+
+    emptyMessages: {
+      justifyContent: "center",
+    },
+
+    emptyConversation: {
+      alignItems: "center",
+      paddingHorizontal: 28,
+    },
+
+    emptyIcon: {
+      width: 68,
+      height: 68,
+      borderRadius: 34,
+      backgroundColor: "#EEEEFF",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    emptyTitle: {
+      marginTop: 14,
+      fontSize: 17,
+      fontWeight: "900",
+      color: "#222",
+    },
+
+    emptyText: {
+      marginTop: 6,
+      fontSize: 12,
+      color: "#888",
+      textAlign: "center",
     },
 
     messageRow: {
-      flexDirection:
-        "row",
-      marginVertical:
-        4,
-      justifyContent:
-        "flex-start",
+      flexDirection: "row",
+      marginVertical: 4,
+      justifyContent: "flex-start",
     },
 
     myMessageRow: {
-      justifyContent:
-        "flex-end",
+      justifyContent: "flex-end",
     },
 
     bubble: {
       maxWidth: "80%",
-      paddingHorizontal:
-        13,
-      paddingVertical:
-        9,
+      paddingHorizontal: 13,
+      paddingVertical: 9,
       borderRadius: 17,
     },
 
     otherBubble: {
-      backgroundColor:
-        "#F0F0F3",
-      borderBottomLeftRadius:
-        5,
+      backgroundColor: "#F0F0F3",
+      borderBottomLeftRadius: 5,
     },
 
     myBubble: {
-      backgroundColor:
-        PRIMARY,
-      borderBottomRightRadius:
-        5,
+      backgroundColor: PRIMARY,
+      borderBottomRightRadius: 5,
     },
 
     messageText: {
@@ -952,8 +1101,7 @@ const styles =
     messageTime: {
       marginTop: 4,
       fontSize: 9,
-      alignSelf:
-        "flex-end",
+      alignSelf: "flex-end",
       color: "#888",
     },
 
@@ -963,41 +1111,32 @@ const styles =
     },
 
     blockedNotice: {
-      marginHorizontal:
-        15,
+      marginHorizontal: 15,
       marginBottom: 7,
       borderRadius: 10,
-      backgroundColor:
-        "#FFF0F0",
+      backgroundColor: "#FFF0F0",
       padding: 10,
-      flexDirection:
-        "row",
-      justifyContent:
-        "center",
-      alignItems:
-        "center",
+      flexDirection: "row",
+      justifyContent: "center",
+      alignItems: "center",
       gap: 7,
     },
 
     blockedText: {
       color: "#943535",
       fontSize: 12,
-      fontWeight:
-        "600",
+      fontWeight: "600",
     },
 
     composer: {
-      flexDirection:
-        "row",
-      alignItems:
-        "flex-end",
-      paddingHorizontal:
-        12,
-      paddingVertical:
-        10,
+      flexDirection: "row",
+      alignItems: "flex-end",
+      paddingHorizontal: 12,
+      paddingVertical: 10,
       borderTopWidth: 1,
       borderTopColor:
         "#EFEFF2",
+      backgroundColor: "#fff",
     },
 
     input: {
@@ -1005,13 +1144,10 @@ const styles =
       minHeight: 44,
       maxHeight: 120,
       borderRadius: 22,
-      backgroundColor:
-        "#F2F2F5",
-      paddingHorizontal:
-        16,
+      backgroundColor: "#F2F2F5",
+      paddingHorizontal: 16,
       paddingTop: 11,
-      paddingBottom:
-        11,
+      paddingBottom: 11,
       fontSize: 14,
       color: "#222",
     },
@@ -1020,12 +1156,9 @@ const styles =
       width: 44,
       height: 44,
       borderRadius: 22,
-      backgroundColor:
-        PRIMARY,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
+      backgroundColor: PRIMARY,
+      alignItems: "center",
+      justifyContent: "center",
       marginLeft: 8,
     },
 

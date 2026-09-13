@@ -1,5 +1,12 @@
-import React from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
 import {
+  ActivityIndicator,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -7,34 +14,529 @@ import {
   View,
 } from "react-native";
 
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
+
+import {
+  Ionicons,
+} from "@expo/vector-icons";
+
+import {
+  useFocusEffect,
+  useRouter,
+} from "expo-router";
+
+import {
+  supabase,
+} from "../../../lib/supabase";
 
 const PRIMARY = "#0300cf";
+
+type Opportunity = {
+  id: string;
+  title: string;
+  status: string | null;
+  opportunity_type: string | null;
+  closing_date: string | null;
+  created_at: string;
+};
+
+type Application = {
+  id: string;
+  opportunity_id: string;
+  status: string | null;
+  created_at: string;
+};
+
+type DashboardStats = {
+  activeJobs: number;
+  applicants: number;
+  reviewing: number;
+  shortlisted: number;
+  accepted: number;
+};
 
 export default function BusinessDashboard() {
   const router = useRouter();
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
+  const [
+    companyName,
+    setCompanyName,
+  ] = useState("Your business");
+
+  const [
+    stats,
+    setStats,
+  ] = useState<DashboardStats>({
+    activeJobs: 0,
+    applicants: 0,
+    reviewing: 0,
+    shortlisted: 0,
+    accepted: 0,
+  });
+
+  const [
+    opportunities,
+    setOpportunities,
+  ] = useState<Opportunity[]>([]);
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const [
+    refreshing,
+    setRefreshing,
+  ] = useState(false);
+
+  const loadDashboard =
+    useCallback(
+      async (
+        showLoader = true
+      ) => {
+        try {
+          if (showLoader) {
+            setLoading(true);
+          }
+
+          const {
+            data: {
+              user,
+            },
+            error:
+              userError,
+          } =
+            await supabase.auth.getUser();
+
+          if (
+            userError ||
+            !user
+          ) {
+            throw new Error(
+              "Business account could not be found."
+            );
+          }
+
+          /*
+           * COMPANY DETAILS
+           */
+
+          const {
+            data:
+              businessProfile,
+            error:
+              businessError,
+          } =
+            await supabase
+              .from(
+                "business_profiles"
+              )
+              .select(
+                `
+                organisation_name
+              `
+              )
+              .eq(
+                "user_id",
+                user.id
+              )
+              .maybeSingle();
+
+          if (
+            businessError
+          ) {
+            console.log(
+              "Dashboard business profile error:",
+              businessError
+            );
+          }
+
+          if (
+            businessProfile
+              ?.organisation_name
+          ) {
+            setCompanyName(
+              businessProfile
+                .organisation_name
+            );
+          }
+
+          /*
+           * BUSINESS OPPORTUNITIES
+           */
+
+          const {
+            data:
+              opportunityRows,
+            error:
+              opportunityError,
+          } =
+            await supabase
+              .from(
+                "opportunities"
+              )
+              .select(
+                `
+                id,
+                title,
+                status,
+                opportunity_type,
+                closing_date,
+                created_at
+              `
+              )
+              .eq(
+                "business_id",
+                user.id
+              )
+              .order(
+                "created_at",
+                {
+                  ascending:
+                    false,
+                }
+              );
+
+          if (
+            opportunityError
+          ) {
+            throw opportunityError;
+          }
+
+          const jobs =
+            (
+              opportunityRows ||
+              []
+            ) as Opportunity[];
+
+          setOpportunities(
+            jobs.slice(
+              0,
+              4
+            )
+          );
+
+          /*
+           * ACTIVE JOB COUNT
+           */
+
+          const now =
+            new Date();
+
+          const activeJobs =
+            jobs.filter(
+              job => {
+                if (
+                  job.status !==
+                  "approved"
+                ) {
+                  return false;
+                }
+
+                if (
+                  !job.closing_date
+                ) {
+                  return true;
+                }
+
+                return (
+                  new Date(
+                    job.closing_date
+                  ) >= now
+                );
+              }
+            ).length;
+
+          /*
+           * APPLICATIONS
+           */
+
+          if (
+            jobs.length ===
+            0
+          ) {
+            setStats({
+              activeJobs,
+              applicants: 0,
+              reviewing: 0,
+              shortlisted: 0,
+              accepted: 0,
+            });
+
+            return;
+          }
+
+          const opportunityIds =
+            jobs.map(
+              item =>
+                item.id
+            );
+
+          const {
+            data:
+              applicationRows,
+            error:
+              applicationError,
+          } =
+            await supabase
+              .from(
+                "opportunity_applications"
+              )
+              .select(
+                `
+                id,
+                opportunity_id,
+                status,
+                created_at
+              `
+              )
+              .in(
+                "opportunity_id",
+                opportunityIds
+              );
+
+          if (
+            applicationError
+          ) {
+            throw applicationError;
+          }
+
+          const applications =
+            (
+              applicationRows ||
+              []
+            ) as Application[];
+
+          setStats({
+            activeJobs,
+
+            applicants:
+              applications.length,
+
+            reviewing:
+              applications.filter(
+                item =>
+                  item.status ===
+                    "reviewing" ||
+                  item.status ===
+                    "pending"
+              ).length,
+
+            shortlisted:
+              applications.filter(
+                item =>
+                  item.status ===
+                  "shortlisted"
+              ).length,
+
+            accepted:
+              applications.filter(
+                item =>
+                  item.status ===
+                  "accepted"
+              ).length,
+          });
+        } catch (
+          error: any
+        ) {
+          console.log(
+            "Business dashboard error:",
+            error
+          );
+        } finally {
+          setLoading(
+            false
+          );
+
+          setRefreshing(
+            false
+          );
+        }
+      },
+      []
+    );
+
+  /*
+   * Reload when returning
+   * to dashboard.
+   */
+
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboard();
+    }, [
+      loadDashboard,
+    ])
+  );
+
+  /*
+   * REALTIME
+   */
+
+  useEffect(() => {
+    const channel =
+      supabase
+        .channel(
+          "business-dashboard"
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "opportunities",
+          },
+          () => {
+            loadDashboard(
+              false
+            );
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "opportunity_applications",
+          },
+          () => {
+            loadDashboard(
+              false
+            );
+          }
+        )
+        .subscribe();
+
+    return () => {
+      supabase.removeChannel(
+        channel
+      );
+    };
+  }, [
+    loadDashboard,
+  ]);
+
+  async function refresh() {
+    setRefreshing(
+      true
+    );
+
+    await loadDashboard(
+      false
+    );
+  }
+
+  function openJobs() {
+    router.push(
+      "/(business-auth)/(tabs)/jobs"
+    );
+  }
+
+  function openApplicants() {
+    router.push(
+      "/(business-auth)/(tabs)/applicants"
+    );
+  }
+
+  function openProfile() {
+    router.push(
+      "/(business-auth)/profile"
+    );
+  }
+
+  function openFeed() {
+    router.push(
+      "/(business-auth)/(tabs)/feed"
+    );
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView
+        style={
+          styles.loadingContainer
+        }
       >
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>
+        <ActivityIndicator
+          size="large"
+          color={PRIMARY}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView
+      style={
+        styles.container
+      }
+    >
+      <ScrollView
+        showsVerticalScrollIndicator={
+          false
+        }
+        refreshControl={
+          <RefreshControl
+            refreshing={
+              refreshing
+            }
+            onRefresh={
+              refresh
+            }
+            tintColor={
+              PRIMARY
+            }
+          />
+        }
+        contentContainerStyle={
+          styles.content
+        }
+      >
+        {/* HEADER */}
+
+        <View
+          style={
+            styles.header
+          }
+        >
+          <View
+            style={
+              styles.headerText
+            }
+          >
+            <Text
+              style={
+                styles.greeting
+              }
+            >
               Dashboard
             </Text>
 
-            <Text style={styles.subtitle}>
-              Find the right Richfield talent.
+            <Text
+              style={
+                styles.companyName
+              }
+              numberOfLines={
+                1
+              }
+            >
+              {companyName}
             </Text>
           </View>
 
           <TouchableOpacity
-            style={styles.notificationButton}
+            style={
+              styles.notificationButton
+            }
+            activeOpacity={
+              0.7
+            }
           >
             <Ionicons
               name="notifications-outline"
@@ -44,351 +546,904 @@ export default function BusinessDashboard() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.heroCard}>
-          <View style={styles.heroIcon}>
-            <Ionicons
-              name="briefcase"
-              size={30}
-              color="#FFFFFF"
-            />
-          </View>
+        {/* SUMMARY */}
 
-          <Text style={styles.heroTitle}>
-            Grow your team
-          </Text>
-
-          <Text style={styles.heroDescription}>
-            Post opportunities and connect with students
-            and alumni across the Richfield network.
+        <View
+          style={
+            styles.sectionHeader
+          }
+        >
+          <Text
+            style={
+              styles.sectionTitle
+            }
+          >
+            Hiring overview
           </Text>
 
           <TouchableOpacity
-            style={styles.heroButton}
-            onPress={() =>
-              router.push(
-                "/(business-auth)/(tabs)/jobs"
-              )
+            onPress={
+              openApplicants
             }
           >
-            <Ionicons
-              name="add"
-              size={20}
-              color={PRIMARY}
-            />
-
-            <Text style={styles.heroButtonText}>
-              Post a Job
+            <Text
+              style={
+                styles.sectionLink
+              }
+            >
+              View applicants
             </Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.sectionTitle}>
-          Overview
-        </Text>
+        <View
+          style={
+            styles.primaryStats
+          }
+        >
+          <View
+            style={
+              styles.mainStat
+            }
+          >
+            <Text
+              style={
+                styles.mainStatValue
+              }
+            >
+              {
+                stats.activeJobs
+              }
+            </Text>
 
-        <View style={styles.statsRow}>
-          <StatCard
-            icon="briefcase-outline"
-            value="0"
-            label="Active Jobs"
+            <Text
+              style={
+                styles.mainStatLabel
+              }
+            >
+              Active jobs
+            </Text>
+          </View>
+
+          <View
+            style={
+              styles.statDivider
+            }
           />
 
-          <StatCard
+          <View
+            style={
+              styles.mainStat
+            }
+          >
+            <Text
+              style={
+                styles.mainStatValue
+              }
+            >
+              {
+                stats.applicants
+              }
+            </Text>
+
+            <Text
+              style={
+                styles.mainStatLabel
+              }
+            >
+              Applicants
+            </Text>
+          </View>
+        </View>
+
+        {/* PIPELINE */}
+
+        <View
+          style={
+            styles.pipeline
+          }
+        >
+          <PipelineItem
+            label="Pending"
+            value={
+              stats.reviewing
+            }
+          />
+
+          <PipelineItem
+            label="Shortlisted"
+            value={
+              stats.shortlisted
+            }
+          />
+
+          <PipelineItem
+            label="Accepted"
+            value={
+              stats.accepted
+            }
+          />
+        </View>
+
+        {/* QUICK ACTIONS */}
+
+        <Text
+          style={[
+            styles.sectionTitle,
+            styles.actionsHeading,
+          ]}
+        >
+          Quick actions
+        </Text>
+
+        <View
+          style={
+            styles.actionsContainer
+          }
+        >
+          <QuickAction
+            icon="add-outline"
+            title="Post an opportunity"
+            onPress={
+              openJobs
+            }
+          />
+
+          <QuickAction
             icon="people-outline"
-            value="0"
-            label="Applicants"
+            title="Review applicants"
+            onPress={
+              openApplicants
+            }
+          />
+
+          <QuickAction
+            icon="search-outline"
+            title="Discover talent"
+            onPress={
+              openFeed
+            }
+          />
+
+          <QuickAction
+            icon="business-outline"
+            title="Company profile"
+            onPress={
+              openProfile
+            }
           />
         </View>
 
-        <View style={styles.statsRow}>
-          <StatCard
-            icon="eye-outline"
-            value="0"
-            label="Profile Views"
-          />
+        {/* RECENT OPPORTUNITIES */}
 
-          <StatCard
-            icon="bookmark-outline"
-            value="0"
-            label="Saved Talent"
-          />
+        <View
+          style={[
+            styles.sectionHeader,
+            styles.jobsHeader,
+          ]}
+        >
+          <Text
+            style={
+              styles.sectionTitle
+            }
+          >
+            Recent opportunities
+          </Text>
+
+          <TouchableOpacity
+            onPress={
+              openJobs
+            }
+          >
+            <Text
+              style={
+                styles.sectionLink
+              }
+            >
+              See all
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        <Text style={styles.sectionTitle}>
-          Quick Actions
-        </Text>
+        {opportunities.length ===
+        0 ? (
+          <View
+            style={
+              styles.emptyState
+            }
+          >
+            <Ionicons
+              name="briefcase-outline"
+              size={29}
+              color="#777"
+            />
 
-        <QuickAction
-          icon="add-circle-outline"
-          title="Create Job"
-          description="Post a new opportunity"
-          onPress={() =>
-            router.push(
-              "/(business-auth)/(tabs)/jobs"
-            )
-          }
-        />
+            <Text
+              style={
+                styles.emptyTitle
+              }
+            >
+              No opportunities yet
+            </Text>
 
-        <QuickAction
-          icon="people-outline"
-          title="View Applicants"
-          description="Review people interested in your opportunities"
-          onPress={() =>
-            router.push(
-              "/(business-auth)/(tabs)/applicants"
-            )
-          }
-        />
+            <Text
+              style={
+                styles.emptyText
+              }
+            >
+              Create your first
+              opportunity to start
+              receiving applications.
+            </Text>
 
-        <QuickAction
-          icon="business-outline"
-          title="Company Profile"
-          description="Update your business information"
-          onPress={() =>
-            router.push(
-              "/(business-auth)/profile"
-            )
-          }
-        />
+            <TouchableOpacity
+              onPress={
+                openJobs
+              }
+              style={
+                styles.emptyButton
+              }
+            >
+              <Text
+                style={
+                  styles.emptyButtonText
+                }
+              >
+                Create opportunity
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View
+            style={
+              styles.jobsList
+            }
+          >
+            {opportunities.map(
+              job => (
+                <OpportunityRow
+                  key={
+                    job.id
+                  }
+                  job={
+                    job
+                  }
+                  onPress={
+                    openJobs
+                  }
+                />
+              )
+            )}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function StatCard({
-  icon,
-  value,
+/* =========================================================
+   PIPELINE
+========================================================= */
+
+function PipelineItem({
   label,
+  value,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
-  value: string;
   label: string;
+  value: number;
 }) {
   return (
-    <View style={styles.statCard}>
-      <View style={styles.statIcon}>
-        <Ionicons
-          name={icon}
-          size={22}
-          color={PRIMARY}
-        />
-      </View>
-
-      <Text style={styles.statValue}>
+    <View
+      style={
+        styles.pipelineItem
+      }
+    >
+      <Text
+        style={
+          styles.pipelineValue
+        }
+      >
         {value}
       </Text>
 
-      <Text style={styles.statLabel}>
+      <Text
+        style={
+          styles.pipelineLabel
+        }
+      >
         {label}
       </Text>
     </View>
   );
 }
 
+/* =========================================================
+   QUICK ACTION
+========================================================= */
+
 function QuickAction({
   icon,
   title,
-  description,
   onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
-  description: string;
   onPress: () => void;
 }) {
   return (
     <TouchableOpacity
-      style={styles.actionCard}
-      onPress={onPress}
-      activeOpacity={0.8}
+      style={
+        styles.actionRow
+      }
+      activeOpacity={
+        0.65
+      }
+      onPress={
+        onPress
+      }
     >
-      <View style={styles.actionIcon}>
-        <Ionicons
-          name={icon}
-          size={24}
-          color={PRIMARY}
-        />
-      </View>
+      <Ionicons
+        name={icon}
+        size={21}
+        color="#222"
+      />
 
-      <View style={styles.actionContent}>
-        <Text style={styles.actionTitle}>
-          {title}
-        </Text>
-
-        <Text style={styles.actionDescription}>
-          {description}
-        </Text>
-      </View>
+      <Text
+        style={
+          styles.actionTitle
+        }
+      >
+        {title}
+      </Text>
 
       <Ionicons
         name="chevron-forward"
-        size={20}
-        color="#999"
+        size={18}
+        color="#aaa"
       />
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F7F7FA",
-  },
+/* =========================================================
+   OPPORTUNITY
+========================================================= */
 
-  content: {
-    padding: 18,
-    paddingBottom: 30,
-  },
+function OpportunityRow({
+  job,
+  onPress,
+}: {
+  job: Opportunity;
+  onPress: () => void;
+}) {
+  const status =
+    getStatusInfo(
+      job.status
+    );
 
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 22,
-  },
+  return (
+    <TouchableOpacity
+      style={
+        styles.jobRow
+      }
+      activeOpacity={
+        0.7
+      }
+      onPress={
+        onPress
+      }
+    >
+      <View
+        style={
+          styles.jobInfo
+        }
+      >
+        <Text
+          style={
+            styles.jobTitle
+          }
+          numberOfLines={
+            1
+          }
+        >
+          {job.title}
+        </Text>
 
-  greeting: {
-    fontSize: 25,
-    fontWeight: "800",
-    color: "#111111",
-  },
+        <View
+          style={
+            styles.jobMetaRow
+          }
+        >
+          <Text
+            style={
+              styles.jobMeta
+            }
+          >
+            {formatType(
+              job.opportunity_type
+            )}
+          </Text>
 
-  subtitle: {
-    fontSize: 14,
-    color: "#777",
-    marginTop: 4,
-  },
+          {job.closing_date && (
+            <>
+              <Text
+                style={
+                  styles.metaDot
+                }
+              >
+                •
+              </Text>
 
-  notificationButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+              <Text
+                style={
+                  styles.jobMeta
+                }
+              >
+                Closes{" "}
+                {formatDate(
+                  job.closing_date
+                )}
+              </Text>
+            </>
+          )}
+        </View>
+      </View>
 
-  heroCard: {
-    backgroundColor: PRIMARY,
-    borderRadius: 24,
-    padding: 22,
-    marginBottom: 28,
-  },
+      <View
+        style={[
+          styles.statusBadge,
+          {
+            backgroundColor:
+              status.background,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.statusText,
+            {
+              color:
+                status.color,
+            },
+          ]}
+        >
+          {status.label}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
 
-  heroIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 18,
-  },
+/* =========================================================
+   HELPERS
+========================================================= */
 
-  heroTitle: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#FFFFFF",
-  },
+function formatType(
+  value: string | null
+) {
+  if (!value) {
+    return "Opportunity";
+  }
 
-  heroDescription: {
-    color: "#E4E4FF",
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 8,
-    marginBottom: 20,
-  },
+  return value
+    .replace(
+      /_/g,
+      " "
+    )
+    .replace(
+      /\b\w/g,
+      char =>
+        char.toUpperCase()
+    );
+}
 
-  heroButton: {
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 13,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    flexDirection: "row",
-    alignSelf: "flex-start",
-    alignItems: "center",
-    gap: 6,
-  },
+function formatDate(
+  value: string
+) {
+  const date =
+    new Date(value);
 
-  heroButtonText: {
-    color: PRIMARY,
-    fontWeight: "700",
-  },
+  return date.toLocaleDateString(
+    undefined,
+    {
+      day: "numeric",
+      month: "short",
+    }
+  );
+}
 
-  sectionTitle: {
-    fontSize: 19,
-    fontWeight: "800",
-    marginBottom: 14,
-    color: "#111",
-  },
+function getStatusInfo(
+  status: string | null
+) {
+  switch (status) {
+    case "approved":
+      return {
+        label: "Live",
+        color: "#157347",
+        background:
+          "#E9F7EF",
+      };
 
-  statsRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 12,
-  },
+    case "pending":
+      return {
+        label: "Pending",
+        color: "#8A6116",
+        background:
+          "#FFF5DA",
+      };
 
-  statCard: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    padding: 16,
-    borderRadius: 18,
-  },
+    case "rejected":
+      return {
+        label: "Rejected",
+        color: "#B42318",
+        background:
+          "#FDECEC",
+      };
 
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "#EEEEFF",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
+    case "closed":
+      return {
+        label: "Closed",
+        color: "#666",
+        background:
+          "#EEEEF1",
+      };
 
-  statValue: {
-    fontSize: 23,
-    fontWeight: "800",
-    color: "#111",
-  },
+    default:
+      return {
+        label:
+          status ||
+          "Draft",
+        color: "#666",
+        background:
+          "#EEEEF1",
+      };
+  }
+}
 
-  statLabel: {
-    color: "#777",
-    marginTop: 3,
-    fontSize: 13,
-  },
+/* =========================================================
+   STYLES
+========================================================= */
 
-  actionCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    padding: 15,
-    borderRadius: 17,
-    marginBottom: 11,
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
+    },
 
-  actionIcon: {
-    width: 45,
-    height: 45,
-    borderRadius: 14,
-    backgroundColor: "#EEEEFF",
-    justifyContent: "center",
-    alignItems: "center",
-  },
+    loadingContainer: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
 
-  actionContent: {
-    flex: 1,
-    marginLeft: 13,
-  },
+    content: {
+      paddingHorizontal:
+        20,
+      paddingTop: 8,
+      paddingBottom:
+        40,
+    },
 
-  actionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#111",
-  },
+    /*
+     * Header
+     */
 
-  actionDescription: {
-    fontSize: 12,
-    color: "#888",
-    marginTop: 3,
-  },
-});
+    header: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "space-between",
+      paddingVertical:
+        12,
+      marginBottom:
+        28,
+    },
+
+    headerText: {
+      flex: 1,
+      paddingRight:
+        16,
+    },
+
+    greeting: {
+      fontSize: 26,
+      fontWeight:
+        "800",
+      color: "#111",
+      letterSpacing:
+        -0.5,
+    },
+
+    companyName: {
+      marginTop: 4,
+      color: "#6B6B72",
+      fontSize: 14,
+    },
+
+    notificationButton: {
+      width: 42,
+      height: 42,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      borderWidth: 1,
+      borderColor:
+        "#E6E6E8",
+      borderRadius: 21,
+    },
+
+    /*
+     * Sections
+     */
+
+    sectionHeader: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "space-between",
+      marginBottom:
+        14,
+    },
+
+    sectionTitle: {
+      fontSize: 17,
+      fontWeight: "700",
+      color: "#171717",
+    },
+
+    sectionLink: {
+      color: PRIMARY,
+      fontSize: 12,
+      fontWeight:
+        "700",
+    },
+
+    /*
+     * Stats
+     */
+
+    primaryStats: {
+      flexDirection:
+        "row",
+      borderWidth: 1,
+      borderColor:
+        "#E8E8EA",
+      borderRadius: 12,
+      minHeight: 104,
+      backgroundColor:
+        "#FFFFFF",
+    },
+
+    mainStat: {
+      flex: 1,
+      justifyContent:
+        "center",
+      paddingHorizontal:
+        18,
+    },
+
+    statDivider: {
+      width: 1,
+      backgroundColor:
+        "#E8E8EA",
+      marginVertical:
+        18,
+    },
+
+    mainStatValue: {
+      color: "#111",
+      fontSize: 28,
+      fontWeight:
+        "800",
+    },
+
+    mainStatLabel: {
+      color: "#73737A",
+      fontSize: 12,
+      marginTop: 3,
+    },
+
+    /*
+     * Pipeline
+     */
+
+    pipeline: {
+      flexDirection:
+        "row",
+      paddingVertical:
+        18,
+      borderBottomWidth:
+        1,
+      borderBottomColor:
+        "#ECECEE",
+    },
+
+    pipelineItem: {
+      flex: 1,
+    },
+
+    pipelineValue: {
+      fontSize: 17,
+      fontWeight:"700",
+      color: "#222",
+    },
+
+    pipelineLabel: {
+      marginTop: 3,
+      color: "#85858B",
+      fontSize: 11,
+    },
+
+    /*
+     * Actions
+     */
+
+    actionsHeading: {
+      marginTop: 28,
+      marginBottom:
+        10,
+    },
+
+    actionsContainer: {
+      borderTopWidth: 1,
+      borderTopColor:
+        "#EBEBED",
+    },
+
+    actionRow: {
+      minHeight: 57,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      borderBottomWidth:
+        1,
+      borderBottomColor:
+        "#EBEBED",
+    },
+
+    actionTitle: {
+      flex: 1,
+      marginLeft: 13,
+      fontSize: 14,
+      color: "#242424",
+      fontWeight:
+        "600",
+    },
+
+    /*
+     * Opportunities
+     */
+
+    jobsHeader: {
+      marginTop: 30,
+    },
+
+    jobsList: {
+      borderTopWidth: 1,
+      borderTopColor:
+        "#EBEBED",
+    },
+
+    jobRow: {
+      minHeight: 76,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      borderBottomWidth:
+        1,
+      borderBottomColor:
+        "#EBEBED",
+      paddingVertical:
+        12,
+    },
+
+    jobInfo: {
+      flex: 1,
+      paddingRight:
+        12,
+    },
+
+    jobTitle: {
+      fontSize: 14,
+      color: "#171717",
+      fontWeight:
+        "700",
+    },
+
+    jobMetaRow: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      marginTop: 6,
+      flexWrap:
+        "wrap",
+    },
+
+    jobMeta: {
+      color: "#77777E",
+      fontSize: 11,
+    },
+
+    metaDot: {
+      color: "#B0B0B5",
+      fontSize: 10,
+      marginHorizontal:
+        6,
+    },
+
+    statusBadge: {
+      paddingHorizontal:
+        10,
+      paddingVertical:
+        5,
+      borderRadius: 20,
+    },
+
+    statusText: {
+      fontSize: 10,
+      fontWeight:
+        "700",
+    },
+
+    /*
+     * Empty
+     */
+
+    emptyState: {
+      alignItems:
+        "flex-start",
+      paddingVertical:
+        24,
+      borderTopWidth: 1,
+      borderTopColor:
+        "#EBEBED",
+    },
+
+    emptyTitle: {
+      marginTop: 12,
+      fontSize: 15,
+      fontWeight:
+        "700",
+      color: "#222",
+    },
+
+    emptyText: {
+      marginTop: 5,
+      color: "#777",
+      fontSize: 12,
+      lineHeight: 18,
+      maxWidth: 290,
+    },
+
+    emptyButton: {
+      marginTop: 15,
+      paddingVertical:
+        10,
+      paddingHorizontal:
+        14,
+      borderRadius: 7,
+      backgroundColor:
+        PRIMARY,
+    },
+
+    emptyButtonText: {
+      color: "#FFF",
+      fontSize: 12,
+      fontWeight:
+        "700",
+    },
+  }) as any;

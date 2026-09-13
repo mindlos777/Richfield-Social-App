@@ -18,193 +18,507 @@ import {
   View,
 } from "react-native";
 
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
 
-import { supabase } from "../../../lib/supabase";
+import {
+  Ionicons,
+} from "@expo/vector-icons";
+
+import {
+  supabase,
+} from "../../../lib/supabase";
 
 const PRIMARY = "#0300cf";
 
-type JobStatus =
-  | "draft"
-  | "active"
+type OpportunityStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
   | "closed";
 
-type EmploymentType =
-  | "Full-time"
-  | "Part-time"
-  | "Internship"
-  | "Graduate Programme"
-  | "Contract";
+type OpportunityType =
+  | "job"
+  | "part_time"
+  | "internship"
+  | "graduate"
+  | "learnership";
 
-type WorkplaceType =
-  | "On-site"
-  | "Hybrid"
-  | "Remote";
+type WorkMode =
+  | "onsite"
+  | "hybrid"
+  | "remote";
 
-interface Job {
+interface Opportunity {
   id: string;
   business_id: string;
+
   title: string;
   description: string;
-  location: string;
-  employment_type: EmploymentType;
-  workplace_type: WorkplaceType;
+
+  opportunity_type: OpportunityType;
+
+  location: string | null;
+  work_mode: WorkMode | null;
+
   experience_level: string | null;
+
   salary_min: number | null;
   salary_max: number | null;
-  currency: string;
+  currency: string | null;
+
+  required_skills: string[];
+  programme_keywords: string[];
   requirements: string[];
-  skills: string[];
-  application_deadline: string | null;
-  status: JobStatus;
+
+  application_url: string | null;
+  closing_date: string | null;
+
+  status: OpportunityStatus;
+
   created_at: string;
+  updated_at: string | null;
 }
 
-const EMPLOYMENT_TYPES: EmploymentType[] = [
-  "Full-time",
-  "Part-time",
-  "Internship",
-  "Graduate Programme",
-  "Contract",
+type OpportunityOption = {
+  label: string;
+  value: OpportunityType;
+};
+
+type WorkModeOption = {
+  label: string;
+  value: WorkMode;
+};
+
+const OPPORTUNITY_TYPES: OpportunityOption[] = [
+  {
+    label: "Full-time Job",
+    value: "job",
+  },
+  {
+    label: "Part-time",
+    value: "part_time",
+  },
+  {
+    label: "Internship",
+    value: "internship",
+  },
+  {
+    label: "Graduate Programme",
+    value: "graduate",
+  },
+  {
+    label: "Learnership",
+    value: "learnership",
+  },
 ];
 
-const WORKPLACE_TYPES: WorkplaceType[] = [
-  "On-site",
-  "Hybrid",
-  "Remote",
+const WORK_MODES: WorkModeOption[] = [
+  {
+    label: "On-site",
+    value: "onsite",
+  },
+  {
+    label: "Hybrid",
+    value: "hybrid",
+  },
+  {
+    label: "Remote",
+    value: "remote",
+  },
 ];
+
+function getOpportunityTypeLabel(
+  type: OpportunityType
+) {
+  switch (type) {
+    case "job":
+      return "Full-time Job";
+
+    case "part_time":
+      return "Part-time";
+
+    case "internship":
+      return "Internship";
+
+    case "graduate":
+      return "Graduate Programme";
+
+    case "learnership":
+      return "Learnership";
+
+    default:
+      return type;
+  }
+}
+
+function getWorkModeLabel(
+  mode: WorkMode | null
+) {
+  if (mode === "onsite") {
+    return "On-site";
+  }
+
+  if (mode === "hybrid") {
+    return "Hybrid";
+  }
+
+  if (mode === "remote") {
+    return "Remote";
+  }
+
+  return "Not specified";
+}
+
+function getStatusLabel(
+  status: OpportunityStatus
+) {
+  switch (status) {
+    case "pending":
+      return "Pending Review";
+
+    case "approved":
+      return "Approved";
+
+    case "rejected":
+      return "Rejected";
+
+    case "closed":
+      return "Closed";
+
+    default:
+      return status;
+  }
+}
+
+function formatDate(
+  value?: string | null
+) {
+  if (!value) {
+    return "";
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return value;
+  }
+
+  return date.toLocaleDateString(
+    "en-ZA",
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }
+  );
+}
 
 export default function BusinessJobsScreen() {
-  const [jobs, setJobs] =
-    useState<Job[]>([]);
+  const [
+    opportunities,
+    setOpportunities,
+  ] =
+    useState<
+      Opportunity[]
+    >([]);
 
-  const [loading, setLoading] =
+  const [
+    loading,
+    setLoading,
+  ] =
     useState(true);
 
-  const [refreshing, setRefreshing] =
+  const [
+    refreshing,
+    setRefreshing,
+  ] =
     useState(false);
 
-  const [creating, setCreating] =
+  const [
+    creating,
+    setCreating,
+  ] =
     useState(false);
 
-  const [modalVisible, setModalVisible] =
+  const [
+    modalVisible,
+    setModalVisible,
+  ] =
     useState(false);
 
-  const [title, setTitle] =
-    useState("");
-
-  const [description, setDescription] =
-    useState("");
-
-  const [location, setLocation] =
+  const [
+    title,
+    setTitle,
+  ] =
     useState("");
 
   const [
-    employmentType,
-    setEmploymentType,
-  ] = useState<EmploymentType>(
-    "Full-time"
-  );
+    description,
+    setDescription,
+  ] =
+    useState("");
 
   const [
-    workplaceType,
-    setWorkplaceType,
-  ] = useState<WorkplaceType>(
-    "On-site"
-  );
+    location,
+    setLocation,
+  ] =
+    useState("");
+
+  const [
+    opportunityType,
+    setOpportunityType,
+  ] =
+    useState<OpportunityType>(
+      "job"
+    );
+
+  const [
+    workMode,
+    setWorkMode,
+  ] =
+    useState<WorkMode>(
+      "onsite"
+    );
 
   const [
     experienceLevel,
     setExperienceLevel,
-  ] = useState("");
-
-  const [salaryMin, setSalaryMin] =
-    useState("");
-
-  const [salaryMax, setSalaryMax] =
-    useState("");
-
-  const [skills, setSkills] =
-    useState("");
-
-  const [requirements, setRequirements] =
+  ] =
     useState("");
 
   const [
-    applicationDeadline,
-    setApplicationDeadline,
-  ] = useState("");
+    salaryMin,
+    setSalaryMin,
+  ] =
+    useState("");
+
+  const [
+    salaryMax,
+    setSalaryMax,
+  ] =
+    useState("");
+
+  const [
+    skills,
+    setSkills,
+  ] =
+    useState("");
+
+  const [
+    requirements,
+    setRequirements,
+  ] =
+    useState("");
+
+  const [
+    programmeKeywords,
+    setProgrammeKeywords,
+  ] =
+    useState("");
+
+  const [
+    applicationUrl,
+    setApplicationUrl,
+  ] =
+    useState("");
+
+  const [
+    closingDate,
+    setClosingDate,
+  ] =
+    useState("");
+
+  const loadOpportunities =
+    useCallback(
+      async (
+        showLoader = true
+      ) => {
+        try {
+          if (showLoader) {
+            setLoading(true);
+          }
+
+          const {
+            data: {
+              user,
+            },
+            error:
+              userError,
+          } =
+            await supabase.auth.getUser();
+
+          if (userError) {
+            throw userError;
+          }
+
+          if (!user) {
+            throw new Error(
+              "You must be logged in."
+            );
+          }
+
+          const {
+            data,
+            error,
+          } =
+            await supabase
+              .from(
+                "opportunities"
+              )
+              .select(
+                `
+                id,
+                business_id,
+                title,
+                description,
+                opportunity_type,
+                location,
+                work_mode,
+                experience_level,
+                salary_min,
+                salary_max,
+                currency,
+                required_skills,
+                programme_keywords,
+                requirements,
+                application_url,
+                closing_date,
+                status,
+                created_at,
+                updated_at
+                `
+              )
+              .eq(
+                "business_id",
+                user.id
+              )
+              .order(
+                "created_at",
+                {
+                  ascending:
+                    false,
+                }
+              );
+
+          if (error) {
+            throw error;
+          }
+
+          setOpportunities(
+            (data || []).map(
+              item => ({
+                ...item,
+
+                required_skills:
+                  item.required_skills ||
+                  [],
+
+                programme_keywords:
+                  item.programme_keywords ||
+                  [],
+
+                requirements:
+                  item.requirements ||
+                  [],
+              })
+            ) as Opportunity[]
+          );
+        } catch (
+          error: any
+        ) {
+          console.log(
+            "Load opportunities error:",
+            error
+          );
+
+          Alert.alert(
+            "Unable to load opportunities",
+            error?.message ||
+              "Something went wrong."
+          );
+        } finally {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      },
+      []
+    );
 
   useEffect(() => {
-    loadJobs();
-  }, []);
+    loadOpportunities();
 
-  const loadJobs = async () => {
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+    const channel =
+      supabase
+        .channel(
+          "business-opportunities"
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "opportunities",
+          },
+          payload => {
+            console.log(
+              "Business opportunity realtime:",
+              payload.eventType
+            );
 
-      if (userError) {
-        throw userError;
-      }
-
-      if (!user) {
-        throw new Error(
-          "You must be logged in."
+            loadOpportunities(
+              false
+            );
+          }
+        )
+        .subscribe(
+          status => {
+            console.log(
+              "Business opportunities realtime:",
+              status
+            );
+          }
         );
-      }
 
-      const { data, error } =
-        await supabase
-          .from("jobs")
-          .select("*")
-          .eq("business_id", user.id)
-          .order("created_at", {
-            ascending: false,
-          });
-
-      if (error) {
-        throw error;
-      }
-
-      setJobs((data || []) as Job[]);
-    } catch (error: any) {
-      console.log(
-        "Load jobs error:",
-        error
+    return () => {
+      supabase.removeChannel(
+        channel
       );
-
-      Alert.alert(
-        "Unable to load jobs",
-        error.message ||
-          "Something went wrong."
-      );
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+    };
+  }, [
+    loadOpportunities,
+  ]);
 
   const handleRefresh =
     useCallback(() => {
       setRefreshing(true);
-      loadJobs();
-    }, []);
 
-  const resetForm = () => {
+      loadOpportunities(
+        false
+      );
+    }, [
+      loadOpportunities,
+    ]);
+
+  function resetForm() {
     setTitle("");
     setDescription("");
     setLocation("");
 
-    setEmploymentType(
-      "Full-time"
+    setOpportunityType(
+      "job"
     );
 
-    setWorkplaceType(
-      "On-site"
+    setWorkMode(
+      "onsite"
     );
 
     setExperienceLevel("");
@@ -214,15 +528,17 @@ export default function BusinessJobsScreen() {
 
     setSkills("");
     setRequirements("");
+    setProgrammeKeywords("");
 
-    setApplicationDeadline("");
-  };
+    setApplicationUrl("");
+    setClosingDate("");
+  }
 
-  const createJob = async () => {
+  async function createOpportunity() {
     if (!title.trim()) {
       Alert.alert(
         "Title required",
-        "Please enter a job title."
+        "Please enter an opportunity title."
       );
 
       return;
@@ -231,7 +547,7 @@ export default function BusinessJobsScreen() {
     if (!description.trim()) {
       Alert.alert(
         "Description required",
-        "Please add a job description."
+        "Please add an opportunity description."
       );
 
       return;
@@ -240,7 +556,7 @@ export default function BusinessJobsScreen() {
     if (!location.trim()) {
       Alert.alert(
         "Location required",
-        "Please add the job location."
+        "Please add a location."
       );
 
       return;
@@ -249,8 +565,12 @@ export default function BusinessJobsScreen() {
     if (
       salaryMin &&
       salaryMax &&
-      Number(salaryMax) <
-        Number(salaryMin)
+      Number(
+        salaryMax
+      ) <
+        Number(
+          salaryMin
+        )
     ) {
       Alert.alert(
         "Invalid salary",
@@ -261,14 +581,14 @@ export default function BusinessJobsScreen() {
     }
 
     if (
-      applicationDeadline &&
+      closingDate &&
       !/^\d{4}-\d{2}-\d{2}$/.test(
-        applicationDeadline
+        closingDate
       )
     ) {
       Alert.alert(
         "Invalid date",
-        "Use YYYY-MM-DD for the application deadline."
+        "Use YYYY-MM-DD for the closing date."
       );
 
       return;
@@ -278,9 +598,13 @@ export default function BusinessJobsScreen() {
 
     try {
       const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+        data: {
+          user,
+        },
+        error:
+          userError,
+      } =
+        await supabase.auth.getUser();
 
       if (userError) {
         throw userError;
@@ -292,38 +616,105 @@ export default function BusinessJobsScreen() {
         );
       }
 
-      const skillsArray = skills
-        .split(",")
-        .map((skill) => skill.trim())
-        .filter(Boolean);
+      const {
+        data:
+          businessProfile,
+        error:
+          businessError,
+      } =
+        await supabase
+          .from(
+            "profiles"
+          )
+          .select(
+            `
+            id,
+            role,
+            status
+            `
+          )
+          .eq(
+            "id",
+            user.id
+          )
+          .single();
+
+      if (
+        businessError
+      ) {
+        throw businessError;
+      }
+
+      if (
+        businessProfile
+          ?.role !==
+        "business"
+      ) {
+        throw new Error(
+          "Only business accounts can create opportunities."
+        );
+      }
+
+      if (
+        businessProfile
+          ?.status !==
+        "active"
+      ) {
+        throw new Error(
+          "Your business account must be approved before posting opportunities."
+        );
+      }
+
+      const skillsArray =
+        skills
+          .split(",")
+          .map(item =>
+            item.trim()
+          )
+          .filter(Boolean);
 
       const requirementsArray =
         requirements
           .split("\n")
-          .map((requirement) =>
-            requirement.trim()
+          .map(item =>
+            item.trim()
           )
           .filter(Boolean);
 
-      const { data, error } =
-        await supabase
-          .from("jobs")
-          .insert({
-            business_id: user.id,
+      const programmeArray =
+        programmeKeywords
+          .split(",")
+          .map(item =>
+            item.trim()
+          )
+          .filter(Boolean);
 
-            title: title.trim(),
+      const {
+        data,
+        error,
+      } =
+        await supabase
+          .from(
+            "opportunities"
+          )
+          .insert({
+            business_id:
+              user.id,
+
+            title:
+              title.trim(),
 
             description:
               description.trim(),
 
+            opportunity_type:
+              opportunityType,
+
             location:
               location.trim(),
 
-            employment_type:
-              employmentType,
-
-            workplace_type:
-              workplaceType,
+            work_mode:
+              workMode,
 
             experience_level:
               experienceLevel.trim() ||
@@ -331,26 +722,40 @@ export default function BusinessJobsScreen() {
 
             salary_min:
               salaryMin
-                ? Number(salaryMin)
+                ? Number(
+                    salaryMin
+                  )
                 : null,
 
             salary_max:
               salaryMax
-                ? Number(salaryMax)
+                ? Number(
+                    salaryMax
+                  )
                 : null,
 
-            currency: "ZAR",
+            currency:
+              "ZAR",
 
-            skills: skillsArray,
+            required_skills:
+              skillsArray,
+
+            programme_keywords:
+              programmeArray,
 
             requirements:
               requirementsArray,
 
-            application_deadline:
-              applicationDeadline ||
+            application_url:
+              applicationUrl.trim() ||
               null,
 
-            status: "active",
+            closing_date:
+              closingDate ||
+              null,
+
+            status:
+              "pending",
           })
           .select()
           .single();
@@ -359,153 +764,243 @@ export default function BusinessJobsScreen() {
         throw error;
       }
 
-      setJobs((currentJobs) => [
-        data as Job,
-        ...currentJobs,
-      ]);
+      setOpportunities(
+        current => [
+          {
+            ...data,
+
+            required_skills:
+              data.required_skills ||
+              [],
+
+            programme_keywords:
+              data.programme_keywords ||
+              [],
+
+            requirements:
+              data.requirements ||
+              [],
+          } as Opportunity,
+
+          ...current,
+        ]
+      );
 
       resetForm();
 
-      setModalVisible(false);
+      setModalVisible(
+        false
+      );
 
       Alert.alert(
-        "Job posted",
-        "Your opportunity is now live."
+        "Submitted for review",
+        "Your opportunity was created successfully. It will appear to students after an admin approves it."
       );
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
       console.log(
-        "Create job error:",
+        "Create opportunity error:",
         error
       );
 
       Alert.alert(
-        "Unable to create job",
-        error.message ||
+        "Unable to create opportunity",
+        error?.message ||
           "Something went wrong."
       );
     } finally {
       setCreating(false);
     }
-  };
+  }
 
-  const closeJob = (
-    job: Job
-  ) => {
+  function closeOpportunity(
+    opportunity: Opportunity
+  ) {
     Alert.alert(
-      "Close Job",
-      `Close "${job.title}"? Students and alumni will no longer see it as an active opportunity.`,
+      "Close Opportunity",
+      `Close "${opportunity.title}"? Students will no longer see it.`,
       [
         {
-          text: "Cancel",
-          style: "cancel",
+          text:
+            "Cancel",
+          style:
+            "cancel",
         },
 
         {
-          text: "Close Job",
-          style: "destructive",
+          text:
+            "Close",
+          style:
+            "destructive",
 
-          onPress: async () => {
-            try {
-              const {
-                data,
-                error,
-              } = await supabase
-                .from("jobs")
-                .update({
-                  status: "closed",
-                  updated_at:
-                    new Date().toISOString(),
-                })
-                .eq("id", job.id)
-                .select()
-                .single();
+          onPress:
+            async () => {
+              try {
+                const {
+                  data,
+                  error,
+                } =
+                  await supabase
+                    .from(
+                      "opportunities"
+                    )
+                    .update({
+                      status:
+                        "closed",
 
-              if (error) {
-                throw error;
+                      updated_at:
+                        new Date().toISOString(),
+                    })
+                    .eq(
+                      "id",
+                      opportunity.id
+                    )
+                    .select()
+                    .single();
+
+                if (
+                  error
+                ) {
+                  throw error;
+                }
+
+                setOpportunities(
+                  current =>
+                    current.map(
+                      item =>
+                        item.id ===
+                        opportunity.id
+                          ? ({
+                              ...item,
+                              ...data,
+                            } as Opportunity)
+                          : item
+                    )
+                );
+              } catch (
+                error: any
+              ) {
+                Alert.alert(
+                  "Error",
+                  error?.message ||
+                    "Unable to close the opportunity."
+                );
               }
-
-              setJobs(
-                (
-                  currentJobs
-                ) =>
-                  currentJobs.map(
-                    (currentJob) =>
-                      currentJob.id ===
-                      job.id
-                        ? (data as Job)
-                        : currentJob
-                  )
-              );
-
-              Alert.alert(
-                "Job closed",
-                "The opportunity has been closed."
-              );
-            } catch (
-              error: any
-            ) {
-              Alert.alert(
-                "Error",
-                error.message ||
-                  "Unable to close the job."
-              );
-            }
-          },
+            },
         },
       ]
     );
-  };
+  }
 
-  const reopenJob = async (
-    job: Job
-  ) => {
+  async function reopenOpportunity(
+    opportunity: Opportunity
+  ) {
     try {
       const {
         data,
         error,
-      } = await supabase
-        .from("jobs")
-        .update({
-          status: "active",
-          updated_at:
-            new Date().toISOString(),
-        })
-        .eq("id", job.id)
-        .select()
-        .single();
+      } =
+        await supabase
+          .from(
+            "opportunities"
+          )
+          .update({
+            status:
+              "pending",
+
+            updated_at:
+              new Date().toISOString(),
+          })
+          .eq(
+            "id",
+            opportunity.id
+          )
+          .select()
+          .single();
 
       if (error) {
         throw error;
       }
 
-      setJobs((currentJobs) =>
-        currentJobs.map(
-          (currentJob) =>
-            currentJob.id === job.id
-              ? (data as Job)
-              : currentJob
-        )
+      setOpportunities(
+        current =>
+          current.map(
+            item =>
+              item.id ===
+              opportunity.id
+                ? ({
+                    ...item,
+                    ...data,
+                  } as Opportunity)
+                : item
+          )
       );
-    } catch (error: any) {
+
+      Alert.alert(
+        "Submitted again",
+        "The opportunity has been sent back for admin review."
+      );
+    } catch (
+      error: any
+    ) {
       Alert.alert(
         "Error",
-        error.message ||
-          "Unable to reopen the job."
+        error?.message ||
+          "Unable to reopen the opportunity."
       );
     }
-  };
+  }
 
-  const renderJob = ({
+  function renderOpportunity({
     item,
   }: {
-    item: Job;
-  }) => {
+    item: Opportunity;
+  }) {
+    const statusStyle =
+      item.status ===
+      "approved"
+        ? styles.approvedBadge
+        : item.status ===
+          "pending"
+        ? styles.pendingBadge
+        : item.status ===
+          "rejected"
+        ? styles.rejectedBadge
+        : styles.closedBadge;
+
+    const statusTextStyle =
+      item.status ===
+      "approved"
+        ? styles.approvedText
+        : item.status ===
+          "pending"
+        ? styles.pendingText
+        : item.status ===
+          "rejected"
+        ? styles.rejectedText
+        : styles.closedText;
+
     return (
-      <View style={styles.jobCard}>
-        <View style={styles.jobTop}>
-          <View style={{ flex: 1 }}>
+      <View
+        style={
+          styles.jobCard
+        }
+      >
+        <View
+          style={
+            styles.jobTop
+          }
+        >
+          <View
+            style={{
+              flex: 1,
+            }}
+          >
             <Text
-              style={styles.jobTitle}
+              style={
+                styles.jobTitle
+              }
             >
               {item.title}
             </Text>
@@ -515,43 +1010,91 @@ export default function BusinessJobsScreen() {
                 styles.jobLocation
               }
             >
-              {item.location}
+              {item.location ||
+                "No location"}
             </Text>
           </View>
 
           <View
             style={[
               styles.statusBadge,
-
-              item.status ===
-              "active"
-                ? styles.activeBadge
-                : styles.closedBadge,
+              statusStyle,
             ]}
           >
             <Text
               style={[
                 styles.statusText,
-
-                item.status ===
-                "active"
-                  ? styles.activeText
-                  : styles.closedText,
+                statusTextStyle,
               ]}
             >
-              {item.status ===
-              "active"
-                ? "Active"
-                : "Closed"}
+              {getStatusLabel(
+                item.status
+              )}
             </Text>
           </View>
         </View>
 
+        {item.status ===
+        "pending" ? (
+          <View
+            style={
+              styles.noticeBox
+            }
+          >
+            <Ionicons
+              name="time-outline"
+              size={17}
+              color="#9A6700"
+            />
+
+            <Text
+              style={
+                styles.noticeText
+              }
+            >
+              Waiting for admin
+              approval. Students
+              cannot see this yet.
+            </Text>
+          </View>
+        ) : null}
+
+        {item.status ===
+        "approved" ? (
+          <View
+            style={[
+              styles.noticeBox,
+              styles.liveNotice,
+            ]}
+          >
+            <Ionicons
+              name="checkmark-circle-outline"
+              size={17}
+              color="#168653"
+            />
+
+            <Text
+              style={[
+                styles.noticeText,
+                styles.liveNoticeText,
+              ]}
+            >
+              Live to students and
+              eligible for Career
+              matching.
+            </Text>
+          </View>
+        ) : null}
+
         <View
-          style={styles.tagsRow}
+          style={
+            styles.tagsRow
+          }
         >
           <View
-            style={styles.tag}
+            style={
+              styles.tag
+            }
           >
             <Ionicons
               name="briefcase-outline"
@@ -560,29 +1103,35 @@ export default function BusinessJobsScreen() {
             />
 
             <Text
-              style={styles.tagText}
-            >
-              {
-                item.employment_type
+              style={
+                styles.tagText
               }
+            >
+              {getOpportunityTypeLabel(
+                item.opportunity_type
+              )}
             </Text>
           </View>
 
           <View
-            style={styles.tag}
+            style={
+              styles.tag
+            }
           >
             <Ionicons
-              name="location-outline"
+              name="business-outline"
               size={14}
               color="#555"
             />
 
             <Text
-              style={styles.tagText}
-            >
-              {
-                item.workplace_type
+              style={
+                styles.tagText
               }
+            >
+              {getWorkModeLabel(
+                item.work_mode
+              )}
             </Text>
           </View>
         </View>
@@ -591,64 +1140,83 @@ export default function BusinessJobsScreen() {
           style={
             styles.jobDescription
           }
-          numberOfLines={3}
+          numberOfLines={
+            3
+          }
         >
           {item.description}
         </Text>
 
-        {item.skills?.length >
-          0 && (
+        {item.required_skills
+          ?.length >
+        0 ? (
           <View
             style={
               styles.skillsContainer
             }
           >
-            {item.skills
-              .slice(0, 4)
-              .map((skill) => (
-                <View
-                  key={skill}
-                  style={
-                    styles.skillChip
-                  }
-                >
-                  <Text
+            {item.required_skills
+              .slice(
+                0,
+                4
+              )
+              .map(
+                skill => (
+                  <View
+                    key={
+                      skill
+                    }
                     style={
-                      styles.skillText
+                      styles.skillChip
                     }
                   >
-                    {skill}
-                  </Text>
-                </View>
-              ))}
+                    <Text
+                      style={
+                        styles.skillText
+                      }
+                    >
+                      {
+                        skill
+                      }
+                    </Text>
+                  </View>
+                )
+              )}
           </View>
-        )}
+        ) : null}
 
         {(item.salary_min ||
-          item.salary_max) && (
+          item.salary_max) ? (
           <Text
             style={
               styles.salaryText
             }
           >
-            {item.currency}{" "}
+            {item.currency ||
+              "ZAR"}{" "}
             {item.salary_min
               ? Number(
                   item.salary_min
-                ).toLocaleString()
+                ).toLocaleString(
+                  "en-ZA"
+                )
               : "0"}
             {" - "}
             {item.salary_max
               ? Number(
                   item.salary_max
-                ).toLocaleString()
+                ).toLocaleString(
+                  "en-ZA"
+                )
               : "Negotiable"}
           </Text>
-        )}
+        ) : null}
 
-        {item.application_deadline && (
+        {item.closing_date ? (
           <View
-            style={styles.deadlineRow}
+            style={
+              styles.deadlineRow
+            }
           >
             <Ionicons
               name="calendar-outline"
@@ -662,33 +1230,41 @@ export default function BusinessJobsScreen() {
               }
             >
               Closes{" "}
-              {
-                item.application_deadline
-              }
+              {formatDate(
+                item.closing_date
+              )}
             </Text>
           </View>
-        )}
+        ) : null}
 
         <View
-          style={styles.jobFooter}
+          style={
+            styles.jobFooter
+          }
         >
           <Text
-            style={styles.dateText}
+            style={
+              styles.dateText
+            }
           >
             Posted{" "}
-            {new Date(
+            {formatDate(
               item.created_at
-            ).toLocaleDateString()}
+            )}
           </Text>
 
-          {item.status ===
-          "active" ? (
+          {item.status !==
+            "closed" &&
+          item.status !==
+            "rejected" ? (
             <TouchableOpacity
               style={
                 styles.closeButton
               }
               onPress={() =>
-                closeJob(item)
+                closeOpportunity(
+                  item
+                )
               }
             >
               <Text
@@ -699,13 +1275,16 @@ export default function BusinessJobsScreen() {
                 Close
               </Text>
             </TouchableOpacity>
-          ) : (
+          ) : item.status ===
+            "closed" ? (
             <TouchableOpacity
               style={
                 styles.reopenButton
               }
               onPress={() =>
-                reopenJob(item)
+                reopenOpportunity(
+                  item
+                )
               }
             >
               <Text
@@ -716,20 +1295,24 @@ export default function BusinessJobsScreen() {
                 Reopen
               </Text>
             </TouchableOpacity>
-          )}
+          ) : null}
         </View>
       </View>
     );
-  };
+  }
 
   if (loading) {
     return (
       <SafeAreaView
-        style={styles.loading}
+        style={
+          styles.loading
+        }
       >
         <ActivityIndicator
           size="large"
-          color={PRIMARY}
+          color={
+            PRIMARY
+          }
         />
       </SafeAreaView>
     );
@@ -737,25 +1320,42 @@ export default function BusinessJobsScreen() {
 
   return (
     <SafeAreaView
-      style={styles.container}
+      style={
+        styles.container
+      }
     >
-      <View style={styles.header}>
+      <View
+        style={
+          styles.header
+        }
+      >
         <View>
-          <Text style={styles.title}>
-            Jobs
+          <Text
+            style={
+              styles.title
+            }
+          >
+            Opportunities
           </Text>
 
           <Text
-            style={styles.subtitle}
+            style={
+              styles.subtitle
+            }
           >
-            Manage your opportunities
+            Create and manage career
+            opportunities
           </Text>
         </View>
 
         <TouchableOpacity
-          style={styles.addButton}
+          style={
+            styles.addButton
+          }
           onPress={() =>
-            setModalVisible(true)
+            setModalVisible(
+              true
+            )
           }
         >
           <Ionicons
@@ -767,27 +1367,40 @@ export default function BusinessJobsScreen() {
       </View>
 
       <FlatList
-        data={jobs}
-        keyExtractor={(item) =>
+        data={
+          opportunities
+        }
+        keyExtractor={item =>
           item.id
         }
-        renderItem={renderJob}
+        renderItem={
+          renderOpportunity
+        }
         showsVerticalScrollIndicator={
           false
         }
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
+            refreshing={
+              refreshing
+            }
+            onRefresh={
+              handleRefresh
+            }
           />
         }
         contentContainerStyle={
-          jobs.length === 0
+          opportunities.length ===
+          0
             ? styles.emptyList
             : styles.list
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
+          <View
+            style={
+              styles.empty
+            }
+          >
             <View
               style={
                 styles.emptyIcon
@@ -796,7 +1409,9 @@ export default function BusinessJobsScreen() {
               <Ionicons
                 name="briefcase-outline"
                 size={40}
-                color={PRIMARY}
+                color={
+                  PRIMARY
+                }
               />
             </View>
 
@@ -805,7 +1420,7 @@ export default function BusinessJobsScreen() {
                 styles.emptyTitle
               }
             >
-              No jobs posted yet
+              No opportunities yet
             </Text>
 
             <Text
@@ -813,10 +1428,11 @@ export default function BusinessJobsScreen() {
                 styles.emptyText
               }
             >
-              Create your first
-              opportunity and start
-              connecting with Richfield
-              students and alumni.
+              Create an opportunity
+              for Richfield students
+              and alumni. It will be
+              reviewed before going
+              live.
             </Text>
 
             <TouchableOpacity
@@ -840,7 +1456,7 @@ export default function BusinessJobsScreen() {
                   styles.createButtonText
                 }
               >
-                Create Job
+                Create Opportunity
               </Text>
             </TouchableOpacity>
           </View>
@@ -848,11 +1464,15 @@ export default function BusinessJobsScreen() {
       />
 
       <Modal
-        visible={modalVisible}
+        visible={
+          modalVisible
+        }
         animationType="slide"
         presentationStyle="pageSheet"
         onRequestClose={() =>
-          setModalVisible(false)
+          setModalVisible(
+            false
+          )
         }
       >
         <SafeAreaView
@@ -886,17 +1506,23 @@ export default function BusinessJobsScreen() {
                 styles.modalTitle
               }
             >
-              Create Job
+              Create Opportunity
             </Text>
 
             <TouchableOpacity
-              disabled={creating}
-              onPress={createJob}
+              disabled={
+                creating
+              }
+              onPress={
+                createOpportunity
+              }
             >
               {creating ? (
                 <ActivityIndicator
                   size="small"
-                  color={PRIMARY}
+                  color={
+                    PRIMARY
+                  }
                 />
               ) : (
                 <Text
@@ -904,7 +1530,7 @@ export default function BusinessJobsScreen() {
                     styles.postText
                   }
                 >
-                  Post
+                  Submit
                 </Text>
               )}
             </TouchableOpacity>
@@ -916,16 +1542,46 @@ export default function BusinessJobsScreen() {
             }
             keyboardShouldPersistTaps="handled"
           >
+            <View
+              style={
+                styles.reviewNotice
+              }
+            >
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={20}
+                color={
+                  PRIMARY
+                }
+              />
+
+              <Text
+                style={
+                  styles.reviewNoticeText
+                }
+              >
+                Opportunities are reviewed
+                by an admin before students
+                can see them.
+              </Text>
+            </View>
+
             <FormLabel
-              title="Job Title"
+              title="Opportunity Title"
               required
             />
 
             <TextInput
-              value={title}
-              onChangeText={setTitle}
+              value={
+                title
+              }
+              onChangeText={
+                setTitle
+              }
               placeholder="e.g. Junior Software Developer"
-              style={styles.input}
+              style={
+                styles.input
+              }
             />
 
             <FormLabel
@@ -934,7 +1590,9 @@ export default function BusinessJobsScreen() {
             />
 
             <TextInput
-              value={description}
+              value={
+                description
+              }
               onChangeText={
                 setDescription
               }
@@ -953,16 +1611,20 @@ export default function BusinessJobsScreen() {
             />
 
             <TextInput
-              value={location}
+              value={
+                location
+              }
               onChangeText={
                 setLocation
               }
               placeholder="e.g. Sandton, Gauteng"
-              style={styles.input}
+              style={
+                styles.input
+              }
             />
 
             <FormLabel
-              title="Employment Type"
+              title="Opportunity Type"
               required
             />
 
@@ -971,18 +1633,22 @@ export default function BusinessJobsScreen() {
                 styles.optionsWrap
               }
             >
-              {EMPLOYMENT_TYPES.map(
-                (type) => (
+              {OPPORTUNITY_TYPES.map(
+                option => (
                   <OptionButton
-                    key={type}
-                    label={type}
+                    key={
+                      option.value
+                    }
+                    label={
+                      option.label
+                    }
                     selected={
-                      employmentType ===
-                      type
+                      opportunityType ===
+                      option.value
                     }
                     onPress={() =>
-                      setEmploymentType(
-                        type
+                      setOpportunityType(
+                        option.value
                       )
                     }
                   />
@@ -991,7 +1657,7 @@ export default function BusinessJobsScreen() {
             </View>
 
             <FormLabel
-              title="Workplace Type"
+              title="Work Style"
               required
             />
 
@@ -1000,18 +1666,22 @@ export default function BusinessJobsScreen() {
                 styles.optionsWrap
               }
             >
-              {WORKPLACE_TYPES.map(
-                (type) => (
+              {WORK_MODES.map(
+                option => (
                   <OptionButton
-                    key={type}
-                    label={type}
+                    key={
+                      option.value
+                    }
+                    label={
+                      option.label
+                    }
                     selected={
-                      workplaceType ===
-                      type
+                      workMode ===
+                      option.value
                     }
                     onPress={() =>
-                      setWorkplaceType(
-                        type
+                      setWorkMode(
+                        option.value
                       )
                     }
                   />
@@ -1031,10 +1701,14 @@ export default function BusinessJobsScreen() {
                 setExperienceLevel
               }
               placeholder="e.g. Entry Level"
-              style={styles.input}
+              style={
+                styles.input
+              }
             />
 
-            <FormLabel title="Salary" />
+            <FormLabel
+              title="Salary"
+            />
 
             <View
               style={
@@ -1042,7 +1716,9 @@ export default function BusinessJobsScreen() {
               }
             >
               <TextInput
-                value={salaryMin}
+                value={
+                  salaryMin
+                }
                 onChangeText={
                   setSalaryMin
                 }
@@ -1055,7 +1731,9 @@ export default function BusinessJobsScreen() {
               />
 
               <TextInput
-                value={salaryMax}
+                value={
+                  salaryMax
+                }
                 onChangeText={
                   setSalaryMax
                 }
@@ -1068,20 +1746,59 @@ export default function BusinessJobsScreen() {
               />
             </View>
 
-            <FormLabel title="Skills" />
+            <FormLabel
+              title="Required Skills"
+            />
 
             <TextInput
-              value={skills}
-              onChangeText={setSkills}
+              value={
+                skills
+              }
+              onChangeText={
+                setSkills
+              }
               placeholder="React, JavaScript, SQL"
-              style={styles.input}
+              style={
+                styles.input
+              }
             />
 
             <Text
-              style={styles.helper}
+              style={
+                styles.helper
+              }
             >
-              Separate skills with
-              commas.
+              Separate skills with commas.
+              These are used for student
+              matching.
+            </Text>
+
+            <FormLabel
+              title="Relevant Programmes"
+            />
+
+            <TextInput
+              value={
+                programmeKeywords
+              }
+              onChangeText={
+                setProgrammeKeywords
+              }
+              placeholder="Information Technology, Computer Science"
+              style={
+                styles.input
+              }
+            />
+
+            <Text
+              style={
+                styles.helper
+              }
+            >
+              Separate programmes with
+              commas. This helps match the
+              opportunity to the right
+              students.
             </Text>
 
             <FormLabel
@@ -1089,7 +1806,9 @@ export default function BusinessJobsScreen() {
             />
 
             <TextInput
-              value={requirements}
+              value={
+                requirements
+              }
               onChangeText={
                 setRequirements
               }
@@ -1105,29 +1824,54 @@ export default function BusinessJobsScreen() {
             />
 
             <Text
-              style={styles.helper}
+              style={
+                styles.helper
+              }
             >
-              Put each requirement on
-              a new line.
+              Put each requirement on a new
+              line.
             </Text>
 
             <FormLabel
-              title="Application Deadline"
+              title="Application Link"
             />
 
             <TextInput
               value={
-                applicationDeadline
+                applicationUrl
               }
               onChangeText={
-                setApplicationDeadline
+                setApplicationUrl
+              }
+              placeholder="https://company.co.za/apply"
+              autoCapitalize="none"
+              keyboardType="url"
+              style={
+                styles.input
+              }
+            />
+
+            <FormLabel
+              title="Closing Date"
+            />
+
+            <TextInput
+              value={
+                closingDate
+              }
+              onChangeText={
+                setClosingDate
               }
               placeholder="2026-10-30"
-              style={styles.input}
+              style={
+                styles.input
+              }
             />
 
             <Text
-              style={styles.helper}
+              style={
+                styles.helper
+              }
             >
               Format: YYYY-MM-DD
             </Text>
@@ -1136,8 +1880,12 @@ export default function BusinessJobsScreen() {
               style={
                 styles.fullPostButton
               }
-              onPress={createJob}
-              disabled={creating}
+              onPress={
+                createOpportunity
+              }
+              disabled={
+                creating
+              }
             >
               {creating ? (
                 <ActivityIndicator
@@ -1146,7 +1894,7 @@ export default function BusinessJobsScreen() {
               ) : (
                 <>
                   <Ionicons
-                    name="briefcase-outline"
+                    name="send-outline"
                     size={20}
                     color="#FFFFFF"
                   />
@@ -1156,7 +1904,7 @@ export default function BusinessJobsScreen() {
                       styles.fullPostText
                     }
                   >
-                    Post Opportunity
+                    Submit for Review
                   </Text>
                 </>
               )}
@@ -1176,17 +1924,23 @@ function FormLabel({
   required?: boolean;
 }) {
   return (
-    <Text style={styles.label}>
+    <Text
+      style={
+        styles.label
+      }
+    >
       {title}
 
-      {required && (
+      {required ? (
         <Text
-          style={styles.required}
+          style={
+            styles.required
+          }
         >
           {" "}
           *
         </Text>
-      )}
+      ) : null}
     </Text>
   );
 }
@@ -1204,16 +1958,16 @@ function OptionButton({
     <TouchableOpacity
       style={[
         styles.option,
-
         selected &&
           styles.optionSelected,
       ]}
-      onPress={onPress}
+      onPress={
+        onPress
+      }
     >
       <Text
         style={[
           styles.optionText,
-
           selected &&
             styles.optionTextSelected,
         ]}
@@ -1224,456 +1978,487 @@ function OptionButton({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F7F7FA",
-  },
-
-  loading: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F7F7FA",
-  },
-
-  header: {
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-
-    flexDirection: "row",
-    justifyContent:
-      "space-between",
-    alignItems: "center",
-  },
-
-  title: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: "#111",
-  },
-
-  subtitle: {
-    fontSize: 13,
-    color: "#777",
-    marginTop: 3,
-  },
-
-  addButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 15,
-
-    backgroundColor: PRIMARY,
-
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  list: {
-    paddingHorizontal: 18,
-    paddingBottom: 30,
-  },
-
-  emptyList: {
-    flexGrow: 1,
-    justifyContent: "center",
-  },
-
-  empty: {
-    alignItems: "center",
-    paddingHorizontal: 35,
-  },
-
-  emptyIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 25,
-
-    backgroundColor: "#EEEEFF",
-
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  emptyTitle: {
-    marginTop: 18,
-
-    fontSize: 19,
-    fontWeight: "800",
-  },
-
-  emptyText: {
-    textAlign: "center",
-
-    color: "#777",
-
-    marginTop: 8,
-
-    lineHeight: 20,
-  },
-
-  createButton: {
-    flexDirection: "row",
-    alignItems: "center",
-
-    gap: 6,
-
-    backgroundColor: PRIMARY,
-
-    paddingVertical: 13,
-    paddingHorizontal: 20,
-
-    borderRadius: 14,
-
-    marginTop: 20,
-  },
-
-  createButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-  },
-
-  jobCard: {
-    backgroundColor: "#FFFFFF",
-
-    padding: 17,
-
-    borderRadius: 20,
-
-    marginBottom: 13,
-  },
-
-  jobTop: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
-
-  jobTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: "#111",
-  },
-
-  jobLocation: {
-    color: "#777",
-    fontSize: 13,
-    marginTop: 4,
-  },
-
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-
-    borderRadius: 20,
-  },
-
-  activeBadge: {
-    backgroundColor: "#E7F8EF",
-  },
-
-  closedBadge: {
-    backgroundColor: "#F3F3F3",
-  },
-
-  statusText: {
-    fontSize: 11,
-    fontWeight: "800",
-  },
-
-  activeText: {
-    color: "#168653",
-  },
-
-  closedText: {
-    color: "#777",
-  },
-
-  tagsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-
-    gap: 7,
-
-    marginTop: 14,
-  },
-
-  tag: {
-    flexDirection: "row",
-    alignItems: "center",
-
-    gap: 4,
-
-    backgroundColor: "#F4F4F6",
-
-    borderRadius: 10,
-
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-  },
-
-  tagText: {
-    fontSize: 11,
-    color: "#555",
-    fontWeight: "600",
-  },
-
-  jobDescription: {
-    marginTop: 14,
-
-    color: "#666",
-
-    fontSize: 13,
-    lineHeight: 19,
-  },
-
-  skillsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-
-    gap: 6,
-
-    marginTop: 13,
-  },
-
-  skillChip: {
-    backgroundColor: "#EEEEFF",
-
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-
-    borderRadius: 9,
-  },
-
-  skillText: {
-    color: PRIMARY,
-
-    fontSize: 11,
-    fontWeight: "700",
-  },
-
-  salaryText: {
-    marginTop: 13,
-
-    fontWeight: "700",
-    color: "#333",
-  },
-
-  deadlineRow: {
-    flexDirection: "row",
-    alignItems: "center",
-
-    gap: 5,
-
-    marginTop: 12,
-  },
-
-  deadlineText: {
-    color: "#777",
-    fontSize: 12,
-  },
-
-  jobFooter: {
-    flexDirection: "row",
-    justifyContent:
-      "space-between",
-    alignItems: "center",
-
-    borderTopWidth: 1,
-    borderTopColor: "#F0F0F0",
-
-    marginTop: 16,
-    paddingTop: 13,
-  },
-
-  dateText: {
-    fontSize: 11,
-    color: "#999",
-  },
-
-  closeButton: {
-    paddingHorizontal: 13,
-    paddingVertical: 7,
-
-    borderRadius: 10,
-
-    backgroundColor: "#FFF0F0",
-  },
-
-  closeButtonText: {
-    color: "#C62828",
-
-    fontWeight: "700",
-    fontSize: 12,
-  },
-
-  reopenButton: {
-    paddingHorizontal: 13,
-    paddingVertical: 7,
-
-    borderRadius: 10,
-
-    backgroundColor: "#EEEEFF",
-  },
-
-  reopenText: {
-    color: PRIMARY,
-
-    fontWeight: "700",
-    fontSize: 12,
-  },
-
-  modalContainer: {
-    flex: 1,
-    backgroundColor: "#F7F7FA",
-  },
-
-  modalHeader: {
-    height: 60,
-
-    paddingHorizontal: 18,
-
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent:
-      "space-between",
-
-    borderBottomWidth: 1,
-    borderBottomColor: "#E8E8E8",
-
-    backgroundColor: "#FFFFFF",
-  },
-
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-  },
-
-  cancelText: {
-    color: "#666",
-    fontSize: 15,
-  },
-
-  postText: {
-    color: PRIMARY,
-
-    fontWeight: "800",
-    fontSize: 15,
-  },
-
-  form: {
-    padding: 18,
-    paddingBottom: 45,
-  },
-
-  label: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#222",
-
-    marginTop: 15,
-    marginBottom: 8,
-  },
-
-  required: {
-    color: "#D93025",
-  },
-
-  input: {
-    minHeight: 50,
-
-    backgroundColor: "#FFFFFF",
-
-    borderWidth: 1,
-    borderColor: "#E1E1E6",
-
-    borderRadius: 14,
-
-    paddingHorizontal: 14,
-
-    fontSize: 14,
-
-    color: "#111",
-  },
-
-  textArea: {
-    minHeight: 120,
-
-    paddingTop: 13,
-    paddingBottom: 13,
-  },
-
-  optionsWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-
-    gap: 8,
-  },
-
-  option: {
-    borderWidth: 1,
-    borderColor: "#DDD",
-
-    borderRadius: 20,
-
-    paddingHorizontal: 13,
-    paddingVertical: 9,
-
-    backgroundColor: "#FFFFFF",
-  },
-
-  optionSelected: {
-    backgroundColor: PRIMARY,
-    borderColor: PRIMARY,
-  },
-
-  optionText: {
-    color: "#555",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-
-  optionTextSelected: {
-    color: "#FFFFFF",
-  },
-
-  salaryRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-
-  salaryInput: {
-    flex: 1,
-  },
-
-  helper: {
-    marginTop: 6,
-
-    color: "#999",
-
-    fontSize: 11,
-  },
-
-  fullPostButton: {
-    minHeight: 52,
-
-    backgroundColor: PRIMARY,
-
-    borderRadius: 15,
-
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-
-    gap: 7,
-
-    marginTop: 28,
-  },
-
-  fullPostText: {
-    color: "#FFFFFF",
-
-    fontSize: 15,
-    fontWeight: "800",
-  },
-});
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#F7F7FA",
+    },
+
+    loading: {
+      flex: 1,
+      justifyContent:
+        "center",
+      alignItems:
+        "center",
+      backgroundColor:
+        "#F7F7FA",
+    },
+
+    header: {
+      paddingHorizontal: 18,
+      paddingVertical: 16,
+      flexDirection: "row",
+      justifyContent:
+        "space-between",
+      alignItems: "center",
+    },
+
+    title: {
+      fontSize: 26,
+      fontWeight: "800",
+      color: "#111",
+    },
+
+    subtitle: {
+      fontSize: 13,
+      color: "#777",
+      marginTop: 3,
+    },
+
+    addButton: {
+      width: 46,
+      height: 46,
+      borderRadius: 15,
+      backgroundColor:
+        PRIMARY,
+      alignItems: "center",
+      justifyContent:
+        "center",
+    },
+
+    list: {
+      paddingHorizontal: 18,
+      paddingBottom: 30,
+    },
+
+    emptyList: {
+      flexGrow: 1,
+      justifyContent:
+        "center",
+    },
+
+    empty: {
+      alignItems: "center",
+      paddingHorizontal: 35,
+    },
+
+    emptyIcon: {
+      width: 80,
+      height: 80,
+      borderRadius: 25,
+      backgroundColor:
+        "#EEEEFF",
+      alignItems: "center",
+      justifyContent:
+        "center",
+    },
+
+    emptyTitle: {
+      marginTop: 18,
+      fontSize: 19,
+      fontWeight: "800",
+    },
+
+    emptyText: {
+      textAlign: "center",
+      color: "#777",
+      marginTop: 8,
+      lineHeight: 20,
+    },
+
+    createButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      backgroundColor:
+        PRIMARY,
+      paddingVertical: 13,
+      paddingHorizontal: 20,
+      borderRadius: 14,
+      marginTop: 20,
+    },
+
+    createButtonText: {
+      color: "#FFFFFF",
+      fontWeight: "700",
+    },
+
+    jobCard: {
+      backgroundColor:
+        "#FFFFFF",
+      padding: 17,
+      borderRadius: 20,
+      marginBottom: 13,
+      borderWidth: 1,
+      borderColor:
+        "#EEEEF2",
+    },
+
+    jobTop: {
+      flexDirection: "row",
+      alignItems:
+        "flex-start",
+      gap: 10,
+    },
+
+    jobTitle: {
+      fontSize: 17,
+      fontWeight: "800",
+      color: "#111",
+    },
+
+    jobLocation: {
+      color: "#777",
+      fontSize: 13,
+      marginTop: 4,
+    },
+
+    statusBadge: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 20,
+    },
+
+    approvedBadge: {
+      backgroundColor:
+        "#E7F8EF",
+    },
+
+    pendingBadge: {
+      backgroundColor:
+        "#FFF5D6",
+    },
+
+    rejectedBadge: {
+      backgroundColor:
+        "#FFE9E9",
+    },
+
+    closedBadge: {
+      backgroundColor:
+        "#F3F3F3",
+    },
+
+    statusText: {
+      fontSize: 10,
+      fontWeight: "800",
+    },
+
+    approvedText: {
+      color: "#168653",
+    },
+
+    pendingText: {
+      color: "#9A6700",
+    },
+
+    rejectedText: {
+      color: "#C62828",
+    },
+
+    closedText: {
+      color: "#777",
+    },
+
+    noticeBox: {
+      marginTop: 13,
+      backgroundColor:
+        "#FFF9E7",
+      padding: 10,
+      borderRadius: 11,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
+    },
+
+    noticeText: {
+      flex: 1,
+      color: "#765800",
+      fontSize: 11,
+      lineHeight: 16,
+    },
+
+    liveNotice: {
+      backgroundColor:
+        "#ECFAF2",
+    },
+
+    liveNoticeText: {
+      color: "#168653",
+    },
+
+    tagsRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 7,
+      marginTop: 14,
+    },
+
+    tag: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      backgroundColor:
+        "#F4F4F6",
+      borderRadius: 10,
+      paddingHorizontal: 9,
+      paddingVertical: 6,
+    },
+
+    tagText: {
+      fontSize: 11,
+      color: "#555",
+      fontWeight: "600",
+    },
+
+    jobDescription: {
+      marginTop: 14,
+      color: "#666",
+      fontSize: 13,
+      lineHeight: 19,
+    },
+
+    skillsContainer: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+      marginTop: 13,
+    },
+
+    skillChip: {
+      backgroundColor:
+        "#EEEEFF",
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 9,
+    },
+
+    skillText: {
+      color: PRIMARY,
+      fontSize: 11,
+      fontWeight: "700",
+    },
+
+    salaryText: {
+      marginTop: 13,
+      fontWeight: "700",
+      color: "#333",
+    },
+
+    deadlineRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      marginTop: 12,
+    },
+
+    deadlineText: {
+      color: "#777",
+      fontSize: 12,
+    },
+
+    jobFooter: {
+      flexDirection: "row",
+      justifyContent:
+        "space-between",
+      alignItems: "center",
+      borderTopWidth: 1,
+      borderTopColor:
+        "#F0F0F0",
+      marginTop: 16,
+      paddingTop: 13,
+    },
+
+    dateText: {
+      fontSize: 11,
+      color: "#999",
+    },
+
+    closeButton: {
+      paddingHorizontal: 13,
+      paddingVertical: 7,
+      borderRadius: 10,
+      backgroundColor:
+        "#FFF0F0",
+    },
+
+    closeButtonText: {
+      color: "#C62828",
+      fontWeight: "700",
+      fontSize: 12,
+    },
+
+    reopenButton: {
+      paddingHorizontal: 13,
+      paddingVertical: 7,
+      borderRadius: 10,
+      backgroundColor:
+        "#EEEEFF",
+    },
+
+    reopenText: {
+      color: PRIMARY,
+      fontWeight: "700",
+      fontSize: 12,
+    },
+
+    modalContainer: {
+      flex: 1,
+      backgroundColor:
+        "#F7F7FA",
+    },
+
+    modalHeader: {
+      minHeight: 60,
+      paddingHorizontal: 18,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+      borderBottomWidth: 1,
+      borderBottomColor:
+        "#E8E8E8",
+      backgroundColor:
+        "#FFFFFF",
+    },
+
+    modalTitle: {
+      fontSize: 17,
+      fontWeight: "800",
+    },
+
+    cancelText: {
+      color: "#666",
+      fontSize: 15,
+    },
+
+    postText: {
+      color: PRIMARY,
+      fontWeight: "800",
+      fontSize: 15,
+    },
+
+    form: {
+      padding: 18,
+      paddingBottom: 45,
+    },
+
+    reviewNotice: {
+      backgroundColor:
+        "#EEEEFF",
+      borderRadius: 14,
+      padding: 13,
+      flexDirection: "row",
+      alignItems:
+        "flex-start",
+      gap: 9,
+    },
+
+    reviewNoticeText: {
+      flex: 1,
+      color: "#444",
+      fontSize: 12,
+      lineHeight: 18,
+    },
+
+    label: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: "#222",
+      marginTop: 15,
+      marginBottom: 8,
+    },
+
+    required: {
+      color: "#D93025",
+    },
+
+    input: {
+      minHeight: 50,
+      backgroundColor:
+        "#FFFFFF",
+      borderWidth: 1,
+      borderColor:
+        "#E1E1E6",
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      fontSize: 14,
+      color: "#111",
+    },
+
+    textArea: {
+      minHeight: 120,
+      paddingTop: 13,
+      paddingBottom: 13,
+    },
+
+    optionsWrap: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+
+    option: {
+      borderWidth: 1,
+      borderColor: "#DDD",
+      borderRadius: 20,
+      paddingHorizontal: 13,
+      paddingVertical: 9,
+      backgroundColor:
+        "#FFFFFF",
+    },
+
+    optionSelected: {
+      backgroundColor:
+        PRIMARY,
+      borderColor:
+        PRIMARY,
+    },
+
+    optionText: {
+      color: "#555",
+      fontSize: 12,
+      fontWeight: "600",
+    },
+
+    optionTextSelected: {
+      color: "#FFFFFF",
+    },
+
+    salaryRow: {
+      flexDirection: "row",
+      gap: 10,
+    },
+
+    salaryInput: {
+      flex: 1,
+    },
+
+    helper: {
+      marginTop: 6,
+      color: "#999",
+      fontSize: 11,
+      lineHeight: 16,
+    },
+
+    fullPostButton: {
+      minHeight: 52,
+      backgroundColor:
+        PRIMARY,
+      borderRadius: 15,
+      flexDirection: "row",
+      justifyContent:
+        "center",
+      alignItems: "center",
+      gap: 7,
+      marginTop: 28,
+    },
+
+    fullPostText: {
+      color: "#FFFFFF",
+      fontSize: 15,
+      fontWeight: "800",
+    },
+  });
