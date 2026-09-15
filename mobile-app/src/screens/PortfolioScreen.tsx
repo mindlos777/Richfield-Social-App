@@ -83,6 +83,9 @@ export default function PortfolioScreen() {
   const [projectUrl, setProjectUrl] =
     useState("");
 
+  const [imageUrl, setImageUrl] =
+    useState("");
+
   const [skills, setSkills] =
     useState("");
 
@@ -216,87 +219,103 @@ export default function PortfolioScreen() {
   }
 
   async function addProject() {
-    if (!isOwner) {
-      return;
-    }
-
-    if (!title.trim()) {
-      Alert.alert(
-        "Project title required",
-        "Please enter a project title."
-      );
-      return;
-    }
-
-    if (!description.trim()) {
-      Alert.alert(
-        "Description required",
-        "Please describe your project."
-      );
-      return;
-    }
-
     try {
-      setSaving(true);
+      const {
+        data: { user },
+        error: authError,
+      } =
+        await supabase.auth.getUser();
 
-      const skillsArray = skills
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
+      if (authError) {
+        throw authError;
+      }
+
+      if (!user) {
+        throw new Error(
+          "You must be signed in."
+        );
+      }
+
+      if (!title.trim()) {
+        Alert.alert(
+          "Project",
+          "Please enter a project title."
+        );
+
+        return;
+      }
 
       const {
         data,
         error,
-      } = await supabase
-        .from("portfolio_items")
-        .insert({
-          user_id: currentUserId,
-          title: title.trim(),
-          description:
-            description.trim(),
-          project_url:
-            projectUrl.trim() || null,
-          skills: skillsArray,
-        })
-        .select(`
-          id,
-          title,
-          description,
-          project_url,
-          skills,
-          created_at
-        `)
-        .single();
+      } =
+        await supabase
+          .from(
+            "portfolio_items"
+          )
+          .insert({
+            user_id:
+              user.id,
+
+            title:
+              title.trim(),
+
+            description:
+              description.trim() ||
+              null,
+
+            item_type:
+              "project",
+
+            url:
+              projectUrl.trim() ||
+              null,
+
+            image_url:
+              imageUrl?.trim() ||
+              null,
+
+            skills:
+              skills,
+
+            updated_at:
+              new Date().toISOString(),
+          })
+          .select()
+          .single();
 
       if (error) {
         throw error;
       }
 
-      setProjects((current) => [
-        data as PortfolioProject,
-        ...current,
-      ]);
-
-      resetForm();
+      console.log(
+        "Project added:",
+        data
+      );
 
       Alert.alert(
-        "Project added",
-        "Your project has been added to your portfolio."
+        "Success",
+        "Project added to your portfolio."
       );
-    } catch (error) {
+
+      setTitle("");
+      setDescription("");
+      setProjectUrl("");
+      setImageUrl("");
+      setSkills("");
+
+      await loadPortfolio();
+    } catch (error: any) {
       console.log(
         "Add project error:",
         error
       );
 
       Alert.alert(
-        "Could not add project",
-        error instanceof Error
-          ? error.message
-          : "Something went wrong."
+        "Project",
+        error?.message ||
+          "Could not add project."
       );
-    } finally {
-      setSaving(false);
     }
   }
 

@@ -36,7 +36,6 @@ export default function LoginScreen() {
   const {
     signIn,
     signInWithMicrosoft,
-    signOut,
     loading: authLoading,
   } = useAuth();
 
@@ -48,26 +47,22 @@ export default function LoginScreen() {
   const [
     email,
     setEmail,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     password,
     setPassword,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     loading,
     setLoading,
-  ] =
-    useState(false);
+  ] = useState(false);
 
   const [
     microsoftLoading,
     setMicrosoftLoading,
-  ] =
-    useState(false);
+  ] = useState(false);
 
   useEffect(() => {
     if (!params.error) {
@@ -77,20 +72,6 @@ export default function LoginScreen() {
     switch (
       params.error
     ) {
-      case "admin":
-        Alert.alert(
-          "Admin account",
-          "This is an administrator account. Please use the Richfield Connect Admin Portal to sign in."
-        );
-        break;
-
-      case "business":
-        Alert.alert(
-          "Business account",
-          "Business accounts use the separate Business Login / Sign Up area."
-        );
-        break;
-
       case "inactive":
         Alert.alert(
           "Account unavailable",
@@ -101,7 +82,14 @@ export default function LoginScreen() {
       case "profile":
         Alert.alert(
           "Account error",
-          "We could not load your Richfield Connect profile."
+          "We could not load your Richfield Social profile."
+        );
+        break;
+
+      case "business":
+        Alert.alert(
+          "Business account",
+          "Business accounts use the Business Login area."
         );
         break;
 
@@ -117,6 +105,23 @@ export default function LoginScreen() {
 
   const handleLogin =
     async () => {
+      const cleanEmail =
+        email
+          .trim()
+          .toLowerCase();
+
+      if (
+        !cleanEmail ||
+        !password
+      ) {
+        Alert.alert(
+          "Missing details",
+          "Please enter your email and password."
+        );
+
+        return;
+      }
+
       try {
         setLoading(
           true
@@ -124,7 +129,7 @@ export default function LoginScreen() {
 
         const userProfile =
           await signIn(
-            email.trim(),
+            cleanEmail,
             password
           );
 
@@ -133,10 +138,55 @@ export default function LoginScreen() {
           userProfile.role
         );
 
+        console.log(
+          "Account status:",
+          userProfile.status
+        );
+
+        const role =
+          String(
+            userProfile.role ||
+              ""
+          ).toLowerCase();
+
+        const status =
+          String(
+            userProfile.status ||
+              ""
+          ).toLowerCase();
+
         if (
-          userProfile.role ===
+          status !==
+          "active"
+        ) {
+          throw new Error(
+            "Your account is currently pending, suspended or rejected."
+          );
+        }
+
+        if (
+          role ===
+          "admin"
+        ) {
+          console.log(
+            "Routing to admin app"
+          );
+
+          router.replace(
+            "/(admin)/(tabs)/feed"
+          );
+
+          return;
+        }
+
+        if (
+          role ===
           "student"
         ) {
+          console.log(
+            "Routing to student app"
+          );
+
           router.replace(
             "/(tabs)"
           );
@@ -145,9 +195,13 @@ export default function LoginScreen() {
         }
 
         if (
-          userProfile.role ===
+          role ===
           "alumni"
         ) {
+          console.log(
+            "Routing to alumni app"
+          );
+
           router.replace(
             "/(alumni)"
           );
@@ -156,9 +210,13 @@ export default function LoginScreen() {
         }
 
         if (
-          userProfile.role ===
+          role ===
           "business"
         ) {
+          console.log(
+            "Routing to business app"
+          );
+
           router.replace(
             "/(business-auth)/(tabs)/dashboard"
           );
@@ -166,29 +224,20 @@ export default function LoginScreen() {
           return;
         }
 
-        if (
-          userProfile.role ===
-          "admin"
-        ) {
-          Alert.alert(
-            "Admin account",
-            "Please use the Richfield Social Admin Portal."
-          );
-
-          await signOut();
-
-          return;
-        }
-
         throw new Error(
-          "Your account role is invalid."
+          `Unsupported account role: ${role || "unknown"}`
         );
       } catch (
         error: any
       ) {
+        console.log(
+          "Login error:",
+          error
+        );
+
         Alert.alert(
           "Login failed",
-          error.message ||
+          error?.message ||
             "Unable to login."
         );
       } finally {
@@ -209,9 +258,14 @@ export default function LoginScreen() {
       } catch (
         error: any
       ) {
+        console.log(
+          "Microsoft login error:",
+          error
+        );
+
         Alert.alert(
           "Microsoft Login",
-          error.message ||
+          error?.message ||
             "Unable to start Microsoft login."
         );
 
@@ -310,7 +364,8 @@ export default function LoginScreen() {
             }
             disabled={
               microsoftLoading ||
-              authLoading
+              authLoading ||
+              loading
             }
           >
             {microsoftLoading ? (
@@ -403,6 +458,9 @@ export default function LoginScreen() {
               false
             }
             keyboardType="email-address"
+            editable={
+              !loading
+            }
           />
 
           <TextInput
@@ -418,13 +476,20 @@ export default function LoginScreen() {
               setPassword
             }
             secureTextEntry
+            editable={
+              !loading
+            }
+            onSubmitEditing={
+              handleLogin
+            }
           />
 
           <Pressable
             style={[
               styles.button,
 
-              loading &&
+              (loading ||
+                authLoading) &&
                 styles.buttonDisabled,
             ]}
             onPress={
@@ -432,7 +497,8 @@ export default function LoginScreen() {
             }
             disabled={
               loading ||
-              microsoftLoading
+              microsoftLoading ||
+              authLoading
             }
           >
             {loading ? (

@@ -32,6 +32,10 @@ import {
   SafeAreaView,
 } from "react-native-safe-area-context";
 
+import FeedPostCard, {
+  FeedPostItem,
+} from "../../components/feed/FeedPostCard";
+
 import {
   supabase,
 } from "../../lib/supabase";
@@ -92,17 +96,10 @@ type RawPost = {
   created_at: string;
 };
 
-type FeedPost = RawPost & {
-  author: HomeProfile | null;
-
-  likeCount: number;
-  commentCount: number;
-  shareCount: number;
-
-  liked: boolean;
-
-  rankingScore: number;
-};
+type FeedPost =
+  FeedPostItem & {
+    rankingScore: number;
+  };
 
 type Opportunity = {
   id: string;
@@ -223,59 +220,6 @@ function getGreeting() {
   }
 
   return "Good evening";
-}
-
-function formatRelativeTime(
-  value: string
-) {
-  const created =
-    new Date(value);
-
-  const seconds =
-    Math.floor(
-      (Date.now() -
-        created.getTime()) /
-        1000
-    );
-
-  if (seconds < 60) {
-    return "now";
-  }
-
-  const minutes =
-    Math.floor(
-      seconds / 60
-    );
-
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-
-  const hours =
-    Math.floor(
-      minutes / 60
-    );
-
-  if (hours < 24) {
-    return `${hours}h`;
-  }
-
-  const days =
-    Math.floor(
-      hours / 24
-    );
-
-  if (days < 7) {
-    return `${days}d`;
-  }
-
-  return created.toLocaleDateString(
-    "en-ZA",
-    {
-      day: "numeric",
-      month: "short",
-    }
-  );
 }
 
 function formatOpportunityType(
@@ -911,19 +855,61 @@ export default function HomeScreen() {
                     ageHours
                 );
 
+              const author =
+                authorMap.get(
+                  post.user_id
+                ) || null;
+
               return {
-                ...post,
+                id:
+                  post.id,
 
-                author:
-                  authorMap.get(
-                    post.user_id
-                  ) || null,
+                user_id:
+                  post.user_id,
 
-                likeCount,
+                content:
+                  post.content,
 
-                commentCount,
+                image_url:
+                  post.image_url,
 
-                shareCount,
+                media_type:
+                  post.media_type,
+
+                visibility:
+                  post.visibility,
+
+                created_at:
+                  post.created_at,
+
+                full_name:
+                  author?.full_name ||
+                  "Richfield Member",
+
+                username:
+                  author?.username ||
+                  null,
+
+                avatar_url:
+                  author?.avatar_url ||
+                  null,
+
+                role:
+                  author?.role ||
+                  null,
+
+                headline:
+                  author?.headline ||
+                  null,
+
+                likes:
+                  likeCount,
+
+                comments:
+                  commentCount,
+
+                shares:
+                  shareCount,
 
                 liked,
 
@@ -1623,13 +1609,13 @@ export default function HomeScreen() {
                   liked:
                     nextLiked,
 
-                  likeCount:
+                  likes:
                     nextLiked
-                      ? item.likeCount +
+                      ? item.likes +
                         1
                       : Math.max(
                           0,
-                          item.likeCount -
+                          item.likes -
                             1
                         ),
                 }
@@ -1723,8 +1709,7 @@ export default function HomeScreen() {
 
     try {
       const author =
-        post.author
-          ?.full_name ||
+        post.full_name ||
         "a Richfield member";
 
       await Share.share({
@@ -1866,15 +1851,69 @@ export default function HomeScreen() {
             post={
               item
             }
-            likeLoading={likeLoading.includes(
-              item.id
-            )}
-            onLike={() =>
-              toggleLike(
-                item
+            variant="social"
+            onProfilePress={() => {
+              if (
+                item.user_id ===
+                profile?.id
+              ) {
+                router.push(
+                  "/(tabs)/profile"
+                );
+
+                return;
+              }
+
+              router.push({
+                pathname:
+                  "/member-profile",
+
+                params: {
+                  userId:
+                    item.user_id,
+
+                  id:
+                    item.user_id,
+
+                  name:
+                    item.full_name,
+
+                  username:
+                    item.username ||
+                    "",
+
+                  image:
+                    item.avatar_url ||
+                    "",
+
+                  role:
+                    item.role ||
+                    "student",
+                },
+              });
+            }}
+            onLikePress={
+              likeLoading.includes(
+                item.id
               )
+                ? undefined
+                : () =>
+                    toggleLike(
+                      item
+                    )
             }
-            onShare={() =>
+            onCommentPress={() =>
+              router.push({
+                pathname:
+                  "/(student)/post/[id]" as never,
+
+                params: {
+                  id:
+                    item.id,
+                },
+              })
+            }
+            onSharePress={() =>
               sharePost(
                 item
               )
@@ -2860,406 +2899,6 @@ function CreatePostCard({
 }
 
 /* =========================================================
-   FYP POST
-   ========================================================= */
-
-function FeedPostCard({
-  post,
-  likeLoading,
-  onLike,
-  onShare,
-}: {
-  post: FeedPost;
-
-  likeLoading: boolean;
-
-  onLike: () => void;
-
-  onShare: () => void;
-}) {
-  const authorName =
-    post.author
-      ?.full_name ||
-    "Richfield Member";
-
-  const openAuthor =
-    () => {
-      router.push({
-        pathname:
-          "/(tabs)/profile",
-
-        params: {
-          userId:
-            post.user_id,
-        },
-      });
-    };
-
-  const openPost =
-    () => {
-      router.push({
-        pathname:
-          "/(student)/post/[id]" as never,
-
-        params: {
-          id: post.id,
-        },
-      });
-    };
-
-  return (
-    <View
-      style={
-        styles.postCard
-      }
-    >
-      <View
-        style={
-          styles.postHeader
-        }
-      >
-        <Pressable
-          onPress={
-            openAuthor
-          }
-        >
-          {post.author
-            ?.avatar_url ? (
-            <Image
-              source={{
-                uri:
-                  post.author
-                    .avatar_url,
-              }}
-              style={
-                styles.postAvatarImage
-              }
-            />
-          ) : (
-            <View
-              style={
-                styles.postAvatar
-              }
-            >
-              <Text
-                style={
-                  styles.postAvatarText
-                }
-              >
-                {getInitials(
-                  authorName
-                )}
-              </Text>
-            </View>
-          )}
-        </Pressable>
-
-        <Pressable
-          style={
-            styles.postAuthorArea
-          }
-          onPress={
-            openAuthor
-          }
-        >
-          <Text
-            style={
-              styles.postAuthor
-            }
-          >
-            {
-              authorName
-            }
-          </Text>
-
-          <Text
-            style={
-              styles.postHeadline
-            }
-            numberOfLines={
-              1
-            }
-          >
-            {post.author
-              ?.headline ||
-              getRoleLabel(
-                post.author
-                  ?.role ||
-                  null
-              )}
-          </Text>
-
-          <View
-            style={
-              styles.postTimeRow
-            }
-          >
-            <Text
-              style={
-                styles.postTime
-              }
-            >
-              {formatRelativeTime(
-                post.created_at
-              )}
-            </Text>
-
-            <Text
-              style={
-                styles.dot
-              }
-            >
-              ·
-            </Text>
-
-            <Ionicons
-              name={
-                post.visibility
-                  ?.toLowerCase() ===
-                "connections"
-                  ? "people-outline"
-                  : "earth-outline"
-              }
-              size={12}
-              color={
-                COLORS.textMuted
-              }
-            />
-          </View>
-        </Pressable>
-
-        <Ionicons
-          name="ellipsis-horizontal"
-          size={20}
-          color={
-            COLORS.textMuted
-          }
-        />
-      </View>
-
-      {post.content ? (
-        <Pressable
-          onPress={
-            openPost
-          }
-        >
-          <Text
-            style={
-              styles.postContent
-            }
-          >
-            {
-              post.content
-            }
-          </Text>
-        </Pressable>
-      ) : null}
-
-      {post.image_url &&
-      post.media_type !==
-        "video" ? (
-        <Pressable
-          onPress={
-            openPost
-          }
-        >
-          <Image
-            source={{
-              uri:
-                post.image_url,
-            }}
-            style={
-              styles.postImage
-            }
-            resizeMode="cover"
-          />
-        </Pressable>
-      ) : null}
-
-      {post.image_url &&
-      post.media_type ===
-        "video" ? (
-        <Pressable
-          style={
-            styles.videoCard
-          }
-          onPress={
-            openPost
-          }
-        >
-          <Ionicons
-            name="play-circle"
-            size={54}
-            color="#FFF"
-          />
-
-          <Text
-            style={
-              styles.videoLabel
-            }
-          >
-            Video post
-          </Text>
-        </Pressable>
-      ) : null}
-
-      <View
-        style={
-          styles.engagement
-        }
-      >
-        <View
-          style={
-            styles.likesSummary
-          }
-        >
-          <View
-            style={
-              styles.likeBubble
-            }
-          >
-            <Ionicons
-              name="thumbs-up"
-              size={10}
-              color="#FFF"
-            />
-          </View>
-
-          <Text
-            style={
-              styles.engagementText
-            }
-          >
-            {
-              post.likeCount
-            }
-          </Text>
-        </View>
-
-        <Text
-          style={
-            styles.engagementText
-          }
-        >
-          {post.commentCount}{" "}
-          comments ·{" "}
-          {post.shareCount}{" "}
-          shares
-        </Text>
-      </View>
-
-      <View
-        style={
-          styles.divider
-        }
-      />
-
-      <View
-        style={
-          styles.postActions
-        }
-      >
-        <Pressable
-          style={
-            styles.postAction
-          }
-          disabled={
-            likeLoading
-          }
-          onPress={
-            onLike
-          }
-        >
-          {likeLoading ? (
-            <ActivityIndicator
-              size="small"
-              color={
-                PRIMARY
-              }
-            />
-          ) : (
-            <Ionicons
-              name={
-                post.liked
-                  ? "thumbs-up"
-                  : "thumbs-up-outline"
-              }
-              size={19}
-              color={
-                post.liked
-                  ? PRIMARY
-                  : COLORS.textSecondary
-              }
-            />
-          )}
-
-          <Text
-            style={[
-              styles.postActionText,
-
-              post.liked &&
-                styles.activeActionText,
-            ]}
-          >
-            Like
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={
-            styles.postAction
-          }
-          onPress={
-            openPost
-          }
-        >
-          <Ionicons
-            name="chatbubble-outline"
-            size={18}
-            color={
-              COLORS.textSecondary
-            }
-          />
-
-          <Text
-            style={
-              styles.postActionText
-            }
-          >
-            Comment
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={
-            styles.postAction
-          }
-          onPress={
-            onShare
-          }
-        >
-          <Ionicons
-            name="share-social-outline"
-            size={19}
-            color={
-              COLORS.textSecondary
-            }
-          />
-
-          <Text
-            style={
-              styles.postActionText
-            }
-          >
-            Share
-          </Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-/* =========================================================
    STYLES
    ========================================================= */
 
@@ -3789,203 +3428,6 @@ const styles =
       color:
         COLORS.textMuted,
       fontSize: 12,
-    },
-
-    postCard: {
-      backgroundColor:
-        "#FFF",
-      marginBottom: 10,
-      borderTopWidth: 1,
-      borderBottomWidth: 1,
-      borderColor:
-        COLORS.border,
-    },
-
-    postHeader: {
-      flexDirection:
-        "row",
-      alignItems:
-        "flex-start",
-      paddingHorizontal: 15,
-      paddingTop: 14,
-      paddingBottom: 10,
-    },
-
-    postAvatar: {
-      width: 43,
-      height: 43,
-      borderRadius: 22,
-      backgroundColor:
-        COLORS.brandLight,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-    },
-
-    postAvatarImage: {
-      width: 43,
-      height: 43,
-      borderRadius: 22,
-      backgroundColor:
-        "#EEE",
-    },
-
-    postAvatarText: {
-      color: PRIMARY,
-      fontSize: 13,
-      fontWeight: "900",
-    },
-
-    postAuthorArea: {
-      flex: 1,
-      marginLeft: 10,
-      paddingRight: 10,
-    },
-
-    postAuthor: {
-      color:
-        COLORS.textPrimary,
-      fontSize: 13.5,
-      fontWeight: "800",
-    },
-
-    postHeadline: {
-      color:
-        COLORS.textSecondary,
-      fontSize: 10.5,
-      marginTop: 2,
-    },
-
-    postTimeRow: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      marginTop: 3,
-    },
-
-    postTime: {
-      fontSize: 9.5,
-      color:
-        COLORS.textMuted,
-    },
-
-    dot: {
-      fontSize: 11,
-      color:
-        COLORS.textMuted,
-      marginHorizontal: 4,
-    },
-
-    postContent: {
-      paddingHorizontal: 15,
-      paddingBottom: 14,
-      color:
-        COLORS.textPrimary,
-      fontSize: 13.5,
-      lineHeight: 20,
-    },
-
-    postImage: {
-      width: "100%",
-      height: 360,
-      backgroundColor:
-        "#ECECEC",
-    },
-
-    videoCard: {
-      width: "100%",
-      height: 340,
-      backgroundColor:
-        "#151515",
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-    },
-
-    videoLabel: {
-      color: "#FFF",
-      fontWeight: "700",
-      marginTop: 7,
-    },
-
-    engagement: {
-      minHeight: 41,
-      paddingHorizontal: 15,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      justifyContent:
-        "space-between",
-    },
-
-    likesSummary: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      gap: 5,
-    },
-
-    likeBubble: {
-      width: 18,
-      height: 18,
-      borderRadius: 9,
-      backgroundColor:
-        PRIMARY,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-    },
-
-    engagementText: {
-      fontSize: 10.5,
-      color:
-        COLORS.textMuted,
-    },
-
-    divider: {
-      height: 1,
-      backgroundColor:
-        COLORS.border,
-      marginHorizontal: 15,
-    },
-
-    postActions: {
-      minHeight: 48,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      paddingHorizontal: 5,
-    },
-
-    postAction: {
-      flex: 1,
-      height: 46,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      gap: 6,
-    },
-
-    postActionText: {
-      fontSize: 11,
-      color:
-        COLORS.textSecondary,
-      fontWeight: "600",
-    },
-
-    activeActionText: {
-      color: PRIMARY,
-      fontWeight: "800",
     },
 
     emptyFeed: {

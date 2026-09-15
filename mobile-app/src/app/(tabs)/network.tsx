@@ -413,36 +413,29 @@ export default function NetworkScreen() {
   );
 
   useEffect(() => {
-    if (
-      !currentUser
-    ) {
+    if (!currentUser) {
       return;
     }
 
-    /*
-      Hackathon realtime:
+    const userId =
+      currentUser.id;
 
-      We are using Supabase
-      Postgres Changes.
-
-      "profiles" and "follows"
-      must be included in the
-      supabase_realtime publication.
-    */
+    console.log(
+      "Starting network realtime for:",
+      userId
+    );
 
     const profilesChannel =
       supabase
         .channel(
-          "network-profiles"
+          `network-profiles-${userId}`
         )
         .on(
           "postgres_changes",
           {
             event: "*",
-            schema:
-              "public",
-            table:
-              "profiles",
+            schema: "public",
+            table: "profiles",
           },
           async payload => {
             console.log(
@@ -450,9 +443,18 @@ export default function NetworkScreen() {
               payload.eventType
             );
 
-            await loadProfiles(
-              currentUser.id
-            );
+            try {
+              await loadProfiles(
+                userId
+              );
+            } catch (
+              error
+            ) {
+              console.log(
+                "Realtime profile reload error:",
+                error
+              );
+            }
           }
         )
         .subscribe(
@@ -467,19 +469,17 @@ export default function NetworkScreen() {
     const followsChannel =
       supabase
         .channel(
-          `network-follows-${currentUser.id}`
+          `network-follows-${userId}`
         )
         .on(
           "postgres_changes",
           {
             event: "*",
-            schema:
-              "public",
-            table:
-              "follows",
+            schema: "public",
+            table: "follows",
 
             filter:
-              `follower_id=eq.${currentUser.id}`,
+              `follower_id=eq.${userId}`,
           },
           async payload => {
             console.log(
@@ -487,9 +487,18 @@ export default function NetworkScreen() {
               payload.eventType
             );
 
-            await loadFollowing(
-              currentUser.id
-            );
+            try {
+              await loadFollowing(
+                userId
+              );
+            } catch (
+              error
+            ) {
+              console.log(
+                "Realtime following reload error:",
+                error
+              );
+            }
           }
         )
         .subscribe(
@@ -502,6 +511,11 @@ export default function NetworkScreen() {
         );
 
     return () => {
+      console.log(
+        "Cleaning network realtime:",
+        userId
+      );
+
       supabase.removeChannel(
         profilesChannel
       );
@@ -511,7 +525,7 @@ export default function NetworkScreen() {
       );
     };
   }, [
-    currentUser,
+    currentUser?.id,
     loadFollowing,
     loadProfiles,
   ]);

@@ -79,6 +79,11 @@ type UsageRow = {
   output_tokens?: number | null;
 };
 
+type VerifiedToolContext = {
+  tool: string;
+  result: any;
+};
+
 /* =========================================================
    LIMITS
 ========================================================= */
@@ -89,6 +94,126 @@ const DAILY_LIMITS: Record<UserRole, number> = {
   business: 15,
   admin: 25,
 };
+
+/* =========================================================
+   RETRY
+========================================================= */
+
+const RETRYABLE_STATUS_CODES = [
+  429,
+  500,
+  502,
+  503,
+  504,
+];
+
+const sleep = (
+  milliseconds: number
+) =>
+  new Promise(resolve =>
+    setTimeout(
+      resolve,
+      milliseconds
+    )
+  );
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 3
+): Promise<Response> {
+  let lastResponse:
+    | Response
+    | null = null;
+
+  for (
+    let attempt = 0;
+    attempt <= maxRetries;
+    attempt++
+  ) {
+    try {
+      const response =
+        await fetch(
+          url,
+          options
+        );
+
+      lastResponse =
+        response;
+
+      if (response.ok) {
+        if (attempt > 0) {
+          console.log(
+            `AI request succeeded after ${attempt} retry attempt(s).`
+          );
+        }
+
+        return response;
+      }
+
+      const shouldRetry =
+        RETRYABLE_STATUS_CODES.includes(
+          response.status
+        );
+
+      if (
+        !shouldRetry ||
+        attempt === maxRetries
+      ) {
+        return response;
+      }
+
+      const delay =
+        1000 *
+        Math.pow(
+          2,
+          attempt
+        );
+
+      console.log(
+        `AI request failed with ${response.status}. Retry ${attempt + 1}/${maxRetries} in ${delay}ms.`
+      );
+
+      await sleep(
+        delay
+      );
+    } catch (error) {
+      console.error(
+        "AI network request error:",
+        error
+      );
+
+      if (
+        attempt === maxRetries
+      ) {
+        throw error;
+      }
+
+      const delay =
+        1000 *
+        Math.pow(
+          2,
+          attempt
+        );
+
+      console.log(
+        `AI network error. Retry ${attempt + 1}/${maxRetries} in ${delay}ms.`
+      );
+
+      await sleep(
+        delay
+      );
+    }
+  }
+
+  if (lastResponse) {
+    return lastResponse;
+  }
+
+  throw new Error(
+    "AI service unavailable."
+  );
+}
 
 /* =========================================================
    RESPONSE HELPERS
@@ -446,18 +571,7 @@ markdown tables
 
 - Use normal readable text instead.
 - For a short answer, respond naturally in one or two paragraphs.
-- For advice with several points, use a clean structure such as:
-
-Improving your portfolio
-
-1. Quality over quantity
-Choose 3 to 4 strong projects that show what you can actually build.
-
-2. Explain each project
-Briefly explain the problem, what you built, your role and the result.
-
-3. Make it easy to explore
-- Include working links to GitHub, live projects or screenshots.
+- For advice with several points, use a clean numbered structure.
 - Do not over-structure simple questions.
 - Keep normal responses concise, usually around 60 to 150 words.
 - Only give a longer answer when the user clearly asks for detail.
@@ -538,33 +652,17 @@ function getAIProvider():
 }
 
 /* =========================================================
-   GEMINI NORMAL RESPONSE
+   GEMINI TOOL CONTEXT
 ========================================================= */
-type VerifiedToolContext = {
-  tool:
-    string;
 
-  result:
-    any;
-};
-
-async function
-getGeminiToolContext(
-  adminClient:
-    any,
-  userId:
-    string,
-  role:
-    UserRole,
-  systemPrompt:
-    string,
-  history:
-    HistoryMessage[],
-  message:
-    string
-): Promise<
-  VerifiedToolContext[]
-> {
+async function getGeminiToolContext(
+  adminClient: any,
+  userId: string,
+  role: UserRole,
+  systemPrompt: string,
+  history: HistoryMessage[],
+  message: string
+): Promise<VerifiedToolContext[]> {
   const apiKey =
     Deno.env.get(
       "GEMINI_API_KEY"
@@ -613,7 +711,7 @@ getGeminiToolContext(
 
   try {
     const response =
-      await fetch(
+      await fetchWithRetry(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
           method:
@@ -677,7 +775,8 @@ Only call tools that are genuinely relevant to the user's request.`,
                   200,
               },
             }),
-        }
+        },
+        3
       );
 
     const data =
@@ -687,7 +786,8 @@ Only call tools that are genuinely relevant to the user's request.`,
       !response.ok
     ) {
       console.error(
-        "Tool planner error:",
+        "Tool planner error after retries:",
+        response.status,
         data
       );
 
@@ -725,13 +825,6 @@ Only call tools that are genuinely relevant to the user's request.`,
     const results:
       VerifiedToolContext[] =
       [];
-
-    /*
-     * Cap the number of tools per request.
-     *
-     * Prevents one prompt from creating a large
-     * number of database operations.
-     */
 
     const allowedCalls =
       functionCalls.slice(
@@ -786,13 +879,13 @@ Only call tools that are genuinely relevant to the user's request.`,
       error
     );
 
-    /*
-     * AI chat should still work if the
-     * planner temporarily fails.
-     */
     return [];
   }
 }
+
+/* =========================================================
+   GEMINI NORMAL RESPONSE
+========================================================= */
 
 async function callGemini(
   systemPrompt: string,
@@ -848,7 +941,7 @@ async function callGemini(
   ];
 
   const response =
-    await fetch(
+    await fetchWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
       {
         method:
@@ -880,7 +973,8 @@ async function callGemini(
                 300,
             },
           }),
-      }
+      },
+      3
     );
 
   const data =
@@ -888,14 +982,25 @@ async function callGemini(
 
   if (!response.ok) {
     console.error(
-      "Gemini error:",
+      "Gemini error after retries:",
+      response.status,
       data
     );
+
+    if (
+      RETRYABLE_STATUS_CODES.includes(
+        response.status
+      )
+    ) {
+      throw new Error(
+        "Richfield AI is temporarily busy. Please try again in a moment."
+      );
+    }
 
     throw new Error(
       data?.error
         ?.message ||
-        "Gemini request failed."
+        `Gemini request failed (${response.status}).`
     );
   }
 
@@ -1142,10 +1247,6 @@ async function streamGemini(
     );
   }
 
-  /* =======================================================
-     CONTENT
-  ======================================================= */
-
   const contents = [
     ...history.map(
       item => ({
@@ -1178,11 +1279,11 @@ async function streamGemini(
   ];
 
   /* =======================================================
-     REQUEST
+     STREAM REQUEST WITH AUTOMATIC RETRY
   ======================================================= */
 
   const response =
-    await fetch(
+    await fetchWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
       {
         method:
@@ -1214,11 +1315,12 @@ async function streamGemini(
                 500,
             },
           }),
-      }
+      },
+      3
     );
 
   /* =======================================================
-     HTTP ERROR
+     HTTP ERROR AFTER RETRIES
   ======================================================= */
 
   if (!response.ok) {
@@ -1226,10 +1328,20 @@ async function streamGemini(
       await response.text();
 
     console.error(
-      "Gemini stream HTTP error:",
+      "Gemini stream HTTP error after retries:",
       response.status,
       errorText
     );
+
+    if (
+      RETRYABLE_STATUS_CODES.includes(
+        response.status
+      )
+    ) {
+      throw new Error(
+        "Richfield AI is temporarily busy. Please try again in a moment."
+      );
+    }
 
     throw new Error(
       `Gemini streaming request failed (${response.status}).`
@@ -1242,10 +1354,6 @@ async function streamGemini(
     );
   }
 
-  /* =======================================================
-     STREAM
-  ======================================================= */
-
   const reader =
     response.body
       .getReader();
@@ -1253,24 +1361,13 @@ async function streamGemini(
   const decoder =
     new TextDecoder();
 
-  let buffer =
-    "";
+  let buffer = "";
 
-  let inputTokens =
-    0;
+  let inputTokens = 0;
+  let outputTokens = 0;
 
-  let outputTokens =
-    0;
-
-  let totalText =
-    "";
-
-  let eventCount =
-    0;
-
-  /* =======================================================
-     PROCESS ONE SSE EVENT
-  ======================================================= */
+  let totalText = "";
+  let eventCount = 0;
 
   function processGeminiEvent(
     rawEvent: string
@@ -1325,9 +1422,7 @@ async function streamGemini(
         JSON.parse(
           jsonText
         );
-    } catch (
-      parseError
-    ) {
+    } catch {
       console.log(
         "Gemini SSE parse error:",
         jsonText
@@ -1336,12 +1431,7 @@ async function streamGemini(
       return;
     }
 
-    eventCount +=
-      1;
-
-    /* =====================================================
-       GEMINI API ERROR INSIDE STREAM
-    ===================================================== */
+    eventCount += 1;
 
     if (
       chunk?.error
@@ -1357,10 +1447,6 @@ async function streamGemini(
           "Gemini stream returned an error."
       );
     }
-
-    /* =====================================================
-       TEXT
-    ===================================================== */
 
     const candidates =
       chunk?.candidates ||
@@ -1379,13 +1465,6 @@ async function streamGemini(
       for (
         const part of parts
       ) {
-        /*
-         * Gemini may return other part types,
-         * such as thought metadata.
-         *
-         * Only visible text gets streamed.
-         */
-
         if (
           typeof part
             ?.text ===
@@ -1401,11 +1480,6 @@ async function streamGemini(
         }
       }
 
-      /*
-       * Helpful debugging if Gemini ends
-       * without visible text.
-       */
-
       if (
         candidate
           ?.finishReason
@@ -1417,10 +1491,6 @@ async function streamGemini(
         );
       }
     }
-
-    /* =====================================================
-       TOKEN USAGE
-    ===================================================== */
 
     if (
       chunk
@@ -1439,10 +1509,6 @@ async function streamGemini(
         outputTokens;
     }
   }
-
-  /* =======================================================
-     READ CHUNKS
-  ======================================================= */
 
   while (true) {
     const {
@@ -1468,18 +1534,6 @@ async function streamGemini(
         }
       );
 
-    /*
-     * IMPORTANT FIX:
-     *
-     * Handles both:
-     *
-     * \n\n
-     *
-     * and:
-     *
-     * \r\n\r\n
-     */
-
     const events =
       buffer.split(
         /\r?\n\r?\n/
@@ -1499,17 +1553,8 @@ async function streamGemini(
     }
   }
 
-  /* =======================================================
-     FLUSH DECODER
-  ======================================================= */
-
   buffer +=
     decoder.decode();
-
-  /*
-   * Gemini may leave a final event
-   * without another blank line.
-   */
 
   if (
     buffer.trim()
@@ -1534,10 +1579,6 @@ async function streamGemini(
     }
   );
 
-  /* =======================================================
-     EMPTY RESPONSE
-  ======================================================= */
-
   if (
     !totalText.trim()
   ) {
@@ -1551,6 +1592,10 @@ async function streamGemini(
     outputTokens,
   };
 }
+
+/* =========================================================
+   VERIFIED CONTEXT
+========================================================= */
 
 function buildVerifiedContextPrompt(
   systemPrompt:
@@ -2066,8 +2111,6 @@ Deno.serve(
     }
 
     try {
-      /* ---------------- ENV ---------------- */
-
       const supabaseUrl =
         Deno.env.get(
           "SUPABASE_URL"
@@ -2096,8 +2139,6 @@ Deno.serve(
           500
         );
       }
-
-      /* ---------------- AUTH ---------------- */
 
       const authorization =
         request.headers.get(
@@ -2162,8 +2203,6 @@ Deno.serve(
 
       const user =
         userData.user;
-
-      /* ---------------- PROFILE ---------------- */
 
       const {
         data:
@@ -2232,8 +2271,6 @@ Deno.serve(
         );
       }
 
-      /* ---------------- BODY ---------------- */
-
       let body:
         any;
 
@@ -2256,8 +2293,6 @@ Deno.serve(
 
       const today =
         getJohannesburgDate();
-
-      /* ---------------- USAGE ---------------- */
 
       const {
         data:
@@ -2495,8 +2530,6 @@ Deno.serve(
         );
       }
 
-      /* ---------------- CONVERSATION ---------------- */
-
       let conversationId:
         string | null =
         body
@@ -2582,8 +2615,6 @@ Deno.serve(
         );
       }
 
-      /* ---------------- HISTORY ---------------- */
-
       const {
         data:
           previousMessages,
@@ -2647,10 +2678,6 @@ Deno.serve(
             "User"
         );
 
-      /* =========================================================
-        APPROVED APP TOOLS
-      ========================================================= */
-
       let verifiedContexts:
         VerifiedToolContext[] =
         [];
@@ -2677,10 +2704,6 @@ Deno.serve(
             toolError
           );
 
-          /*
-          * Normal chat should still work
-          * if a tool temporarily fails.
-          */
           verifiedContexts =
             [];
         }
@@ -2697,7 +2720,7 @@ Deno.serve(
         true;
 
       /* ===================================================
-         NON STREAM FALLBACK
+         NON STREAM
       =================================================== */
 
       if (
