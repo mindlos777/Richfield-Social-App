@@ -69,9 +69,7 @@ export default function LoginScreen() {
       return;
     }
 
-    switch (
-      params.error
-    ) {
+    switch (params.error) {
       case "inactive":
         Alert.alert(
           "Account unavailable",
@@ -99,165 +97,122 @@ export default function LoginScreen() {
           "We could not determine your account type."
         );
     }
-  }, [
-    params.error,
-  ]);
+  }, [params.error]);
 
-  const handleLogin =
-    async () => {
-      const cleanEmail =
-        email
-          .trim()
-          .toLowerCase();
+  const handleLogin = async () => {
+    const cleanEmail = email
+      .trim()
+      .toLowerCase();
 
-      if (
-        !cleanEmail ||
-        !password
-      ) {
-        Alert.alert(
-          "Missing details",
-          "Please enter your email and password."
+    if (!cleanEmail || !password) {
+      Alert.alert(
+        "Missing details",
+        "Please enter your email and password."
+      );
+
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const userProfile =
+        await signIn(
+          cleanEmail,
+          password
+        );
+
+      console.log(
+        "Logged in role:",
+        userProfile.role
+      );
+
+      console.log(
+        "Account status:",
+        userProfile.status
+      );
+
+      const role = String(
+        userProfile.role || ""
+      ).toLowerCase();
+
+      const status = String(
+        userProfile.status || ""
+      ).toLowerCase();
+
+      if (status !== "active") {
+        throw new Error(
+          "Your account is currently pending, suspended or rejected."
+        );
+      }
+
+      if (role === "admin") {
+        console.log(
+          "Routing to admin app"
+        );
+
+        router.replace(
+          "/(admin)/(tabs)/feed"
         );
 
         return;
       }
 
-      try {
-        setLoading(
-          true
-        );
-
-        const userProfile =
-          await signIn(
-            cleanEmail,
-            password
-          );
-
-        console.log(
-          "Logged in role:",
-          userProfile.role
-        );
-
-        console.log(
-          "Account status:",
-          userProfile.status
-        );
-
-        const role =
-          String(
-            userProfile.role ||
-              ""
-          ).toLowerCase();
-
-        const status =
-          String(
-            userProfile.status ||
-              ""
-          ).toLowerCase();
-
-        if (
-          status !==
-          "active"
-        ) {
-          throw new Error(
-            "Your account is currently pending, suspended or rejected."
-          );
-        }
-
-        if (
-          role ===
-          "admin"
-        ) {
-          console.log(
-            "Routing to admin app"
-          );
-
-          router.replace(
-            "/(admin)/(tabs)/feed"
-          );
-
-          return;
-        }
-
-        if (
-          role ===
-          "student"
-        ) {
-          console.log(
-            "Routing to student app"
-          );
-
-          router.replace(
-            "/(tabs)"
-          );
-
-          return;
-        }
-
-        if (
-          role ===
-          "alumni"
-        ) {
-          console.log(
-            "Routing to alumni app"
-          );
-
-          router.replace(
-            "/(alumni)"
-          );
-
-          return;
-        }
-
-        if (
-          role ===
-          "business"
-        ) {
-          console.log(
-            "Routing to business app"
-          );
-
-          router.replace(
-            "/(business-auth)/(tabs)/dashboard"
-          );
-
-          return;
-        }
-
-        throw new Error(
-          `Unsupported account role: ${role || "unknown"}`
-        );
-      } catch (
-        error: any
+      if (
+        role === "student" ||
+        role === "alumni"
       ) {
         console.log(
-          "Login error:",
-          error
+          `Routing ${role} to community app`
         );
 
-        Alert.alert(
-          "Login failed",
-          error?.message ||
-            "Unable to login."
+        router.replace(
+          "/(tabs)"
         );
-      } finally {
-        setLoading(
-          false
-        );
+
+        return;
       }
-    };
+
+      if (role === "business") {
+        console.log(
+          "Routing to business app"
+        );
+
+        router.replace(
+          "/(business-auth)/(tabs)/dashboard"
+        );
+
+        return;
+      }
+
+      throw new Error(
+        `Unsupported account role: ${
+          role || "unknown"
+        }`
+      );
+    } catch (error: any) {
+      console.log(
+        "Login error:",
+        error
+      );
+
+      Alert.alert(
+        "Login failed",
+        error?.message ||
+          "Unable to login."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleMicrosoftLogin =
     async () => {
       try {
-        setMicrosoftLoading(
-          true
-        );
+        setMicrosoftLoading(true);
 
         await signInWithMicrosoft();
-      } catch (
-        error: any
-      ) {
+      } catch (error: any) {
         console.log(
           "Microsoft login error:",
           error
@@ -269,33 +224,24 @@ export default function LoginScreen() {
             "Unable to start Microsoft login."
         );
 
-        setMicrosoftLoading(
-          false
-        );
+        setMicrosoftLoading(false);
       }
     };
 
   return (
     <SafeAreaView
-      style={
-        styles.safeArea
-      }
+      style={styles.safeArea}
     >
       <KeyboardAvoidingView
-        style={
-          styles.keyboardView
-        }
+        style={styles.keyboardView}
         behavior={
-          Platform.OS ===
-          "ios"
+          Platform.OS === "ios"
             ? "padding"
             : undefined
         }
       >
         <ScrollView
-          style={
-            styles.scrollView
-          }
+          style={styles.scrollView}
           contentContainerStyle={
             styles.scrollContent
           }
@@ -305,30 +251,20 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View
-            style={
-              styles.logoSection
-            }
+            style={styles.logoSection}
           >
             <Image
               source={require(
                 "../../../assets/images/rf_logo.jpg"
               )}
-              style={
-                styles.logoImage
-              }
+              style={styles.logoImage}
               resizeMode="contain"
             />
 
-            <Text
-              style={
-                styles.logo
-              }
-            >
+            <Text style={styles.logo}>
               RICHFIELD
               <Text
-                style={
-                  styles.logoAccent
-                }
+                style={styles.logoAccent}
               >
                 {" "}
                 SOCIAL
@@ -336,26 +272,18 @@ export default function LoginScreen() {
             </Text>
           </View>
 
-          <Text
-            style={
-              styles.title
-            }
-          >
+          <Text style={styles.title}>
             Welcome back
           </Text>
 
-          <Text
-            style={
-              styles.subtitle
-            }
-          >
-            Sign in to your professional community.
+          <Text style={styles.subtitle}>
+            Sign in to your professional
+            community.
           </Text>
 
           <Pressable
             style={[
               styles.microsoftButton,
-
               microsoftLoading &&
                 styles.buttonDisabled,
             ]}
@@ -380,27 +308,19 @@ export default function LoginScreen() {
                   }
                 >
                   <View
-                    style={
-                      styles.msRed
-                    }
+                    style={styles.msRed}
                   />
 
                   <View
-                    style={
-                      styles.msGreen
-                    }
+                    style={styles.msGreen}
                   />
 
                   <View
-                    style={
-                      styles.msBlue
-                    }
+                    style={styles.msBlue}
                   />
 
                   <View
-                    style={
-                      styles.msYellow
-                    }
+                    style={styles.msYellow}
                   />
                 </View>
 
@@ -415,70 +335,36 @@ export default function LoginScreen() {
             )}
           </Pressable>
 
-          <View
-            style={
-              styles.divider
-            }
-          >
-            <View
-              style={
-                styles.line
-              }
-            />
+          <View style={styles.divider}>
+            <View style={styles.line} />
 
-            <Text
-              style={
-                styles.or
-              }
-            >
+            <Text style={styles.or}>
               OR
             </Text>
 
-            <View
-              style={
-                styles.line
-              }
-            />
+            <View style={styles.line} />
           </View>
 
           <TextInput
-            style={
-              styles.input
-            }
+            style={styles.input}
             placeholder="Email"
             placeholderTextColor="#999"
-            value={
-              email
-            }
-            onChangeText={
-              setEmail
-            }
+            value={email}
+            onChangeText={setEmail}
             autoCapitalize="none"
-            autoCorrect={
-              false
-            }
+            autoCorrect={false}
             keyboardType="email-address"
-            editable={
-              !loading
-            }
+            editable={!loading}
           />
 
           <TextInput
-            style={
-              styles.input
-            }
+            style={styles.input}
             placeholder="Password"
             placeholderTextColor="#999"
-            value={
-              password
-            }
-            onChangeText={
-              setPassword
-            }
+            value={password}
+            onChangeText={setPassword}
             secureTextEntry
-            editable={
-              !loading
-            }
+            editable={!loading}
             onSubmitEditing={
               handleLogin
             }
@@ -487,14 +373,11 @@ export default function LoginScreen() {
           <Pressable
             style={[
               styles.button,
-
               (loading ||
                 authLoading) &&
                 styles.buttonDisabled,
             ]}
-            onPress={
-              handleLogin
-            }
+            onPress={handleLogin}
             disabled={
               loading ||
               microsoftLoading ||
@@ -507,9 +390,7 @@ export default function LoginScreen() {
               />
             ) : (
               <Text
-                style={
-                  styles.buttonText
-                }
+                style={styles.buttonText}
               >
                 Sign In
               </Text>
@@ -523,17 +404,11 @@ export default function LoginScreen() {
               )
             }
           >
-            <Text
-              style={
-                styles.signup
-              }
-            >
+            <Text style={styles.signup}>
               Don't have a student account?{" "}
 
               <Text
-                style={
-                  styles.signupLink
-                }
+                style={styles.signupLink}
               >
                 Sign up
               </Text>
@@ -541,14 +416,10 @@ export default function LoginScreen() {
           </Pressable>
 
           <View
-            style={
-              styles.businessBox
-            }
+            style={styles.businessBox}
           >
             <View
-              style={
-                styles.businessIcon
-              }
+              style={styles.businessIcon}
             >
               <Text
                 style={
@@ -577,13 +448,13 @@ export default function LoginScreen() {
                   styles.businessText
                 }
               >
-                Businesses have a separate registration and verification process.
+                Businesses have a separate
+                registration and verification
+                process.
               </Text>
 
               <Pressable
-                hitSlop={
-                  8
-                }
+                hitSlop={8}
                 onPress={() =>
                   router.push(
                     "/(business-auth)/auth/login"
@@ -606,258 +477,224 @@ export default function LoginScreen() {
   );
 }
 
-const styles =
-  StyleSheet.create({
-    safeArea: {
-      flex: 1,
-      backgroundColor:
-        "#FFFFFF",
-    },
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
 
-    keyboardView: {
-      flex: 1,
-    },
+  keyboardView: {
+    flex: 1,
+  },
 
-    scrollView: {
-      flex: 1,
-    },
+  scrollView: {
+    flex: 1,
+  },
 
-    scrollContent: {
-      flexGrow: 1,
-      paddingHorizontal:
-        24,
-      paddingTop: 35,
-      paddingBottom: 50,
-    },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 35,
+    paddingBottom: 50,
+  },
 
-    logoSection: {
-      alignItems:
-        "center",
-      marginBottom: 32,
-    },
+  logoSection: {
+    alignItems: "center",
+    marginBottom: 32,
+  },
 
-    logoImage: {
-      width: 105,
-      height: 105,
-    },
+  logoImage: {
+    width: 105,
+    height: 105,
+  },
 
-    logo: {
-      marginTop: 4,
-      fontSize: 17,
-      fontWeight: "800",
-      color: "#111",
-    },
+  logo: {
+    marginTop: 4,
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#111",
+  },
 
-    logoAccent: {
-      color:
-        PRIMARY,
-    },
+  logoAccent: {
+    color: PRIMARY,
+  },
 
-    title: {
-      fontSize: 32,
-      fontWeight: "800",
-      marginBottom: 8,
-      color: "#111",
-    },
+  title: {
+    fontSize: 32,
+    fontWeight: "800",
+    marginBottom: 8,
+    color: "#111",
+  },
 
-    subtitle: {
-      fontSize: 16,
-      lineHeight: 22,
-      color: "#666",
-      marginBottom: 28,
-    },
+  subtitle: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: "#666",
+    marginBottom: 28,
+  },
 
-    microsoftButton: {
-      height: 52,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor:
-        "#D4D4D4",
-      backgroundColor:
-        "#FFFFFF",
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      flexDirection:
-        "row",
-      marginBottom: 20,
-    },
+  microsoftButton: {
+    height: 52,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#D4D4D4",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    marginBottom: 20,
+  },
 
-    microsoftLogo: {
-      width: 20,
-      height: 20,
-      flexDirection:
-        "row",
-      flexWrap:
-        "wrap",
-      marginRight: 10,
-    },
+  microsoftLogo: {
+    width: 20,
+    height: 20,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginRight: 10,
+  },
 
-    msRed: {
-      width: 9,
-      height: 9,
-      backgroundColor:
-        "#F25022",
-      marginRight: 2,
-      marginBottom: 2,
-    },
+  msRed: {
+    width: 9,
+    height: 9,
+    backgroundColor: "#F25022",
+    marginRight: 2,
+    marginBottom: 2,
+  },
 
-    msGreen: {
-      width: 9,
-      height: 9,
-      backgroundColor:
-        "#7FBA00",
-    },
+  msGreen: {
+    width: 9,
+    height: 9,
+    backgroundColor: "#7FBA00",
+  },
 
-    msBlue: {
-      width: 9,
-      height: 9,
-      backgroundColor:
-        "#00A4EF",
-      marginRight: 2,
-    },
+  msBlue: {
+    width: 9,
+    height: 9,
+    backgroundColor: "#00A4EF",
+    marginRight: 2,
+  },
 
-    msYellow: {
-      width: 9,
-      height: 9,
-      backgroundColor:
-        "#FFB900",
-    },
+  msYellow: {
+    width: 9,
+    height: 9,
+    backgroundColor: "#FFB900",
+  },
 
-    microsoftText: {
-      color: "#111",
-      fontSize: 15,
-      fontWeight: "600",
-    },
+  microsoftText: {
+    color: "#111",
+    fontSize: 15,
+    fontWeight: "600",
+  },
 
-    divider: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      marginBottom: 20,
-    },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+  },
 
-    line: {
-      flex: 1,
-      height: 1,
-      backgroundColor:
-        "#E5E5E5",
-    },
+  line: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E5E5E5",
+  },
 
-    or: {
-      color: "#999",
-      fontSize: 12,
-      marginHorizontal: 12,
-    },
+  or: {
+    color: "#999",
+    fontSize: 12,
+    marginHorizontal: 12,
+  },
 
-    input: {
-      height: 52,
-      borderWidth: 1,
-      borderColor:
-        "#DDD",
-      borderRadius: 10,
-      paddingHorizontal: 16,
-      marginBottom: 16,
-      fontSize: 16,
-      color: "#111",
-      backgroundColor:
-        "#FFFFFF",
-    },
+  input: {
+    height: 52,
+    borderWidth: 1,
+    borderColor: "#DDD",
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    fontSize: 16,
+    color: "#111",
+    backgroundColor: "#FFFFFF",
+  },
 
-    button: {
-      height: 52,
-      borderRadius: 10,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      backgroundColor:
-        PRIMARY,
-      marginTop: 4,
-    },
+  button: {
+    height: 52,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: PRIMARY,
+    marginTop: 4,
+  },
 
-    buttonDisabled: {
-      opacity: 0.5,
-    },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
 
-    buttonText: {
-      color: "#FFF",
-      fontSize: 16,
-      fontWeight: "700",
-    },
+  buttonText: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "700",
+  },
 
-    signup: {
-      textAlign:
-        "center",
-      marginTop: 22,
-      fontSize: 14,
-      color: "#444",
-    },
+  signup: {
+    textAlign: "center",
+    marginTop: 22,
+    fontSize: 14,
+    color: "#444",
+  },
 
-    signupLink: {
-      color:
-        PRIMARY,
-      fontWeight: "700",
-    },
+  signupLink: {
+    color: PRIMARY,
+    fontWeight: "700",
+  },
 
-    businessBox: {
-      marginTop: 28,
-      padding: 18,
-      borderRadius: 14,
-      backgroundColor:
-        "#F5F6FF",
-      borderWidth: 1,
-      borderColor:
-        "#E1E3FF",
-      flexDirection:
-        "row",
-      alignItems:
-        "flex-start",
-    },
+  businessBox: {
+    marginTop: 28,
+    padding: 18,
+    borderRadius: 14,
+    backgroundColor: "#F5F6FF",
+    borderWidth: 1,
+    borderColor: "#E1E3FF",
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
 
-    businessIcon: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor:
-        PRIMARY,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginRight: 12,
-    },
+  businessIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: PRIMARY,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
 
-    businessIconText: {
-      color: "#FFFFFF",
-      fontSize: 17,
-      fontWeight: "800",
-    },
+  businessIconText: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "800",
+  },
 
-    businessContent: {
-      flex: 1,
-    },
+  businessContent: {
+    flex: 1,
+  },
 
-    businessTitle: {
-      fontSize: 15,
-      fontWeight: "800",
-      color: "#111",
-    },
+  businessTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#111",
+  },
 
-    businessText: {
-      fontSize: 13,
-      color: "#666",
-      lineHeight: 19,
-      marginTop: 5,
-    },
+  businessText: {
+    fontSize: 13,
+    color: "#666",
+    lineHeight: 19,
+    marginTop: 5,
+  },
 
-    businessLink: {
-      marginTop: 10,
-      color:
-        PRIMARY,
-      fontWeight: "800",
-      fontSize: 14,
-    },
-  });
+  businessLink: {
+    marginTop: 10,
+    color: PRIMARY,
+    fontWeight: "800",
+    fontSize: 14,
+  },
+});

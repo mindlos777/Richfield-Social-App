@@ -26,6 +26,10 @@ import {
   Ionicons,
 } from "@expo/vector-icons";
 
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
+
 import {
   supabase,
 } from "../../../lib/supabase";
@@ -332,8 +336,12 @@ export default function BusinessJobsScreen() {
   const [
     closingDate,
     setClosingDate,
-  ] =
-    useState("");
+  ] = useState<Date | null>(null);
+
+  const [
+    showClosingDatePicker,
+    setShowClosingDatePicker,
+  ] = useState(false);
 
   const loadOpportunities =
     useCallback(
@@ -531,7 +539,40 @@ export default function BusinessJobsScreen() {
     setProgrammeKeywords("");
 
     setApplicationUrl("");
-    setClosingDate("");
+    setClosingDate(null);
+    setShowClosingDatePicker(false);
+  }
+
+  function formatClosingDate(value: Date | null) {
+    if (!value) return "Select closing date";
+
+    return value.toLocaleDateString("en-ZA", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }
+
+  function toDatabaseDate(value: Date | null) {
+    if (!value) return null;
+
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
+  function handleClosingDateChange(
+    event: DateTimePickerEvent,
+    selected?: Date
+  ) {
+    setShowClosingDatePicker(false);
+
+    if (event.type === "dismissed" || !selected) return;
+
+    selected.setHours(12, 0, 0, 0);
+    setClosingDate(selected);
   }
 
   async function createOpportunity() {
@@ -575,20 +616,6 @@ export default function BusinessJobsScreen() {
       Alert.alert(
         "Invalid salary",
         "Maximum salary cannot be lower than minimum salary."
-      );
-
-      return;
-    }
-
-    if (
-      closingDate &&
-      !/^\d{4}-\d{2}-\d{2}$/.test(
-        closingDate
-      )
-    ) {
-      Alert.alert(
-        "Invalid date",
-        "Use YYYY-MM-DD for the closing date."
       );
 
       return;
@@ -751,8 +778,7 @@ export default function BusinessJobsScreen() {
               null,
 
             closing_date:
-              closingDate ||
-              null,
+              toDatabaseDate(closingDate),
 
             status:
               "pending",
@@ -1855,26 +1881,52 @@ export default function BusinessJobsScreen() {
               title="Closing Date"
             />
 
-            <TextInput
-              value={
-                closingDate
-              }
-              onChangeText={
-                setClosingDate
-              }
-              placeholder="2026-10-30"
-              style={
-                styles.input
-              }
-            />
-
-            <Text
-              style={
-                styles.helper
-              }
+            <TouchableOpacity
+              style={styles.datePickerButton}
+              activeOpacity={0.75}
+              onPress={() => setShowClosingDatePicker(true)}
             >
-              Format: YYYY-MM-DD
-            </Text>
+              <Ionicons
+                name="calendar-outline"
+                size={20}
+                color={PRIMARY}
+              />
+
+              <Text
+                style={[
+                  styles.datePickerText,
+                  !closingDate && styles.datePickerPlaceholder,
+                ]}
+              >
+                {formatClosingDate(closingDate)}
+              </Text>
+
+              <Ionicons
+                name="chevron-down"
+                size={18}
+                color="#888"
+              />
+            </TouchableOpacity>
+
+            {showClosingDatePicker && (
+              <DateTimePicker
+                value={closingDate || new Date()}
+                mode="date"
+                minimumDate={new Date()}
+                onChange={handleClosingDateChange}
+              />
+            )}
+
+            {closingDate ? (
+              <TouchableOpacity
+                onPress={() => setClosingDate(null)}
+                style={styles.clearDateButton}
+              >
+                <Text style={styles.clearDateText}>
+                  Clear closing date
+                </Text>
+              </TouchableOpacity>
+            ) : null}
 
             <TouchableOpacity
               style={
@@ -2460,5 +2512,41 @@ const styles =
       color: "#FFFFFF",
       fontSize: 15,
       fontWeight: "800",
+    },
+
+    datePickerButton: {
+      minHeight: 52,
+      borderWidth: 1,
+      borderColor: "#DADAE0",
+      borderRadius: 10,
+      backgroundColor: "#FFF",
+      paddingHorizontal: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+
+    datePickerText: {
+      flex: 1,
+      color: "#222",
+      fontSize: 14,
+      fontWeight: "600",
+    },
+
+    datePickerPlaceholder: {
+      color: "#999",
+      fontWeight: "400",
+    },
+
+    clearDateButton: {
+      alignSelf: "flex-start",
+      paddingVertical: 8,
+      marginBottom: 4,
+    },
+
+    clearDateText: {
+      color: PRIMARY,
+      fontSize: 12,
+      fontWeight: "700",
     },
   });

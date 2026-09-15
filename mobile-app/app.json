@@ -43,7 +43,8 @@
       "expo-sqlite",
       "expo-video",
       "expo-audio",
-      "expo-image"
+      "expo-image",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -28,7 +28,8 @@ const PRIMARY =
   "#0300CF";
 
 type Props = {
-  disabled?: boolean;
+  disabled?:
+    boolean;
 
   onTranscript:
     (
@@ -58,25 +59,21 @@ export default function AIVoiceButton({
     recording,
     setRecording,
   ] =
-    useState(false);
+    useState(
+      false
+    );
 
   const [
     transcribing,
     setTranscribing,
   ] =
-    useState(false);
-
-  /* =======================================================
-     CLEANUP
-  ======================================================= */
+    useState(
+      false
+    );
 
   useEffect(
     () => {
       return () => {
-        /*
-         * Reset audio mode when leaving screen.
-         */
-
         void setAudioModeAsync({
           allowsRecording:
             false,
@@ -89,17 +86,13 @@ export default function AIVoiceButton({
     []
   );
 
-  /* =======================================================
-     ERROR
-  ======================================================= */
-
   function reportError(
     error:
       unknown
   ) {
     const message =
       error instanceof
-        Error
+      Error
         ? error.message
         : "Something went wrong with voice input.";
 
@@ -113,14 +106,11 @@ export default function AIVoiceButton({
     );
   }
 
-  /* =======================================================
-     START RECORDING
-  ======================================================= */
-
   async function startRecording() {
     if (
       disabled ||
-      transcribing
+      transcribing ||
+      recording
     ) {
       return;
     }
@@ -156,7 +146,9 @@ export default function AIVoiceButton({
       setRecording(
         true
       );
-    } catch (error) {
+    } catch (
+      error
+    ) {
       setRecording(
         false
       );
@@ -167,13 +159,10 @@ export default function AIVoiceButton({
     }
   }
 
-  /* =======================================================
-     STOP + TRANSCRIBE
-  ======================================================= */
-
   async function stopRecording() {
     if (
-      !recording
+      !recording ||
+      transcribing
     ) {
       return;
     }
@@ -196,11 +185,6 @@ export default function AIVoiceButton({
       const uri =
         recorder.uri;
 
-      console.log(
-        "Recorded AI audio URI:",
-        uri
-      );
-
       if (!uri) {
         throw new Error(
           "The voice recording could not be saved."
@@ -217,7 +201,8 @@ export default function AIVoiceButton({
         );
 
       const transcript =
-        result.text.trim();
+        result.text
+          .trim();
 
       if (!transcript) {
         throw new Error(
@@ -228,7 +213,9 @@ export default function AIVoiceButton({
       onTranscript(
         transcript
       );
-    } catch (error) {
+    } catch (
+      error
+    ) {
       reportError(
         error
       );
@@ -246,14 +233,10 @@ export default function AIVoiceButton({
             true,
         });
       } catch {
-        // Ignore audio mode reset error.
+        // Ignore reset error.
       }
     }
   }
-
-  /* =======================================================
-     PRESS
-  ======================================================= */
 
   function handlePress() {
     if (
@@ -263,16 +246,14 @@ export default function AIVoiceButton({
       return;
     }
 
-    if (recording) {
+    if (
+      recording
+    ) {
       void stopRecording();
     } else {
       void startRecording();
     }
   }
-
-  /* =======================================================
-     UI
-  ======================================================= */
 
   return (
     <Pressable
@@ -342,7 +323,7 @@ const styles =
         "center",
 
       marginBottom:
-        4,
+        0,
 
       marginRight:
         2,

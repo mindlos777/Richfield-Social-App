@@ -1,8 +1,4 @@
 import {
-  fetch as expoFetch,
-} from "expo/fetch";
-
-import {
   supabase,
   supabasePublicKey,
   supabaseUrl,
@@ -11,36 +7,8 @@ import {
 import type {
   AIBootstrapResponse,
   AIChatResponse,
-  AIUsage,
+  AIStreamEvent,
 } from "../types/ai";
-
-/* =========================================================
-   TYPES
-========================================================= */
-
-type StreamCallbacks = {
-  onStart?: (
-    conversationId: string
-  ) => void;
-
-  onDelta?: (
-    delta: string
-  ) => void;
-
-  onDone?: (
-    usage: AIUsage,
-    conversationId: string
-  ) => void;
-};
-
-type StreamResult = {
-  conversationId: string;
-  usage: AIUsage;
-};
-
-/* =========================================================
-   CONFIG CHECK
-========================================================= */
 
 function ensureSupabaseConfig() {
   if (!supabaseUrl) {
@@ -55,10 +23,6 @@ function ensureSupabaseConfig() {
     );
   }
 }
-
-/* =========================================================
-   CURRENT ACCESS TOKEN
-========================================================= */
 
 async function getAccessToken() {
   const {
@@ -85,111 +49,130 @@ async function getAccessToken() {
   return accessToken;
 }
 
-/* =========================================================
-   FUNCTION ERROR
-========================================================= */
-
-async function extractFunctionError(
-  error: any
+async function parseResponse(
+  response: Response
 ) {
+  const rawText =
+    await response.text();
+
   let body: any =
     null;
 
-  try {
-    if (
-      error?.context?.json
-    ) {
+  if (rawText) {
+    try {
       body =
-        await error.context
-          .json();
+        JSON.parse(
+          rawText
+        );
+    } catch {
+      body = {
+        message:
+          rawText,
+      };
     }
-  } catch {
-    body =
-      null;
   }
 
-  return (
-    body?.message ||
-    body?.error ||
-    error?.message ||
-    "Richfield AI request failed."
-  );
+  if (!response.ok) {
+    throw new Error(
+      body?.message ||
+        body?.error ||
+        `Richfield AI request failed (${response.status}).`
+    );
+  }
+
+  if (body?.error) {
+    throw new Error(
+      body?.message ||
+        body.error
+    );
+  }
+
+  return body;
 }
 
-/* =========================================================
-   LOAD CONVERSATION
-========================================================= */
+export async function bootstrapAI():
+Promise<AIBootstrapResponse> {
+  ensureSupabaseConfig();
 
-export async function loadAIConversation():
-  Promise<AIBootstrapResponse> {
-  const {
-    data,
-    error,
-  } =
-    await supabase
-      .functions
-      .invoke(
-        "ai-chat",
-        {
-          body: {
+  const accessToken =
+    await getAccessToken();
+
+  const response =
+    await fetch(
+      `${supabaseUrl}/functions/v1/ai-chat`,
+      {
+        method:
+          "POST",
+
+        headers: {
+          Authorization:
+            `Bearer ${accessToken}`,
+
+          apikey:
+            supabasePublicKey,
+
+          "Content-Type":
+            "application/json",
+
+          Accept:
+            "application/json",
+        },
+
+        body:
+          JSON.stringify({
             action:
               "bootstrap",
-          },
-        }
-      );
-
-  if (error) {
-    const message =
-      await extractFunctionError(
-        error
-      );
-
-    throw new Error(
-      message
+          }),
+      }
     );
-  }
 
-  if (data?.error) {
-    throw new Error(
-      data?.message ||
-        data.error
-    );
-  }
-
-  return (
-    data as
-      AIBootstrapResponse
+  return await parseResponse(
+    response
   );
 }
-
-/* =========================================================
-   NORMAL CHAT
-========================================================= */
 
 export async function sendAIMessage(
   message: string,
   conversationId:
     string | null
 ): Promise<AIChatResponse> {
+  ensureSupabaseConfig();
+
   const cleanMessage =
     message.trim();
 
   if (!cleanMessage) {
     throw new Error(
-      "Message is required."
+      "Please enter a message."
     );
   }
 
-  const {
-    data,
-    error,
-  } =
-    await supabase
-      .functions
-      .invoke(
-        "ai-chat",
-        {
-          body: {
+  const accessToken =
+    await getAccessToken();
+
+  const response =
+    await fetch(
+      `${supabaseUrl}/functions/v1/ai-chat`,
+      {
+        method:
+          "POST",
+
+        headers: {
+          Authorization:
+            `Bearer ${accessToken}`,
+
+          apikey:
+            supabasePublicKey,
+
+          "Content-Type":
+            "application/json",
+
+          Accept:
+            "application/json",
+        },
+
+        body:
+          JSON.stringify({
             action:
               "chat",
 
@@ -200,101 +183,52 @@ export async function sendAIMessage(
 
             stream:
               false,
-          },
-        }
-      );
-
-  if (error) {
-    const errorMessage =
-      await extractFunctionError(
-        error
-      );
-
-    throw new Error(
-      errorMessage
+          }),
+      }
     );
-  }
 
-  if (data?.error) {
-    throw new Error(
-      data?.message ||
-        data.error
-    );
-  }
-
-  return (
-    data as AIChatResponse
+  return await parseResponse(
+    response
   );
 }
 
-/* =========================================================
-   SSE EVENT
-========================================================= */
+export async function streamAIMessage({
+  message,
+  conversationId,
+  onStart,
+  onDelta,
+  onDone,
+}: {
+  message:
+    string;
 
-function parseSSEEvent(
-  event: string
-) {
-  const dataLines =
-    event
-      .split("\n")
-      .filter(
-        line =>
-          line.startsWith(
-            "data:"
-          )
-      );
-
-  if (
-    dataLines.length ===
-    0
-  ) {
-    return null;
-  }
-
-  const combined =
-    dataLines
-      .map(
-        line =>
-          line
-            .slice(5)
-            .trim()
-      )
-      .join("");
-
-  if (
-    !combined ||
-    combined ===
-      "[DONE]"
-  ) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(
-      combined
-    );
-  } catch (error) {
-    console.log(
-      "SSE parse error:",
-      combined,
-      error
-    );
-
-    return null;
-  }
-}
-
-/* =========================================================
-   STREAM AI MESSAGE
-========================================================= */
-
-export async function streamAIMessage(
-  message: string,
   conversationId:
-    string | null,
-  callbacks:
-    StreamCallbacks = {}
-): Promise<StreamResult> {
+    string | null;
+
+  onStart?:
+    (
+      conversationId:
+        string
+    ) => void;
+
+  onDelta?:
+    (
+      delta:
+        string
+    ) => void;
+
+  onDone?:
+    (
+      event:
+        Extract<
+          AIStreamEvent,
+          {
+            type:
+              "done";
+          }
+        >
+    ) => void;
+}) {
   ensureSupabaseConfig();
 
   const cleanMessage =
@@ -302,23 +236,16 @@ export async function streamAIMessage(
 
   if (!cleanMessage) {
     throw new Error(
-      "Message is required."
+      "Please enter a message."
     );
   }
 
   const accessToken =
     await getAccessToken();
 
-  const functionUrl =
-    `${supabaseUrl}/functions/v1/ai-chat`;
-
-  console.log(
-    "Starting Richfield AI stream..."
-  );
-
   const response =
-    await expoFetch(
-      functionUrl,
+    await fetch(
+      `${supabaseUrl}/functions/v1/ai-chat`,
       {
         method:
           "POST",
@@ -353,51 +280,35 @@ export async function streamAIMessage(
       }
     );
 
-  /* =======================================================
-     HTTP ERROR
-  ======================================================= */
-
   if (!response.ok) {
-    let serverMessage =
-      "";
+    const rawText =
+      await response.text();
+
+    let body: any =
+      null;
 
     try {
-      const body =
-        await response.json();
-
-      serverMessage =
-        body?.message ||
-        body?.error ||
-        "";
+      body =
+        JSON.parse(
+          rawText
+        );
     } catch {
-      try {
-        serverMessage =
-          await response.text();
-      } catch {
-        serverMessage =
-          "";
-      }
+      body = {
+        message:
+          rawText,
+      };
     }
 
-    console.log(
-      "AI HTTP error:",
-      response.status,
-      serverMessage
-    );
-
     throw new Error(
-      serverMessage ||
+      body?.message ||
+        body?.error ||
         `Richfield AI request failed (${response.status}).`
     );
   }
 
-  /* =======================================================
-     STREAM BODY
-  ======================================================= */
-
   if (!response.body) {
     throw new Error(
-      "Streaming is not available on this device."
+      "Richfield AI streaming is unavailable."
     );
   }
 
@@ -411,127 +322,95 @@ export async function streamAIMessage(
   let buffer =
     "";
 
-  let finalConversationId =
-    conversationId ||
-    "";
-
-  let finalUsage:
-    AIUsage = {
-      used: 0,
-      limit: 0,
-      remaining: 0,
-    };
-
-  let receivedDone =
-    false;
-
-  /* =======================================================
-     PROCESS EVENT
-  ======================================================= */
-
   function processEvent(
-    rawEvent: string
+    rawEvent:
+      string
   ) {
-    const payload =
-      parseSSEEvent(
-        rawEvent
-      );
+    const dataLines =
+      rawEvent
+        .split(
+          /\r?\n/
+        )
+        .filter(
+          line =>
+            line.startsWith(
+              "data:"
+            )
+        );
 
-    if (!payload) {
-      return;
-    }
-
-    /* START */
-
-    if (
-      payload.type ===
-      "start"
+    for (
+      const line of
+      dataLines
     ) {
-      finalConversationId =
-        String(
-          payload
-            .conversationId ||
-            finalConversationId
-        );
-
-      callbacks
-        .onStart?.(
-          finalConversationId
-        );
-
-      return;
-    }
-
-    /* TEXT CHUNK */
-
-    if (
-      payload.type ===
-      "delta"
-    ) {
-      const delta =
-        String(
-          payload.delta ||
-          ""
-        );
-
-      if (delta) {
-        callbacks
-          .onDelta?.(
-            delta
-          );
-      }
-
-      return;
-    }
-
-    /* FINISHED */
-
-    if (
-      payload.type ===
-      "done"
-    ) {
-      receivedDone =
-        true;
-
-      finalConversationId =
-        String(
-          payload
-            .conversationId ||
-            finalConversationId
-        );
+      const jsonText =
+        line
+          .slice(5)
+          .trim();
 
       if (
-        payload.usage
+        !jsonText ||
+        jsonText ===
+          "[DONE]"
       ) {
-        finalUsage =
-          payload.usage;
+        continue;
       }
 
-      callbacks
-        .onDone?.(
-          finalUsage,
-          finalConversationId
+      let event:
+        AIStreamEvent;
+
+      try {
+        event =
+          JSON.parse(
+            jsonText
+          );
+      } catch {
+        continue;
+      }
+
+      if (
+        event.type ===
+        "start"
+      ) {
+        onStart?.(
+          event.conversationId
         );
 
-      return;
-    }
+        continue;
+      }
 
-    /* SERVER STREAM ERROR */
+      if (
+        event.type ===
+        "delta"
+      ) {
+        onDelta?.(
+          event.delta
+        );
 
-    if (
-      payload.type ===
-      "error"
-    ) {
-      throw new Error(
-        payload.message ||
-          "Richfield AI streaming failed."
-      );
+        continue;
+      }
+
+      if (
+        event.type ===
+        "done"
+      ) {
+        onDone?.(
+          event
+        );
+
+        continue;
+      }
+
+      if (
+        event.type ===
+        "error"
+      ) {
+        throw new Error(
+          event.message ||
+            "Richfield AI failed to respond."
+        );
+      }
     }
   }
-
-  /* =======================================================
-     READ STREAM
-  ======================================================= */
 
   while (true) {
     const {
@@ -552,16 +431,10 @@ export async function streamAIMessage(
       decoder.decode(
         value,
         {
-          stream: true,
+          stream:
+            true,
         }
       );
-
-    /*
-     * Handles both:
-     *
-     * \n\n
-     * \r\n\r\n
-     */
 
     const events =
       buffer.split(
@@ -573,15 +446,14 @@ export async function streamAIMessage(
       "";
 
     for (
-      const event of events
+      const event of
+      events
     ) {
       processEvent(
         event
       );
     }
   }
-
-  /* Flush decoder */
 
   buffer +=
     decoder.decode();
@@ -592,116 +464,5 @@ export async function streamAIMessage(
     processEvent(
       buffer
     );
-  }
-
-  if (
-    !finalConversationId
-  ) {
-    throw new Error(
-      "Richfield AI stream ended without a conversation ID."
-    );
-  }
-
-  if (!receivedDone) {
-    throw new Error(
-      "Richfield AI stream ended before completion."
-    );
-  }
-
-  return {
-    conversationId:
-      finalConversationId,
-
-    usage:
-      finalUsage,
-  };
-}
-
-/* =========================================================
-   STREAM + SAFE FALLBACK
-========================================================= */
-
-export async function sendAIMessageWithStreaming(
-  message: string,
-  conversationId:
-    string | null,
-  callbacks:
-    StreamCallbacks = {}
-): Promise<StreamResult> {
-  try {
-    return await streamAIMessage(
-      message,
-      conversationId,
-      callbacks
-    );
-  } catch (error: any) {
-    const errorMessage =
-      String(
-        error?.message ||
-        ""
-      );
-
-    /*
-     * Only fallback when the DEVICE cannot
-     * perform streaming.
-     *
-     * We do not fallback on normal server errors,
-     * otherwise the same message could accidentally
-     * be submitted twice.
-     */
-
-    const canFallback =
-      errorMessage.includes(
-        "Streaming is not available"
-      ) ||
-      errorMessage.includes(
-        "ReadableStream"
-      ) ||
-      errorMessage.includes(
-        "getReader"
-      );
-
-    if (!canFallback) {
-      throw error;
-    }
-
-    console.log(
-      "Streaming unsupported. Using normal Richfield AI request."
-    );
-
-    const result =
-      await sendAIMessage(
-        message,
-        conversationId
-      );
-
-    callbacks
-      .onStart?.(
-        result
-          .conversationId
-      );
-
-    callbacks
-      .onDelta?.(
-        result
-          .message
-          .content
-      );
-
-    callbacks
-      .onDone?.(
-        result.usage,
-        result
-          .conversationId
-      );
-
-    return {
-      conversationId:
-        result
-          .conversationId,
-
-      usage:
-        result.usage,
-    };
   }
 }

@@ -28,6 +28,10 @@ import {
   Ionicons,
 } from "@expo/vector-icons";
 
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
+
 import {
   supabase,
 } from "../../../lib/supabase";
@@ -96,14 +100,19 @@ export default function AdminEventsScreen() {
   ] = useState("");
 
   const [
-    startDate,
-    setStartDate,
-  ] = useState("");
+    startDateTime,
+    setStartDateTime,
+  ] = useState<Date | null>(null);
 
   const [
-    startTime,
-    setStartTime,
-  ] = useState("");
+    endDateTime,
+    setEndDateTime,
+  ] = useState<Date | null>(null);
+
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
 
   const [
     registrationUrl,
@@ -176,8 +185,12 @@ export default function AdminEventsScreen() {
     setTitle("");
     setContent("");
     setLocation("");
-    setStartDate("");
-    setStartTime("");
+    setStartDateTime(null);
+    setEndDateTime(null);
+    setShowStartDatePicker(false);
+    setShowStartTimePicker(false);
+    setShowEndDatePicker(false);
+    setShowEndTimePicker(false);
     setRegistrationUrl("");
   }
 
@@ -373,37 +386,87 @@ export default function AdminEventsScreen() {
     }
   }
 
-  function buildEventDate() {
-    const date =
-      startDate.trim();
+  function formatPickerDate(value: Date | null) {
+    if (!value) return "Select date";
 
-    const time =
-      startTime.trim();
+    return value.toLocaleDateString("en-ZA", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }
 
-    if (!date) {
-      throw new Error(
-        "Enter the event date using YYYY-MM-DD."
-      );
-    }
+  function formatPickerTime(value: Date | null) {
+    if (!value) return "Select time";
 
-    const dateTime =
-      new Date(
-        `${date}T${
-          time || "09:00"
-        }:00`
-      );
+    return value.toLocaleTimeString("en-ZA", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
 
-    if (
-      Number.isNaN(
-        dateTime.getTime()
-      )
-    ) {
-      throw new Error(
-        "Enter a valid event date and time."
-      );
-    }
+  function updateDatePart(
+    current: Date | null,
+    selected: Date
+  ) {
+    const next = current ? new Date(current) : new Date();
+    next.setFullYear(
+      selected.getFullYear(),
+      selected.getMonth(),
+      selected.getDate()
+    );
+    return next;
+  }
 
-    return dateTime;
+  function updateTimePart(
+    current: Date | null,
+    selected: Date
+  ) {
+    const next = current ? new Date(current) : new Date();
+    next.setHours(
+      selected.getHours(),
+      selected.getMinutes(),
+      0,
+      0
+    );
+    return next;
+  }
+
+  function handleStartDateChange(
+    event: DateTimePickerEvent,
+    selected?: Date
+  ) {
+    setShowStartDatePicker(false);
+    if (event.type === "dismissed" || !selected) return;
+    setStartDateTime(current => updateDatePart(current, selected));
+  }
+
+  function handleStartTimeChange(
+    event: DateTimePickerEvent,
+    selected?: Date
+  ) {
+    setShowStartTimePicker(false);
+    if (event.type === "dismissed" || !selected) return;
+    setStartDateTime(current => updateTimePart(current, selected));
+  }
+
+  function handleEndDateChange(
+    event: DateTimePickerEvent,
+    selected?: Date
+  ) {
+    setShowEndDatePicker(false);
+    if (event.type === "dismissed" || !selected) return;
+    setEndDateTime(current => updateDatePart(current, selected));
+  }
+
+  function handleEndTimeChange(
+    event: DateTimePickerEvent,
+    selected?: Date
+  ) {
+    setShowEndTimePicker(false);
+    if (event.type === "dismissed" || !selected) return;
+    setEndDateTime(current => updateTimePart(current, selected));
   }
 
   async function createEvent() {
@@ -431,8 +494,17 @@ export default function AdminEventsScreen() {
       const user =
         await getAdminUser();
 
-      const eventDate =
-        buildEventDate();
+      if (!startDateTime) {
+        throw new Error("Please select the event start date and time.");
+      }
+
+      if (!endDateTime) {
+        throw new Error("Please select the event end date and time.");
+      }
+
+      if (endDateTime <= startDateTime) {
+        throw new Error("The event must end after it starts.");
+      }
 
       const {
         error,
@@ -457,7 +529,10 @@ export default function AdminEventsScreen() {
               null,
 
             starts_at:
-              eventDate.toISOString(),
+              startDateTime.toISOString(),
+
+            ends_at:
+              endDateTime.toISOString(),
 
             registration_url:
               registrationUrl.trim() ||
@@ -1165,27 +1240,89 @@ export default function AdminEventsScreen() {
             {createType ===
             "event" ? (
               <>
-                <Field
-                  label="Date"
-                  value={
-                    startDate
-                  }
-                  onChangeText={
-                    setStartDate
-                  }
-                  placeholder="YYYY-MM-DD"
-                />
+                <Text style={styles.fieldLabel}>Start date</Text>
+                <Pressable
+                  style={styles.datePickerButton}
+                  onPress={() => setShowStartDatePicker(true)}
+                >
+                  <Ionicons name="calendar-outline" size={20} color={PRIMARY} />
+                  <Text style={styles.datePickerText}>
+                    {formatPickerDate(startDateTime)}
+                  </Text>
+                  <Ionicons name="chevron-down" size={18} color="#888" />
+                </Pressable>
 
-                <Field
-                  label="Time"
-                  value={
-                    startTime
-                  }
-                  onChangeText={
-                    setStartTime
-                  }
-                  placeholder="09:00"
-                />
+                <Text style={styles.fieldLabel}>Start time</Text>
+                <Pressable
+                  style={styles.datePickerButton}
+                  onPress={() => setShowStartTimePicker(true)}
+                >
+                  <Ionicons name="time-outline" size={20} color={PRIMARY} />
+                  <Text style={styles.datePickerText}>
+                    {formatPickerTime(startDateTime)}
+                  </Text>
+                  <Ionicons name="chevron-down" size={18} color="#888" />
+                </Pressable>
+
+                <Text style={styles.fieldLabel}>End date</Text>
+                <Pressable
+                  style={styles.datePickerButton}
+                  onPress={() => setShowEndDatePicker(true)}
+                >
+                  <Ionicons name="calendar-outline" size={20} color={PRIMARY} />
+                  <Text style={styles.datePickerText}>
+                    {formatPickerDate(endDateTime)}
+                  </Text>
+                  <Ionicons name="chevron-down" size={18} color="#888" />
+                </Pressable>
+
+                <Text style={styles.fieldLabel}>End time</Text>
+                <Pressable
+                  style={styles.datePickerButton}
+                  onPress={() => setShowEndTimePicker(true)}
+                >
+                  <Ionicons name="time-outline" size={20} color={PRIMARY} />
+                  <Text style={styles.datePickerText}>
+                    {formatPickerTime(endDateTime)}
+                  </Text>
+                  <Ionicons name="chevron-down" size={18} color="#888" />
+                </Pressable>
+
+                {showStartDatePicker && (
+                  <DateTimePicker
+                    value={startDateTime || new Date()}
+                    mode="date"
+                    minimumDate={new Date()}
+                    onChange={handleStartDateChange}
+                  />
+                )}
+
+                {showStartTimePicker && (
+                  <DateTimePicker
+                    value={startDateTime || new Date()}
+                    mode="time"
+                    is24Hour
+                    onChange={handleStartTimeChange}
+                  />
+                )}
+
+                {showEndDatePicker && (
+                  <DateTimePicker
+                    value={endDateTime || startDateTime || new Date()}
+                    mode="date"
+                    minimumDate={startDateTime || new Date()}
+                    onChange={handleEndDateChange}
+                  />
+                )}
+
+                {showEndTimePicker && (
+                  <DateTimePicker
+                    value={endDateTime || startDateTime || new Date()}
+                    mode="time"
+                    is24Hour
+                    onChange={handleEndTimeChange}
+                  />
+                )}
 
                 <Field
                   label="Location"
@@ -1820,5 +1957,25 @@ const styles =
       color: "#222",
       fontSize: 13,
       lineHeight: 20,
+    },
+
+    datePickerButton: {
+      minHeight: 50,
+      borderWidth: 1,
+      borderColor: "#DDD",
+      borderRadius: 10,
+      backgroundColor: "#FFF",
+      paddingHorizontal: 14,
+      marginBottom: 16,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+
+    datePickerText: {
+      flex: 1,
+      color: "#222",
+      fontSize: 14,
+      fontWeight: "600",
     },
   });

@@ -1,28 +1,28 @@
-// @ts-expect-error Supabase Edge Functions resolve URL imports at runtime.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  createClient,
+// @ts-ignore Deno resolves this remote module at runtime.
+} from "https://esm.sh/@supabase/supabase-js@2";
 
 declare const Deno: {
   env: {
-    get(name: string): string | undefined;
+    get(
+      name:
+        string
+    ):
+      | string
+      | undefined;
   };
 
   serve(
-    handler: (
-      request: Request
-    ) => Response | Promise<Response>
+    handler:
+      (
+        request:
+          Request
+      ) =>
+        | Response
+        | Promise<Response>
   ): void;
 };
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
-
-/* =========================================================
-   TYPES
-========================================================= */
 
 type UserRole =
   | "student"
@@ -30,38 +30,40 @@ type UserRole =
   | "business"
   | "admin";
 
-type AIProvider =
-  | "gemini"
-  | "openai";
-
 type TranscriptionResult = {
-  text: string;
+  text:
+    string;
 };
 
-/* =========================================================
-   VOICE LIMITS
-========================================================= */
+const corsHeaders = {
+  "Access-Control-Allow-Origin":
+    "*",
 
-const DAILY_VOICE_LIMITS: Record<
-  UserRole,
-  number
-> = {
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
+const DAILY_VOICE_LIMITS:
+  Record<
+    UserRole,
+    number
+  > = {
   student: 10,
   alumni: 8,
   business: 8,
   admin: 10,
 };
 
-/* =========================================================
-   JSON RESPONSE
-========================================================= */
-
 function jsonResponse(
-  data: unknown,
-  status = 200
+  data:
+    unknown,
+  status =
+    200
 ) {
   return new Response(
-    JSON.stringify(data),
+    JSON.stringify(
+      data
+    ),
     {
       status,
 
@@ -74,10 +76,6 @@ function jsonResponse(
     }
   );
 }
-
-/* =========================================================
-   JOHANNESBURG DATE
-========================================================= */
 
 function getJohannesburgDate() {
   const parts =
@@ -124,194 +122,9 @@ function getJohannesburgDate() {
   return `${year}-${month}-${day}`;
 }
 
-/* =========================================================
-   ARRAY BUFFER -> BASE64
-========================================================= */
-
-function bytesToBase64(
-  bytes: Uint8Array
-) {
-  let binary = "";
-
-  const chunkSize =
-    0x8000;
-
-  for (
-    let i = 0;
-    i < bytes.length;
-    i += chunkSize
-  ) {
-    const chunk =
-      bytes.subarray(
-        i,
-        Math.min(
-          i + chunkSize,
-          bytes.length
-        )
-      );
-
-    binary +=
-      String.fromCharCode(
-        ...chunk
-      );
-  }
-
-  return btoa(binary);
-}
-
-/* =========================================================
-   GEMINI TRANSCRIPTION
-========================================================= */
-
-async function transcribeWithGemini(
-  audio: File
-): Promise<TranscriptionResult> {
-  const apiKey =
-    Deno.env.get(
-      "GEMINI_API_KEY"
-    );
-
-  const model =
-    Deno.env.get(
-      "GEMINI_TRANSCRIBE_MODEL"
-    ) ||
-    "gemini-3.8-flash";
-
-  if (!apiKey) {
-    throw new Error(
-      "GEMINI_API_KEY is not configured."
-    );
-  }
-
-  const arrayBuffer =
-    await audio.arrayBuffer();
-
-  const bytes =
-    new Uint8Array(
-      arrayBuffer
-    );
-
-  const base64 =
-    bytesToBase64(
-      bytes
-    );
-
-  const mimeType =
-    audio.type ||
-    "audio/mp4";
-
-  const response =
-    await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
-        method:
-          "POST",
-
-        headers: {
-          "Content-Type":
-            "application/json",
-
-          "x-goog-api-key":
-            apiKey,
-        },
-
-        body:
-          JSON.stringify({
-            contents: [
-              {
-                role:
-                  "user",
-
-                parts: [
-                  {
-                    text:
-                      `Transcribe this audio accurately.
-
-Return only the spoken words.
-
-Do not summarize.
-Do not answer the speaker.
-Do not explain anything.
-Do not add quotation marks.
-Preserve the language spoken by the user.
-If the audio contains no understandable speech, return an empty response.`,
-                  },
-
-                  {
-                    inlineData: {
-                      mimeType,
-
-                      data:
-                        base64,
-                    },
-                  },
-                ],
-              },
-            ],
-
-            generationConfig: {
-              temperature:
-                0,
-
-              maxOutputTokens:
-                1000,
-            },
-          }),
-      }
-    );
-
-  const data =
-    await response.json();
-
-  if (!response.ok) {
-    console.error(
-      "Gemini transcription error:",
-      data
-    );
-
-    throw new Error(
-      data?.error
-        ?.message ||
-        "Gemini transcription failed."
-    );
-  }
-
-  const parts =
-    data
-      ?.candidates?.[0]
-      ?.content
-      ?.parts ||
-    [];
-
-  const text =
-    parts
-      .map(
-        (part: any) =>
-          typeof part?.text ===
-          "string"
-            ? part.text
-            : ""
-      )
-      .join("")
-      .trim();
-
-  if (!text) {
-    throw new Error(
-      "No speech was detected."
-    );
-  }
-
-  return {
-    text,
-  };
-}
-
-/* =========================================================
-   OPENAI TRANSCRIPTION
-========================================================= */
-
 async function transcribeWithOpenAI(
-  audio: File
+  audio:
+    File
 ): Promise<TranscriptionResult> {
   const apiKey =
     Deno.env.get(
@@ -362,18 +175,37 @@ async function transcribeWithOpenAI(
       }
     );
 
-  const data =
-    await response.json();
+  const rawText =
+    await response.text();
+
+  let data:
+    any = null;
+
+  if (rawText) {
+    try {
+      data =
+        JSON.parse(
+          rawText
+        );
+    } catch {
+      data = {
+        message:
+          rawText,
+      };
+    }
+  }
 
   if (!response.ok) {
     console.error(
       "OpenAI transcription error:",
+      response.status,
       data
     );
 
     throw new Error(
       data?.error
         ?.message ||
+        data?.message ||
         "OpenAI transcription failed."
     );
   }
@@ -381,7 +213,7 @@ async function transcribeWithOpenAI(
   const text =
     String(
       data?.text ||
-      ""
+        ""
     ).trim();
 
   if (!text) {
@@ -394,64 +226,6 @@ async function transcribeWithOpenAI(
     text,
   };
 }
-
-/* =========================================================
-   PROVIDER SWITCH
-========================================================= */
-
-function getAIProvider():
-  AIProvider {
-  const provider =
-    (
-      Deno.env.get(
-        "AI_PROVIDER"
-      ) ||
-      "gemini"
-    )
-      .toLowerCase()
-      .trim();
-
-  if (
-    provider ===
-      "gemini" ||
-    provider ===
-      "openai"
-  ) {
-    return provider;
-  }
-
-  throw new Error(
-    `Unsupported AI provider: ${provider}`
-  );
-}
-
-async function transcribeAudio(
-  audio: File
-): Promise<TranscriptionResult> {
-  const provider =
-    getAIProvider();
-
-  console.log(
-    `Richfield voice provider: ${provider}`
-  );
-
-  if (
-    provider ===
-    "gemini"
-  ) {
-    return transcribeWithGemini(
-      audio
-    );
-  }
-
-  return transcribeWithOpenAI(
-    audio
-  );
-}
-
-/* =========================================================
-   EDGE FUNCTION
-========================================================= */
 
 Deno.serve(
   async request => {
@@ -468,11 +242,20 @@ Deno.serve(
       );
     }
 
-    try {
-      /* ===================================================
-         ENVIRONMENT
-      =================================================== */
+    if (
+      request.method !==
+      "POST"
+    ) {
+      return jsonResponse(
+        {
+          error:
+            "Method not allowed.",
+        },
+        405
+      );
+    }
 
+    try {
       const supabaseUrl =
         Deno.env.get(
           "SUPABASE_URL"
@@ -501,10 +284,6 @@ Deno.serve(
           500
         );
       }
-
-      /* ===================================================
-         AUTHORIZATION
-      =================================================== */
 
       const authorization =
         request.headers.get(
@@ -543,10 +322,6 @@ Deno.serve(
           serviceRoleKey
         );
 
-      /* ===================================================
-         AUTH USER
-      =================================================== */
-
       const {
         data:
           userData,
@@ -562,11 +337,6 @@ Deno.serve(
         userError ||
         !userData.user
       ) {
-        console.error(
-          "Auth error:",
-          userError
-        );
-
         return jsonResponse(
           {
             error:
@@ -578,10 +348,6 @@ Deno.serve(
 
       const user =
         userData.user;
-
-      /* ===================================================
-         PROFILE
-      =================================================== */
 
       const {
         data:
@@ -609,11 +375,6 @@ Deno.serve(
         profileError ||
         !profile
       ) {
-        console.error(
-          "Profile error:",
-          profileError
-        );
-
         return jsonResponse(
           {
             error:
@@ -637,7 +398,8 @@ Deno.serve(
       }
 
       const role =
-        profile.role as UserRole;
+        profile.role as
+          UserRole;
 
       const voiceLimit =
         DAILY_VOICE_LIMITS[
@@ -653,10 +415,6 @@ Deno.serve(
           403
         );
       }
-
-      /* ===================================================
-         DAILY USAGE
-      =================================================== */
 
       const today =
         getJohannesburgDate();
@@ -687,7 +445,7 @@ Deno.serve(
         usageError
       ) {
         console.error(
-          "Usage error:",
+          "Voice usage read error:",
           usageError
         );
       }
@@ -724,10 +482,6 @@ Deno.serve(
         );
       }
 
-      /* ===================================================
-         AUDIO FILE
-      =================================================== */
-
       let formData:
         Awaited<
           ReturnType<
@@ -737,7 +491,8 @@ Deno.serve(
 
       try {
         formData =
-          await request.formData();
+          await request
+            .formData();
       } catch {
         return jsonResponse(
           {
@@ -751,14 +506,18 @@ Deno.serve(
       const audio =
         (formData as unknown as {
           get(
-            name: string
-          ): FormDataEntryValue | null;
+            name:
+              string
+          ): unknown;
         }).get(
           "audio"
         );
 
       if (
-        !(audio instanceof File)
+        !(
+          audio instanceof
+          File
+        )
       ) {
         return jsonResponse(
           {
@@ -770,7 +529,8 @@ Deno.serve(
       }
 
       if (
-        audio.size === 0
+        audio.size ===
+        0
       ) {
         return jsonResponse(
           {
@@ -780,15 +540,6 @@ Deno.serve(
           400
         );
       }
-
-      /*
-       * We intentionally keep voice clips small.
-       *
-       * Gemini inline audio has a total
-       * request-size limit, so this also
-       * protects the function from giant
-       * uploads.
-       */
 
       const maxAudioSize =
         10 *
@@ -808,66 +559,40 @@ Deno.serve(
         );
       }
 
-      /* ===================================================
-         TRANSCRIBE
-      =================================================== */
-
       let result:
         TranscriptionResult;
 
       try {
         result =
-          await transcribeAudio(
+          await transcribeWithOpenAI(
             audio
           );
       } catch (
-        transcriptionError
+        error
       ) {
         console.error(
-          "Transcription provider error:",
-          transcriptionError
+          "OpenAI transcription error:",
+          error
         );
-
-        const message =
-          transcriptionError
-            instanceof Error
-            ? transcriptionError.message
-            : "Speech transcription failed.";
 
         return jsonResponse(
           {
             error:
               "transcription_failed",
 
-            message,
+            message:
+              error instanceof
+              Error
+                ? error.message
+                : "Speech transcription failed.",
           },
           502
         );
       }
 
-      const transcript =
-        result.text.trim();
-
-      if (
-        !transcript
-      ) {
-        return jsonResponse(
-          {
-            error:
-              "No speech was detected.",
-          },
-          422
-        );
-      }
-
-      /* ===================================================
-         UPDATE VOICE USAGE
-      =================================================== */
-
       if (usage) {
         const {
-          error:
-            usageUpdateError,
+          error,
         } =
           await adminClient
             .from(
@@ -887,18 +612,15 @@ Deno.serve(
               today
             );
 
-        if (
-          usageUpdateError
-        ) {
+        if (error) {
           console.error(
             "Voice usage update error:",
-            usageUpdateError
+            error
           );
         }
       } else {
         const {
-          error:
-            usageInsertError,
+          error,
         } =
           await adminClient
             .from(
@@ -924,44 +646,38 @@ Deno.serve(
                 0,
             });
 
-        if (
-          usageInsertError
-        ) {
+        if (error) {
           console.error(
             "Voice usage insert error:",
-            usageInsertError
+            error
           );
         }
       }
 
-      /* ===================================================
-         RESPONSE
-      =================================================== */
+      return jsonResponse({
+        text:
+          result.text,
 
-      return jsonResponse(
-        {
-          text:
-            transcript,
+        voiceUsage: {
+          used:
+            voiceUsed +
+            1,
 
-          voiceUsage: {
-            used:
-              voiceUsed +
-              1,
+          limit:
+            voiceLimit,
 
-            limit:
-              voiceLimit,
-
-            remaining:
-              Math.max(
-                voiceLimit -
-                  voiceUsed -
-                  1,
-                0
-              ),
-          },
-        }
-      );
-    } catch (error) {
+          remaining:
+            Math.max(
+              voiceLimit -
+                voiceUsed -
+                1,
+              0
+            ),
+        },
+      });
+    } catch (
+      error
+    ) {
       console.error(
         "AI transcription function error:",
         error

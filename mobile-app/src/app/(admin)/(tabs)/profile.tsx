@@ -57,16 +57,13 @@ export default function AdminProfileScreen() {
   const [
     loading,
     setLoading,
-  ] =
-    useState(true);
+  ] = useState(true);
 
   const loadProfile =
     useCallback(
       async () => {
         try {
-          setLoading(
-            true
-          );
+          setLoading(true);
 
           const {
             data: {
@@ -118,6 +115,22 @@ export default function AdminProfileScreen() {
             throw error;
           }
 
+          if (
+            data?.role !==
+            "admin"
+          ) {
+            Alert.alert(
+              "Access denied",
+              "Administrator access is required."
+            );
+
+            router.replace(
+              "/(auth)/login"
+            );
+
+            return;
+          }
+
           setProfile(
             data as AdminProfile
           );
@@ -154,7 +167,7 @@ export default function AdminProfileScreen() {
     )
   );
 
-  async function logout() {
+  function logout() {
     Alert.alert(
       "Log out",
       "Are you sure you want to log out?",
@@ -165,18 +178,37 @@ export default function AdminProfileScreen() {
           style:
             "cancel",
         },
+
         {
           text:
             "Log out",
           style:
             "destructive",
+
           onPress:
             async () => {
-              await supabase.auth.signOut();
+              try {
+                const {
+                  error,
+                } =
+                  await supabase.auth.signOut();
 
-              router.replace(
-                "/(auth)/login"
-              );
+                if (error) {
+                  throw error;
+                }
+
+                router.replace(
+                  "/(auth)/login"
+                );
+              } catch (
+                error: any
+              ) {
+                Alert.alert(
+                  "Logout failed",
+                  error?.message ||
+                    "Could not log out."
+                );
+              }
             },
         },
       ]
@@ -425,6 +457,16 @@ export default function AdminProfileScreen() {
                 "/(admin)/(tabs)/events"
               )
             }
+          />
+
+          <MenuRow
+            icon="settings-outline"
+            title="Settings"
+            onPress={() =>
+              router.push(
+                "/(admin)/settings"
+              )
+            }
             last
           />
         </View>
@@ -466,6 +508,7 @@ function InfoRow({
     React.ComponentProps<
       typeof Ionicons
     >["name"];
+
   title: string;
   value: string;
   last?: boolean;
@@ -527,6 +570,7 @@ function MenuRow({
     React.ComponentProps<
       typeof Ionicons
     >["name"];
+
   title: string;
   onPress: () => void;
   last?: boolean;

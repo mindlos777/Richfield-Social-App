@@ -13,7 +13,8 @@ import {
   Switch,
   RefreshControl,
 } from 'react-native';
-import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 
@@ -80,21 +81,64 @@ function Avatar({
 ========================================================= */
 
 export function EditProfileScreen() {
-  const [userId, setUserId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const router = useRouter();
 
-  const [fullName, setFullName] = useState('');
-  const [username, setUsername] = useState('');
-  const [bio, setBio] = useState('');
+  const [loading, setLoading] =
+    useState(true);
 
-  const [programme, setProgramme] = useState('');
-  const [campus, setCampus] = useState('');
+  const [saving, setSaving] =
+    useState(false);
 
-  const [linkedin, setLinkedin] = useState('');
-  const [github, setGithub] = useState('');
-  const [instagram, setInstagram] = useState('');
-  const [website, setWebsite] = useState('');
+  const [role, setRole] =
+    useState<"student" | "alumni">(
+      "student"
+    );
+
+  const [fullName, setFullName] =
+    useState("");
+
+  const [username, setUsername] =
+    useState("");
+
+  const [bio, setBio] =
+    useState("");
+
+  const [headline, setHeadline] =
+    useState("");
+
+  const [avatarUrl, setAvatarUrl] =
+    useState("");
+
+  const [linkedin, setLinkedin] =
+    useState("");
+
+  const [github, setGithub] =
+    useState("");
+
+  const [instagram, setInstagram] =
+    useState("");
+
+  const [website, setWebsite] =
+    useState("");
+
+  const [programme, setProgramme] =
+    useState("");
+
+  const [campus, setCampus] =
+    useState("");
+
+  const [yearOfStudy, setYearOfStudy] =
+    useState<number | null>(null);
+
+  const [
+    graduationYear,
+    setGraduationYear,
+  ] = useState<number | null>(null);
+
+  const [
+    alumniVerified,
+    setAlumniVerified,
+  ] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -109,68 +153,157 @@ export function EditProfileScreen() {
       } = await supabase.auth.getUser();
 
       if (!user) {
-        router.replace('/login');
+        router.replace("/login");
         return;
       }
 
-      setUserId(user.id);
-
       const {
-        data: profileData,
+        data: profile,
         error: profileError,
       } = await supabase
-        .from('profiles')
+        .from("profiles")
         .select(`
           full_name,
           username,
+          role,
           bio,
+          headline,
+          avatar_url,
           linkedin_url,
           github_url,
           instagram_url,
           website_url
         `)
-        .eq('id', user.id)
+        .eq("id", user.id)
         .single();
 
       if (profileError) {
         throw profileError;
       }
 
-      const {
-        data: studentData,
-        error: studentError,
-      } = await supabase
-        .from('student_profiles')
-        .select(`
-          programme,
-          campus
-        `)
-        .eq('user_id', user.id)
-        .single();
+      const userRole =
+        profile?.role === "alumni"
+          ? "alumni"
+          : "student";
 
-      if (studentError) {
-        throw studentError;
+      setRole(userRole);
+
+      setFullName(
+        profile?.full_name || ""
+      );
+
+      setUsername(
+        profile?.username || ""
+      );
+
+      setBio(profile?.bio || "");
+
+      setHeadline(
+        profile?.headline || ""
+      );
+
+      setAvatarUrl(
+        profile?.avatar_url || ""
+      );
+
+      setLinkedin(
+        profile?.linkedin_url || ""
+      );
+
+      setGithub(
+        profile?.github_url || ""
+      );
+
+      setInstagram(
+        profile?.instagram_url || ""
+      );
+
+      setWebsite(
+        profile?.website_url || ""
+      );
+
+      if (userRole === "student") {
+        const {
+          data: student,
+          error: studentError,
+        } = await supabase
+          .from("student_profiles")
+          .select(`
+            programme,
+            campus,
+            year_of_study
+          `)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (
+          studentError &&
+          studentError.code !== "PGRST116"
+        ) {
+          throw studentError;
+        }
+
+        setProgramme(
+          student?.programme || ""
+        );
+
+        setCampus(
+          student?.campus || ""
+        );
+
+        setYearOfStudy(
+          student?.year_of_study ??
+            null
+        );
+      } else {
+        const {
+          data: alumni,
+          error: alumniError,
+        } = await supabase
+          .from("alumni_profiles")
+          .select(`
+            programme,
+            campus,
+            graduation_year,
+            verified
+          `)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (
+          alumniError &&
+          alumniError.code !== "PGRST116"
+        ) {
+          throw alumniError;
+        }
+
+        setProgramme(
+          alumni?.programme || ""
+        );
+
+        setCampus(
+          alumni?.campus || ""
+        );
+
+        setGraduationYear(
+          alumni?.graduation_year ??
+            null
+        );
+
+        setAlumniVerified(
+          alumni?.verified || false
+        );
       }
-
-      setFullName(profileData.full_name || '');
-      setUsername(profileData.username || '');
-      setBio(profileData.bio || '');
-
-      setProgramme(studentData.programme || '');
-      setCampus(studentData.campus || '');
-
-      setLinkedin(profileData.linkedin_url || '');
-      setGithub(profileData.github_url || '');
-      setInstagram(profileData.instagram_url || '');
-      setWebsite(profileData.website_url || '');
-    } catch (error) {
-      console.log('Edit profile error:', error);
+    } catch (error: any) {
+      console.error(
+        "Load edit profile error:",
+        error
+      );
 
       Alert.alert(
-        'Error',
-        error instanceof Error
-          ? error.message
-          : 'Unable to load your profile.'
+        "Profile",
+        error?.message ||
+          "Could not load your profile."
       );
     } finally {
       setLoading(false);
@@ -178,99 +311,101 @@ export function EditProfileScreen() {
   }
 
   async function saveProfile() {
-    if (!userId) {
-      return;
-    }
-
-    if (!fullName.trim()) {
-      Alert.alert(
-        'Required',
-        'Please enter your name.'
-      );
-      return;
-    }
-
     try {
       setSaving(true);
 
-      const cleanedUsername =
-        username.trim().replace(/^@/, '');
-
       const {
-        error: profileError,
-      } = await supabase
-        .from('profiles')
-        .update({
-          full_name: fullName.trim(),
+        data: { user },
+      } = await supabase.auth.getUser();
 
-          username:
-            cleanedUsername || null,
-
-          bio:
-            bio.trim() || null,
-
-          linkedin_url:
-            linkedin.trim() || null,
-
-          github_url:
-            github.trim() || null,
-
-          instagram_url:
-            instagram.trim() || null,
-
-          website_url:
-            website.trim() || null,
-
-          updated_at:
-            new Date().toISOString(),
-        })
-        .eq('id', userId);
-
-      if (profileError) {
-        throw profileError;
+      if (!user) {
+        throw new Error(
+          "You are not signed in."
+        );
       }
 
+      /*
+       * IMPORTANT:
+       *
+       * We use the controlled RPC instead
+       * of directly updating profiles.
+       *
+       * Students and alumni cannot change:
+       *
+       * full_name
+       * username
+       * role
+       * status
+       * programme
+       * campus
+       * student_number
+       * year_of_study
+       * graduation_year
+       * verified
+       *
+       * They may only change their
+       * public/personal presentation data.
+       */
+
       const {
-        error: studentError,
-      } = await supabase
-        .from('student_profiles')
-        .update({
-          programme:
-            programme.trim(),
+        error,
+      } = await supabase.rpc(
+        "update_my_public_profile",
+        {
+          p_bio:
+            bio.trim() || null,
 
-          campus:
-            campus.trim(),
+          p_avatar_url:
+            avatarUrl.trim() ||
+            null,
 
-          updated_at:
-            new Date().toISOString(),
-        })
-        .eq('user_id', userId);
+          p_headline:
+            headline.trim() ||
+            null,
 
-      if (studentError) {
-        throw studentError;
+          p_linkedin_url:
+            linkedin.trim() ||
+            null,
+
+          p_github_url:
+            github.trim() ||
+            null,
+
+          p_instagram_url:
+            instagram.trim() ||
+            null,
+
+          p_website_url:
+            website.trim() ||
+            null,
+        }
+      );
+
+      if (error) {
+        throw error;
       }
 
       Alert.alert(
-        'Profile updated',
-        'Your profile has been successfully updated.',
+        "Profile updated",
+        "Your public profile has been updated successfully.",
         [
           {
-            text: 'Done',
-            onPress: () => router.back(),
+            text: "Done",
+            onPress: () =>
+              router.back(),
           },
         ]
       );
-    } catch (error) {
-      console.log(
-        'Save profile error:',
+    } catch (error: any) {
+      console.error(
+        "Save profile error:",
         error
       );
 
       Alert.alert(
-        'Update failed',
-        error instanceof Error
-          ? error.message
-          : 'Unable to update your profile.'
+        "Update failed",
+        error?.message ||
+          "Could not update your profile."
       );
     } finally {
       setSaving(false);
@@ -278,230 +413,334 @@ export function EditProfileScreen() {
   }
 
   if (loading) {
-    return <LoadingScreen />;
+    return (
+      <SafeAreaView
+        style={{
+          flex: 1,
+          backgroundColor: "#fff",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <ActivityIndicator
+          size="large"
+          color={PRIMARY}
+        />
+      </SafeAreaView>
+    );
   }
 
   return (
-    <View style={styles.screen}>
-      <View style={styles.topBar}>
+    <SafeAreaView
+      style={{
+        flex: 1,
+        backgroundColor: "#fff",
+      }}
+    >
+      <View style={editStyles.header}>
         <Pressable
-          onPress={() => router.back()}
+          style={
+            editStyles.headerButton
+          }
+          onPress={() =>
+            router.back()
+          }
+          disabled={saving}
         >
           <Ionicons
-            name="arrow-back"
+            name="close"
             size={25}
             color="#111"
           />
         </Pressable>
 
-        <Text style={styles.topTitle}>
-          Edit Profile
+        <Text
+          style={
+            editStyles.headerTitle
+          }
+        >
+          Edit profile
         </Text>
 
         <Pressable
+          style={
+            editStyles.saveHeaderButton
+          }
           onPress={saveProfile}
           disabled={saving}
         >
-          <Text
-            style={[
-              styles.saveText,
-              saving && {
-                opacity: 0.5,
-              },
-            ]}
-          >
-            Save
-          </Text>
+          {saving ? (
+            <ActivityIndicator
+              size="small"
+              color={PRIMARY}
+            />
+          ) : (
+            <Text
+              style={
+                editStyles.saveHeaderText
+              }
+            >
+              Save
+            </Text>
+          )}
         </Pressable>
       </View>
 
       <ScrollView
         contentContainerStyle={
-          styles.form
+          editStyles.container
         }
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={
           false
         }
-        keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.editAvatar}>
-          <Avatar
-            name={fullName}
-            size={90}
-          />
-
-          <Pressable
+        <View
+          style={
+            editStyles.avatarSection
+          }
+        >
+          <View
             style={
-              styles.changePhoto
+              editStyles.avatarContainer
             }
           >
-            <Ionicons
-              name="camera-outline"
-              size={17}
-              color="#fff"
-            />
+            {avatarUrl ? (
+              <Image
+                source={{
+                  uri: avatarUrl,
+                }}
+                style={
+                  editStyles.avatar
+                }
+              />
+            ) : (
+              <View
+                style={
+                  editStyles.avatarPlaceholder
+                }
+              >
+                <Ionicons
+                  name="person"
+                  size={42}
+                  color="#888"
+                />
+              </View>
+            )}
+          </View>
 
-            <Text
-              style={
-                styles.changePhotoText
-              }
-            >
-              Change photo
-            </Text>
-          </Pressable>
+          <Text
+            style={
+              editStyles.avatarTitle
+            }
+          >
+            Profile photo
+          </Text>
+
+          <Text
+            style={
+              editStyles.avatarSubtitle
+            }
+          >
+            Enter an image URL below for
+            now.
+          </Text>
+        </View>
+
+        <View
+          style={
+            editStyles.infoNotice
+          }
+        >
+          <Ionicons
+            name="shield-checkmark-outline"
+            size={21}
+            color={PRIMARY}
+          />
+
+          <Text
+            style={
+              editStyles.infoNoticeText
+            }
+          >
+            Your name, username and
+            Richfield academic information
+            are verified account details
+            and cannot be changed here.
+          </Text>
         </View>
 
         <Text
           style={
-            styles.sectionTitle
+            editStyles.sectionTitle
           }
         >
-          Personal information
+          Richfield account
         </Text>
 
-        <Text style={styles.label}>
-          Full name
-        </Text>
-
-        <TextInput
-          value={fullName}
-          onChangeText={setFullName}
-          placeholder="Your full name"
-          style={styles.input}
+        <ProfileReadOnlyField
+          label="Full name"
+          value={
+            fullName ||
+            "Not available"
+          }
         />
 
-        <Text style={styles.label}>
-          Username
-        </Text>
-
-        <TextInput
-          value={username}
-          onChangeText={setUsername}
-          placeholder="@username"
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={styles.input}
+        <ProfileReadOnlyField
+          label="Username"
+          value={
+            username
+              ? `@${username}`
+              : "Not available"
+          }
         />
 
-        <Text style={styles.label}>
-          Bio
+        <ProfileReadOnlyField
+          label="Account type"
+          value={
+            role === "alumni"
+              ? alumniVerified
+                ? "Verified Alumni"
+                : "Alumni"
+              : "Student"
+          }
+        />
+
+        <ProfileReadOnlyField
+          label="Programme"
+          value={
+            programme ||
+            "Not available"
+          }
+        />
+
+        <ProfileReadOnlyField
+          label="Campus"
+          value={
+            campus ||
+            "Not available"
+          }
+        />
+
+        {role === "student" ? (
+          <ProfileReadOnlyField
+            label="Year of study"
+            value={
+              yearOfStudy
+                ? `Year ${yearOfStudy}`
+                : "Not available"
+            }
+          />
+        ) : (
+          <ProfileReadOnlyField
+            label="Graduation year"
+            value={
+              graduationYear
+                ? String(
+                    graduationYear
+                  )
+                : "Not available"
+            }
+          />
+        )}
+
+        <Text
+          style={
+            editStyles.sectionTitle
+          }
+        >
+          Public profile
         </Text>
 
-        <TextInput
+        <ProfileInput
+          label="Headline"
+          value={headline}
+          onChangeText={
+            setHeadline
+          }
+          placeholder={
+            role === "alumni"
+              ? "e.g. Software Engineer at TechNova"
+              : "e.g. BSc IT Student | Aspiring AI Engineer"
+          }
+          maxLength={120}
+        />
+
+        <ProfileInput
+          label="Bio"
           value={bio}
           onChangeText={setBio}
-          placeholder="Tell people about yourself"
+          placeholder="Tell the Richfield community about yourself..."
           multiline
-          maxLength={160}
-          textAlignVertical="top"
-          style={[
-            styles.input,
-            styles.bioInput,
-          ]}
+          maxLength={500}
         />
 
         <Text
           style={
-            styles.characterCount
+            editStyles.counter
           }
         >
-          {bio.length}/160
+          {bio.length}/500
         </Text>
 
-        <Text
-          style={
-            styles.sectionTitle
+        <ProfileInput
+          label="Profile image URL"
+          value={avatarUrl}
+          onChangeText={
+            setAvatarUrl
           }
-        >
-          Education
-        </Text>
-
-        <Text style={styles.label}>
-          Programme
-        </Text>
-
-        <TextInput
-          value={programme}
-          onChangeText={setProgramme}
-          placeholder="e.g. BSc IT"
-          style={styles.input}
-        />
-
-        <Text style={styles.label}>
-          Campus
-        </Text>
-
-        <TextInput
-          value={campus}
-          onChangeText={setCampus}
-          placeholder="Your campus"
-          style={styles.input}
+          placeholder="https://..."
+          autoCapitalize="none"
         />
 
         <Text
           style={
-            styles.sectionTitle
+            editStyles.sectionTitle
           }
         >
           Social links
         </Text>
 
-        <Text style={styles.label}>
-          LinkedIn
-        </Text>
-
-        <TextInput
+        <ProfileInput
+          label="LinkedIn"
           value={linkedin}
           onChangeText={setLinkedin}
-          placeholder="linkedin.com/in/username"
+          placeholder="https://linkedin.com/in/..."
           autoCapitalize="none"
-          keyboardType="url"
-          style={styles.input}
         />
 
-        <Text style={styles.label}>
-          GitHub
-        </Text>
-
-        <TextInput
+        <ProfileInput
+          label="GitHub"
           value={github}
           onChangeText={setGithub}
-          placeholder="github.com/username"
+          placeholder="https://github.com/..."
           autoCapitalize="none"
-          keyboardType="url"
-          style={styles.input}
         />
 
-        <Text style={styles.label}>
-          Instagram
-        </Text>
-
-        <TextInput
+        <ProfileInput
+          label="Instagram"
           value={instagram}
-          onChangeText={setInstagram}
-          placeholder="instagram.com/username"
+          onChangeText={
+            setInstagram
+          }
+          placeholder="https://instagram.com/..."
           autoCapitalize="none"
-          keyboardType="url"
-          style={styles.input}
         />
 
-        <Text style={styles.label}>
-          Website
-        </Text>
-
-        <TextInput
+        <ProfileInput
+          label="Website"
           value={website}
           onChangeText={setWebsite}
-          placeholder="yourwebsite.com"
+          placeholder="https://..."
           autoCapitalize="none"
-          keyboardType="url"
-          style={styles.input}
         />
 
         <Pressable
-          style={
-            styles.primaryButton
-          }
+          style={[
+            editStyles.bottomSaveButton,
+            saving &&
+              editStyles.disabled,
+          ]}
           onPress={saveProfile}
           disabled={saving}
         >
@@ -510,19 +749,307 @@ export function EditProfileScreen() {
               color="#fff"
             />
           ) : (
-            <Text
-              style={
-                styles.primaryButtonText
-              }
-            >
-              Save changes
-            </Text>
+            <>
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={20}
+                color="#fff"
+              />
+
+              <Text
+                style={
+                  editStyles.bottomSaveText
+                }
+              >
+                Save changes
+              </Text>
+            </>
           )}
         </Pressable>
       </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function ProfileInput({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  multiline = false,
+  maxLength,
+  autoCapitalize = "sentences",
+}: any) {
+  return (
+    <View
+      style={
+        editStyles.fieldContainer
+      }
+    >
+      <Text
+        style={editStyles.label}
+      >
+        {label}
+      </Text>
+
+      <TextInput
+        value={value}
+        onChangeText={
+          onChangeText
+        }
+        placeholder={
+          placeholder
+        }
+        placeholderTextColor="#999"
+        multiline={multiline}
+        maxLength={maxLength}
+        autoCapitalize={
+          autoCapitalize
+        }
+        autoCorrect={false}
+        textAlignVertical={
+          multiline
+            ? "top"
+            : "center"
+        }
+        style={[
+          editStyles.input,
+
+          multiline &&
+            editStyles.multilineInput,
+        ]}
+      />
     </View>
   );
 }
+
+function ProfileReadOnlyField({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <View
+      style={
+        editStyles.fieldContainer
+      }
+    >
+      <Text
+        style={editStyles.label}
+      >
+        {label}
+      </Text>
+
+      <View
+        style={
+          editStyles.readOnlyField
+        }
+      >
+        <Text
+          style={
+            editStyles.readOnlyText
+          }
+        >
+          {value}
+        </Text>
+
+        <Ionicons
+          name="lock-closed"
+          size={15}
+          color="#999"
+        />
+      </View>
+    </View>
+  );
+}
+
+const editStyles =
+  StyleSheet.create({
+    header: {
+      height: 58,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: "#EEE",
+    },
+
+    headerButton: {
+      width: 42,
+      height: 42,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    headerTitle: {
+      fontSize: 17,
+      fontWeight: "800",
+      color: "#111",
+    },
+
+    saveHeaderButton: {
+      minWidth: 42,
+      height: 42,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    saveHeaderText: {
+      color: PRIMARY,
+      fontWeight: "800",
+      fontSize: 15,
+    },
+
+    container: {
+      padding: 20,
+      paddingBottom: 55,
+    },
+
+    avatarSection: {
+      alignItems: "center",
+      marginBottom: 20,
+    },
+
+    avatarContainer: {
+      width: 90,
+      height: 90,
+      borderRadius: 45,
+      overflow: "hidden",
+      marginBottom: 10,
+    },
+
+    avatar: {
+      width: "100%",
+      height: "100%",
+    },
+
+    avatarPlaceholder: {
+      flex: 1,
+      backgroundColor: "#EFEFF3",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    avatarTitle: {
+      fontSize: 15,
+      fontWeight: "800",
+      color: "#222",
+    },
+
+    avatarSubtitle: {
+      fontSize: 11,
+      color: "#888",
+      marginTop: 3,
+    },
+
+    infoNotice: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      padding: 14,
+      borderRadius: 12,
+      backgroundColor: "#F4F4FF",
+      marginBottom: 25,
+    },
+
+    infoNoticeText: {
+      flex: 1,
+      marginLeft: 9,
+      color: "#555",
+      fontSize: 12,
+      lineHeight: 18,
+    },
+
+    sectionTitle: {
+      fontSize: 13,
+      fontWeight: "800",
+      color: "#777",
+      textTransform:
+        "uppercase",
+      marginTop: 15,
+      marginBottom: 12,
+    },
+
+    fieldContainer: {
+      marginBottom: 15,
+    },
+
+    label: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: "#333",
+      marginBottom: 7,
+    },
+
+    input: {
+      minHeight: 50,
+      borderWidth: 1,
+      borderColor: "#DDD",
+      borderRadius: 11,
+      paddingHorizontal: 14,
+      color: "#111",
+      backgroundColor: "#FFF",
+      fontSize: 14,
+    },
+
+    multilineInput: {
+      minHeight: 110,
+      paddingTop: 13,
+      paddingBottom: 13,
+    },
+
+    readOnlyField: {
+      minHeight: 50,
+      borderRadius: 11,
+      paddingHorizontal: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+      backgroundColor: "#F5F5F7",
+      borderWidth: 1,
+      borderColor: "#ECECEF",
+    },
+
+    readOnlyText: {
+      flex: 1,
+      fontSize: 14,
+      color: "#666",
+      marginRight: 10,
+    },
+
+    counter: {
+      fontSize: 11,
+      color: "#999",
+      textAlign: "right",
+      marginTop: -10,
+      marginBottom: 12,
+    },
+
+    bottomSaveButton: {
+      minHeight: 54,
+      backgroundColor: PRIMARY,
+      borderRadius: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 20,
+      gap: 7,
+    },
+
+    bottomSaveText: {
+      color: "#FFF",
+      fontSize: 15,
+      fontWeight: "800",
+    },
+
+    disabled: {
+      opacity: 0.55,
+    },
+  });
 
 
 /* =========================================================
@@ -1290,13 +1817,31 @@ export function ActivityScreen() {
 ========================================================= */
 
 export function SettingsScreen() {
-  const [notifications, setNotifications] = useState(true);
-  const [emailNotifications, setEmailNotifications] =
+  const router = useRouter();
+
+  const [loading, setLoading] =
     useState(true);
-  const [privateProfile, setPrivateProfile] =
+
+  const [working, setWorking] =
     useState(false);
-  const [loading, setLoading] = useState(true);
-  const [signingOut, setSigningOut] = useState(false);
+
+  const [role, setRole] =
+    useState<
+      | "student"
+      | "alumni"
+      | "business"
+      | "admin"
+    >("student");
+
+  const [
+    notificationsEnabled,
+    setNotificationsEnabled,
+  ] = useState(true);
+
+  const [
+    emailNotifications,
+    setEmailNotifications,
+  ] = useState(true);
 
   useEffect(() => {
     loadSettings();
@@ -1304,264 +1849,871 @@ export function SettingsScreen() {
 
   async function loadSettings() {
     try {
+      setLoading(true);
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) return;
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
 
-      const { data } = await supabase
-        .from('profiles')
-        .select(
-          'notifications_enabled,email_notifications,private_profile'
-        )
-        .eq('id', user.id)
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
         .single();
 
-      if (data) {
-        setNotifications(
-          data.notifications_enabled ?? true
-        );
-
-        setEmailNotifications(
-          data.email_notifications ?? true
-        );
-
-        setPrivateProfile(
-          data.private_profile ?? false
-        );
+      if (error) {
+        throw error;
       }
-    } catch (error) {
-      console.log('Settings loading error:', error);
+
+      if (
+        data?.role === "student" ||
+        data?.role === "alumni" ||
+        data?.role === "business" ||
+        data?.role === "admin"
+      ) {
+        setRole(data.role);
+      }
+
+      /*
+       * These switches are kept as
+       * interface preferences for now.
+       *
+       * We intentionally do NOT query
+       * private_profile because that
+       * column does not exist.
+       */
+    } catch (error: any) {
+      console.error(
+        "Load settings error:",
+        error
+      );
+
+      Alert.alert(
+        "Settings",
+        error?.message ||
+          "Could not load settings."
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  async function updateSetting(
-    field:
-      | 'notifications_enabled'
-      | 'email_notifications'
-      | 'private_profile',
+  function togglePushNotifications(
     value: boolean
   ) {
+    setNotificationsEnabled(
+      value
+    );
+
+    Alert.alert(
+      value
+        ? "Notifications enabled"
+        : "Notifications disabled",
+      value
+        ? "You will receive Richfield Social activity notifications."
+        : "Push notifications have been turned off for this session."
+    );
+  }
+
+  function toggleEmailNotifications(
+    value: boolean
+  ) {
+    setEmailNotifications(
+      value
+    );
+
+    Alert.alert(
+      value
+        ? "Email updates enabled"
+        : "Email updates disabled",
+      value
+        ? "You will receive important Richfield Social email updates."
+        : "Email updates have been turned off for this session."
+    );
+  }
+
+  async function sendPasswordReset() {
     try {
+      setWorking(true);
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) return;
+      if (!user?.email) {
+        throw new Error(
+          "No email address was found for this account."
+        );
+      }
 
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          [field]: value,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
+      const {
+        error,
+      } =
+        await supabase.auth
+          .resetPasswordForEmail(
+            user.email
+          );
 
-      if (error) throw error;
-    } catch (error) {
+      if (error) {
+        throw error;
+      }
+
       Alert.alert(
-        'Unable to save',
-        'Your setting could not be updated.'
+        "Reset email sent",
+        `A password reset link was sent to ${user.email}.`
       );
+    } catch (error: any) {
+      Alert.alert(
+        "Password reset failed",
+        error?.message ||
+          "Could not send the password reset email."
+      );
+    } finally {
+      setWorking(false);
     }
   }
 
-  function changeNotifications(value: boolean) {
-    setNotifications(value);
-    updateSetting('notifications_enabled', value);
-  }
-
-  function changeEmailNotifications(value: boolean) {
-    setEmailNotifications(value);
-    updateSetting('email_notifications', value);
-  }
-
-  function changePrivacy(value: boolean) {
-    setPrivateProfile(value);
-    updateSetting('private_profile', value);
-  }
-
-  async function logout() {
+  function confirmPasswordReset() {
     Alert.alert(
-      'Log out',
-      'Are you sure you want to log out?',
+      "Change password",
+      "Send a secure password reset link to your account email?",
       [
         {
-          text: 'Cancel',
-          style: 'cancel',
+          text: "Cancel",
+          style: "cancel",
         },
         {
-          text: 'Log out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setSigningOut(true);
-
-              const { error } =
-                await supabase.auth.signOut();
-
-              if (error) throw error;
-
-              router.replace('/login');
-            } catch (error) {
-              Alert.alert(
-                'Logout failed',
-                'Unable to log out. Please try again.'
-              );
-            } finally {
-              setSigningOut(false);
-            }
-          },
+          text: "Send link",
+          onPress:
+            sendPasswordReset,
         },
       ]
     );
   }
 
-  if (loading) {
-    return <LoadingScreen />;
+  async function logout() {
+    try {
+      setWorking(true);
+
+      const {
+        error,
+      } =
+        await supabase.auth.signOut();
+
+      if (error) {
+        throw error;
+      }
+
+      router.replace("/login");
+    } catch (error: any) {
+      Alert.alert(
+        "Logout failed",
+        error?.message ||
+          "Could not log out."
+      );
+    } finally {
+      setWorking(false);
+    }
   }
 
+  function confirmLogout() {
+    Alert.alert(
+      "Log out",
+      "Are you sure you want to log out?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Log out",
+          style: "destructive",
+          onPress: logout,
+        },
+      ]
+    );
+  }
+
+  function openEditProfile() {
+    if (
+      role === "student" ||
+      role === "alumni"
+    ) {
+      router.push(
+        "/(student)/edit-profile"
+      );
+
+      return;
+    }
+
+    Alert.alert(
+      "Profile",
+      "Profile editing for this account type is managed from its account profile."
+    );
+  }
+
+  function openPortfolio() {
+    if (
+      role === "student" ||
+      role === "alumni"
+    ) {
+      router.push(
+        "/(student)/portfolio"
+      );
+
+      return;
+    }
+
+    Alert.alert(
+      "Portfolio",
+      "Portfolio is available to students and alumni."
+    );
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView
+        style={
+          settingsStyles.loading
+        }
+      >
+        <ActivityIndicator
+          size="large"
+          color={PRIMARY}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  const isCommunity =
+    role === "student" ||
+    role === "alumni";
+
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.settingsContainer}
+    <SafeAreaView
+      style={settingsStyles.screen}
     >
-      <ProfileHeader title="Settings" />
-
-      <Text style={styles.settingsSection}>
-        Notifications
-      </Text>
-
-      <SettingRow
-        icon="notifications-outline"
-        title="Push notifications"
-        subtitle="Receive updates about your network"
-        right={
-          <Switch
-            value={notifications}
-            onValueChange={changeNotifications}
-            trackColor={{
-              false: '#ddd',
-              true: PRIMARY,
-            }}
-          />
-        }
-      />
-
-      <SettingRow
-        icon="mail-outline"
-        title="Email notifications"
-        subtitle="Receive important updates by email"
-        right={
-          <Switch
-            value={emailNotifications}
-            onValueChange={changeEmailNotifications}
-            trackColor={{
-              false: '#ddd',
-              true: PRIMARY,
-            }}
-          />
-        }
-      />
-
-      <Text style={styles.settingsSection}>
-        Privacy
-      </Text>
-
-      <SettingRow
-        icon="lock-closed-outline"
-        title="Private profile"
-        subtitle="Control who can discover your profile"
-        right={
-          <Switch
-            value={privateProfile}
-            onValueChange={changePrivacy}
-            trackColor={{
-              false: '#ddd',
-              true: PRIMARY,
-            }}
-          />
-        }
-      />
-
-      <Text style={styles.settingsSection}>
-        Account
-      </Text>
-
-      <Pressable
-        style={styles.settingsButton}
-        onPress={() =>
-          router.push('/(student)/edit-profile')
-        }
+      <View
+        style={settingsStyles.header}
       >
-        <Ionicons
-          name="person-outline"
-          size={22}
-          color="#222"
-        />
+        <Pressable
+          style={
+            settingsStyles.backButton
+          }
+          onPress={() =>
+            router.back()
+          }
+        >
+          <Ionicons
+            name="arrow-back"
+            size={23}
+            color="#111"
+          />
+        </Pressable>
 
-        <Text style={styles.settingsButtonText}>
-          Edit profile
+        <Text
+          style={
+            settingsStyles.headerTitle
+          }
+        >
+          Settings
         </Text>
 
-        <Ionicons
-          name="chevron-forward"
-          size={20}
-          color="#999"
+        <View
+          style={{ width: 42 }}
         />
-      </Pressable>
+      </View>
 
-      <Pressable
-        style={styles.settingsButton}
-        onPress={() =>
-          router.push('../(student)/portfolio')
+      <ScrollView
+        contentContainerStyle={
+          settingsStyles.container
+        }
+        showsVerticalScrollIndicator={
+          false
         }
       >
-        <Ionicons
-          name="briefcase-outline"
-          size={22}
-          color="#222"
+        <View
+          style={
+            settingsStyles.accountCard
+          }
+        >
+          <View
+            style={
+              settingsStyles.accountIcon
+            }
+          >
+            <Ionicons
+              name={
+                role === "admin"
+                  ? "shield-checkmark"
+                  : role ===
+                    "business"
+                  ? "business"
+                  : role ===
+                    "alumni"
+                  ? "school"
+                  : "person"
+              }
+              size={24}
+              color={PRIMARY}
+            />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text
+              style={
+                settingsStyles.accountLabel
+              }
+            >
+              Account type
+            </Text>
+
+            <Text
+              style={
+                settingsStyles.accountRole
+              }
+            >
+              {role === "student"
+                ? "Richfield Student"
+                : role ===
+                  "alumni"
+                ? "Richfield Alumni"
+                : role ===
+                  "business"
+                ? "Business"
+                : "Administrator"}
+            </Text>
+          </View>
+
+          {role === "alumni" && (
+            <Ionicons
+              name="school-outline"
+              size={21}
+              color={PRIMARY}
+            />
+          )}
+        </View>
+
+        <SettingsSectionTitle
+          title="Notifications"
         />
 
-        <Text style={styles.settingsButtonText}>
-          My portfolio
+        <SettingsSwitchRow
+          icon="notifications-outline"
+          title="Push notifications"
+          subtitle="Activity, messages and important updates"
+          value={
+            notificationsEnabled
+          }
+          onValueChange={
+            togglePushNotifications
+          }
+        />
+
+        <SettingsSwitchRow
+          icon="mail-outline"
+          title="Email notifications"
+          subtitle="Important Richfield Social email updates"
+          value={
+            emailNotifications
+          }
+          onValueChange={
+            toggleEmailNotifications
+          }
+        />
+
+        {isCommunity && (
+          <>
+            <SettingsSectionTitle
+              title="Profile"
+            />
+
+            <SettingsRow
+              icon="person-outline"
+              title="Edit profile"
+              subtitle="Bio, headline, avatar and social links"
+              onPress={
+                openEditProfile
+              }
+            />
+
+            <SettingsRow
+              icon="briefcase-outline"
+              title="My portfolio"
+              subtitle="Projects, certificates and achievements"
+              onPress={
+                openPortfolio
+              }
+            />
+
+            <View
+              style={
+                settingsStyles.securityNotice
+              }
+            >
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={19}
+                color={PRIMARY}
+              />
+
+              <Text
+                style={
+                  settingsStyles.securityNoticeText
+                }
+              >
+                Richfield academic and
+                verification information
+                cannot be changed from
+                Settings.
+              </Text>
+            </View>
+          </>
+        )}
+
+        {role === "business" && (
+          <>
+            <SettingsSectionTitle
+              title="Business"
+            />
+
+            <SettingsRow
+              icon="business-outline"
+              title="Business account"
+              subtitle="Company and verification information"
+              onPress={() =>
+                Alert.alert(
+                  "Business account",
+                  "Verified business information is controlled through Richfield's business verification process."
+                )
+              }
+            />
+          </>
+        )}
+
+        {role === "admin" && (
+          <>
+            <SettingsSectionTitle
+              title="Administration"
+            />
+
+            <SettingsRow
+              icon="shield-outline"
+              title="Administrator account"
+              subtitle="Richfield administrator access"
+              onPress={() =>
+                Alert.alert(
+                  "Administrator account",
+                  "Administrator permissions are controlled by Richfield."
+                )
+              }
+            />
+          </>
+        )}
+
+        <SettingsSectionTitle
+          title="Security"
+        />
+
+        <SettingsRow
+          icon="lock-closed-outline"
+          title="Change password"
+          subtitle="Send a secure password reset email"
+          onPress={
+            confirmPasswordReset
+          }
+        />
+
+        <SettingsSectionTitle
+          title="About"
+        />
+
+        <SettingsRow
+          icon="information-circle-outline"
+          title="About Richfield Social"
+          subtitle="Professional community platform"
+          onPress={() =>
+            Alert.alert(
+              "Richfield Social",
+              "Richfield Social connects students, alumni and industry through networking, portfolios, messaging and career opportunities."
+            )
+          }
+        />
+
+        <SettingsRow
+          icon="shield-checkmark-outline"
+          title="Privacy & security"
+          subtitle="How Richfield Social protects your account"
+          onPress={() =>
+            Alert.alert(
+              "Privacy & security",
+              "Your authentication credentials are handled securely by Supabase Auth. Account roles and institutional information cannot be changed from your public profile."
+            )
+          }
+        />
+
+        <Pressable
+          style={[
+            settingsStyles.logoutButton,
+
+            working &&
+              settingsStyles.disabled,
+          ]}
+          disabled={working}
+          onPress={
+            confirmLogout
+          }
+        >
+          {working ? (
+            <ActivityIndicator
+              color="#D00000"
+            />
+          ) : (
+            <>
+              <Ionicons
+                name="log-out-outline"
+                size={21}
+                color="#D00000"
+              />
+
+              <Text
+                style={
+                  settingsStyles.logoutText
+                }
+              >
+                Log out
+              </Text>
+            </>
+          )}
+        </Pressable>
+
+        <Text
+          style={
+            settingsStyles.version
+          }
+        >
+          Richfield Social • Hackathon
+          2026
         </Text>
-
-        <Ionicons
-          name="chevron-forward"
-          size={20}
-          color="#999"
-        />
-      </Pressable>
-
-      <Pressable
-        style={[
-          styles.logoutButton,
-          signingOut && { opacity: 0.5 },
-        ]}
-        onPress={logout}
-        disabled={signingOut}
-      >
-        <Ionicons
-          name="log-out-outline"
-          size={22}
-          color="#d00000"
-        />
-
-        <Text style={styles.logoutText}>
-          {signingOut ? 'Logging out...' : 'Log out'}
-        </Text>
-      </Pressable>
-
-      <Text style={styles.version}>
-        Richfield Connect
-      </Text>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
+
+function SettingsSectionTitle({
+  title,
+}: {
+  title: string;
+}) {
+  return (
+    <Text
+      style={
+        settingsStyles.sectionTitle
+      }
+    >
+      {title}
+    </Text>
+  );
+}
+
+function SettingsRow({
+  icon,
+  title,
+  subtitle,
+  onPress,
+}: any) {
+  return (
+    <Pressable
+      style={
+        settingsStyles.settingRow
+      }
+      onPress={onPress}
+    >
+      <View
+        style={
+          settingsStyles.settingIcon
+        }
+      >
+        <Ionicons
+          name={icon}
+          size={21}
+          color="#333"
+        />
+      </View>
+
+      <View
+        style={
+          settingsStyles.settingContent
+        }
+      >
+        <Text
+          style={
+            settingsStyles.settingTitle
+          }
+        >
+          {title}
+        </Text>
+
+        <Text
+          style={
+            settingsStyles.settingSubtitle
+          }
+        >
+          {subtitle}
+        </Text>
+      </View>
+
+      <Ionicons
+        name="chevron-forward"
+        size={19}
+        color="#AAA"
+      />
+    </Pressable>
+  );
+}
+
+function SettingsSwitchRow({
+  icon,
+  title,
+  subtitle,
+  value,
+  onValueChange,
+}: any) {
+  return (
+    <View
+      style={
+        settingsStyles.settingRow
+      }
+    >
+      <View
+        style={
+          settingsStyles.settingIcon
+        }
+      >
+        <Ionicons
+          name={icon}
+          size={21}
+          color="#333"
+        />
+      </View>
+
+      <View
+        style={
+          settingsStyles.settingContent
+        }
+      >
+        <Text
+          style={
+            settingsStyles.settingTitle
+          }
+        >
+          {title}
+        </Text>
+
+        <Text
+          style={
+            settingsStyles.settingSubtitle
+          }
+        >
+          {subtitle}
+        </Text>
+      </View>
+
+      <Switch
+        value={value}
+        onValueChange={
+          onValueChange
+        }
+        trackColor={{
+          false: "#DDD",
+          true: "#BDBDFF",
+        }}
+        thumbColor={
+          value
+            ? PRIMARY
+            : "#FFF"
+        }
+      />
+    </View>
+  );
+}
+
+const settingsStyles =
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: "#FFF",
+    },
+
+    loading: {
+      flex: 1,
+      backgroundColor: "#FFF",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    header: {
+      height: 60,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+      paddingHorizontal: 18,
+      borderBottomWidth: 1,
+      borderBottomColor: "#EEE",
+    },
+
+    backButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: "#F5F5F7",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    headerTitle: {
+      fontSize: 18,
+      fontWeight: "800",
+      color: "#111",
+    },
+
+    container: {
+      paddingHorizontal: 20,
+      paddingTop: 20,
+      paddingBottom: 50,
+    },
+
+    accountCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: "#F5F5FF",
+      borderRadius: 15,
+      padding: 16,
+      marginBottom: 25,
+    },
+
+    accountIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 14,
+      backgroundColor: "#E7E7FF",
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 13,
+    },
+
+    accountLabel: {
+      color: "#777",
+      fontSize: 11,
+    },
+
+    accountRole: {
+      color: "#111",
+      fontSize: 15,
+      fontWeight: "800",
+      marginTop: 3,
+    },
+
+    sectionTitle: {
+      fontSize: 12,
+      fontWeight: "800",
+      color: "#777",
+      textTransform:
+        "uppercase",
+      marginTop: 13,
+      marginBottom: 7,
+    },
+
+    settingRow: {
+      minHeight: 69,
+      flexDirection: "row",
+      alignItems: "center",
+      borderBottomWidth: 1,
+      borderBottomColor: "#EEE",
+    },
+
+    settingIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 11,
+      backgroundColor: "#F5F5F7",
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 12,
+    },
+
+    settingContent: {
+      flex: 1,
+      paddingRight: 8,
+    },
+
+    settingTitle: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: "#222",
+    },
+
+    settingSubtitle: {
+      fontSize: 11,
+      color: "#888",
+      marginTop: 3,
+    },
+
+    securityNotice: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      backgroundColor: "#F5F5FF",
+      borderRadius: 11,
+      padding: 12,
+      marginTop: 12,
+      marginBottom: 8,
+    },
+
+    securityNoticeText: {
+      flex: 1,
+      color: "#666",
+      fontSize: 11,
+      lineHeight: 16,
+      marginLeft: 8,
+    },
+
+    logoutButton: {
+      minHeight: 55,
+      borderRadius: 12,
+      backgroundColor: "#FFF1F1",
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 30,
+    },
+
+    logoutText: {
+      color: "#D00000",
+      fontSize: 14,
+      fontWeight: "800",
+      marginLeft: 8,
+    },
+
+    disabled: {
+      opacity: 0.5,
+    },
+
+    version: {
+      textAlign: "center",
+      color: "#AAA",
+      fontSize: 10,
+      marginTop: 18,
+    },
+  });
 
 /* =========================================================
    REUSABLE COMPONENTS

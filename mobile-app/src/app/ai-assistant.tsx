@@ -1,8 +1,7 @@
-import AIAssistantScreen
-  from "../screens/AIAssistantScreen";
+import AIChatScreen from "../screens/AIAssistantScreen";
 
-export default function AIAssistantRoute() {
+export default function AIChatRoute() {
   return (
-    <AIAssistantScreen />
+    <AIChatScreen />
   );
 }

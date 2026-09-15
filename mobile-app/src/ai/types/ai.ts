@@ -64,3 +64,44 @@ export type AIChatResponse = {
   usage:
     AIUsage;
 };
+
+export type AIStreamStartEvent = {
+  type:
+    "start";
+
+  conversationId:
+    string;
+};
+
+export type AIStreamDeltaEvent = {
+  type:
+    "delta";
+
+  delta:
+    string;
+};
+
+export type AIStreamDoneEvent = {
+  type:
+    "done";
+
+  conversationId:
+    string;
+
+  usage:
+    AIUsage;
+};
+
+export type AIStreamErrorEvent = {
+  type:
+    "error";
+
+  message:
+    string;
+};
+
+export type AIStreamEvent =
+  | AIStreamStartEvent
+  | AIStreamDeltaEvent
+  | AIStreamDoneEvent
+  | AIStreamErrorEvent;
