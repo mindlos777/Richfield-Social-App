@@ -309,6 +309,7 @@ export default function MemberPortfolioScreen() {
           title.trim(),
         description:
           description.trim(),
+        item_type: "project",
         skills:
           skillsArray,
       };
@@ -351,17 +352,18 @@ export default function MemberPortfolioScreen() {
         "Project added",
         "Your project has been added to your portfolio."
       );
-    } catch (error) {
+    } catch (error: any) {
       console.log(
-        "Add project error:",
+        "ADD PORTFOLIO PROJECT ERROR:",
         error
       );
 
       Alert.alert(
         "Could not add project",
-        error instanceof Error
-          ? error.message
-          : "Something went wrong."
+        error?.message ||
+          error?.details ||
+          error?.hint ||
+          "Something went wrong."
       );
     } finally {
       setSaving(false);

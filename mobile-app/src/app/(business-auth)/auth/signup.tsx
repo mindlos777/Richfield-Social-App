@@ -1,5 +1,4 @@
 import React, {
-  useMemo,
   useState,
 } from "react";
 
@@ -175,39 +174,153 @@ export default function BusinessSignupScreen() {
     confirmPassword.length > 0 &&
     password === confirmPassword;
 
-  const formIsValid = useMemo(() => {
-    return (
-      companyName.trim().length >= 2 &&
-      registrationNumber.trim().length >= 4 &&
-      industry.length > 0 &&
-      isValidWebsite(website) &&
-      location.trim().length >= 2 &&
-      companyDescription.trim().length >= 20 &&
-      contactPersonName.trim().length >= 2 &&
-      contactPersonJobTitle.trim().length >= 2 &&
-      isValidEmail(contactEmail) &&
-      contactPhone.trim().length >= 9 &&
-      registrationDocument !== null &&
-      passwordIsStrong &&
-      passwordsMatch &&
-      declarationAccepted
-    );
-  }, [
-    companyName,
-    registrationNumber,
-    industry,
-    website,
-    location,
-    companyDescription,
-    contactPersonName,
-    contactPersonJobTitle,
-    contactEmail,
-    contactPhone,
-    registrationDocument,
-    passwordIsStrong,
-    passwordsMatch,
-    declarationAccepted,
-  ]);
+  function validateForm() {
+    if (companyName.trim().length < 2) {
+      Alert.alert(
+        "Company name required",
+        "Please enter your company name."
+      );
+
+      return false;
+    }
+
+    if (
+      registrationNumber.trim().length < 4
+    ) {
+      Alert.alert(
+        "Registration number required",
+        "Please enter a valid company registration number."
+      );
+
+      return false;
+    }
+
+    if (!industry) {
+      Alert.alert(
+        "Industry required",
+        "Please select your company's industry."
+      );
+
+      return false;
+    }
+
+    if (!website.trim()) {
+      Alert.alert(
+        "Website required",
+        "Please enter your company website."
+      );
+
+      return false;
+    }
+
+    if (!isValidWebsite(website)) {
+      Alert.alert(
+        "Invalid website",
+        "Your website must start with https:// or http://."
+      );
+
+      return false;
+    }
+
+    if (location.trim().length < 2) {
+      Alert.alert(
+        "Location required",
+        "Please enter your company location."
+      );
+
+      return false;
+    }
+
+    if (
+      companyDescription.trim().length < 20
+    ) {
+      Alert.alert(
+        "Description too short",
+        "Please enter at least 20 characters describing your organisation."
+      );
+
+      return false;
+    }
+
+    if (
+      contactPersonName.trim().length < 2
+    ) {
+      Alert.alert(
+        "Contact person required",
+        "Please enter the contact person's full name."
+      );
+
+      return false;
+    }
+
+    if (
+      contactPersonJobTitle.trim().length <
+      2
+    ) {
+      Alert.alert(
+        "Job title required",
+        "Please enter the contact person's job title."
+      );
+
+      return false;
+    }
+
+    if (!isValidEmail(contactEmail)) {
+      Alert.alert(
+        "Invalid email",
+        "Please enter a valid business email address."
+      );
+
+      return false;
+    }
+
+    if (contactPhone.trim().length < 9) {
+      Alert.alert(
+        "Contact number required",
+        "Please enter a valid contact number."
+      );
+
+      return false;
+    }
+
+    if (!registrationDocument) {
+      Alert.alert(
+        "Verification document required",
+        "Please upload your company registration PDF."
+      );
+
+      return false;
+    }
+
+    if (!passwordIsStrong) {
+      Alert.alert(
+        "Password not strong enough",
+        "Your password must contain at least 8 characters, an uppercase letter, lowercase letter, number and special character."
+      );
+
+      return false;
+    }
+
+    if (!passwordsMatch) {
+      Alert.alert(
+        "Passwords do not match",
+        "Please make sure both passwords are exactly the same."
+      );
+
+      return false;
+    }
+
+    if (!declarationAccepted) {
+      Alert.alert(
+        "Declaration required",
+        "Please confirm that you are authorised to represent the organisation."
+      );
+
+      return false;
+    }
+
+    return true;
+  }
 
   async function pickRegistrationDocument() {
     try {
@@ -359,21 +472,7 @@ export default function BusinessSignupScreen() {
   }
 
   async function handleSignup() {
-    if (!registrationDocument) {
-      Alert.alert(
-        "Verification document required",
-        "Please upload your company registration document."
-      );
-
-      return;
-    }
-
-    if (!formIsValid) {
-      Alert.alert(
-        "Check your details",
-        "Please complete all required fields correctly."
-      );
-
+    if (!validateForm()) {
       return;
     }
 
@@ -447,12 +546,15 @@ export default function BusinessSignupScreen() {
       }
 
       if (!data.session) {
+        setUploadProgress("");
+
         Alert.alert(
           "Account created",
           "Your account was created, but you must verify your email before the registration document can be securely uploaded. Sign in after verification to complete your business application.",
           [
             {
               text: "Continue",
+
               onPress: () =>
                 router.replace(
                   "/login"
@@ -495,6 +597,11 @@ export default function BusinessSignupScreen() {
       );
     } catch (error: any) {
       setUploadProgress("");
+
+      console.log(
+        "Business signup error:",
+        error
+      );
 
       Alert.alert(
         "Registration failed",
@@ -1180,14 +1287,10 @@ export default function BusinessSignupScreen() {
           style={[
             styles.submitButton,
 
-            (!formIsValid ||
-              loading) &&
+            loading &&
               styles.disabled,
           ]}
-          disabled={
-            !formIsValid ||
-            loading
-          }
+          disabled={loading}
           onPress={handleSignup}
         >
           {loading ? (

@@ -9,6 +9,7 @@ import {
   FlatList,
   Image,
   Alert,
+  Linking,
   ActivityIndicator,
   Switch,
   RefreshControl,
@@ -1341,7 +1342,7 @@ type PortfolioProject = {
   id: string;
   title: string;
   description: string;
-  project_url: string | null;
+  url: string | null;
   skills: string[] | null;
 };
 
@@ -1419,7 +1420,8 @@ export function PortfolioScreen() {
           user_id: user.id,
           title: title.trim(),
           description: description.trim(),
-          project_url: projectUrl.trim() || null,
+          item_type: "project",
+          url: projectUrl.trim() || null,
           skills: skills
             .split(',')
             .map(item => item.trim())
@@ -1442,10 +1444,15 @@ export function PortfolioScreen() {
         'Project added',
         'Your project has been added to your portfolio.'
       );
-    } catch (error) {
+    } catch (error: any) {
+      console.log('ADD PORTFOLIO PROJECT ERROR:', error);
+
       Alert.alert(
         'Could not add project',
-        error instanceof Error ? error.message : 'Something went wrong.'
+        error?.message ||
+          error?.details ||
+          error?.hint ||
+          'Something went wrong.'
       );
     } finally {
       setSaving(false);
@@ -1622,9 +1629,28 @@ export function PortfolioScreen() {
                 </View>
               )}
 
-              {project.project_url && (
+              {project.url && (
                 <Pressable
                   style={styles.projectLink}
+                  onPress={async () => {
+                    let value = project.url!.trim();
+
+                    if (
+                      !value.startsWith('http://') &&
+                      !value.startsWith('https://')
+                    ) {
+                      value = `https://${value}`;
+                    }
+
+                    try {
+                      await Linking.openURL(value);
+                    } catch {
+                      Alert.alert(
+                        'Link error',
+                        'This project link could not be opened.'
+                      );
+                    }
+                  }}
                 >
                   <Ionicons
                     name="link-outline"

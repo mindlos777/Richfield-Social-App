@@ -36,56 +36,169 @@ import {
   supabase,
 } from "../../../lib/supabase";
 
-const PRIMARY =
-  "#0300cf";
+const PRIMARY = "#0300cf";
 
 type MainProfile = {
   id: string;
-  full_name:
-    | string
-    | null;
-  avatar_url:
-    | string
-    | null;
-  role:
-    | string
-    | null;
+  full_name: string | null;
+  avatar_url: string | null;
+  role: string | null;
 };
 
 type BusinessProfile = {
   user_id: string;
-
-  organisation_name:
-    | string
-    | null;
-
-  industry:
-    | string
-    | null;
-
-  company_description:
-    | string
-    | null;
-
-  location:
-    | string
-    | null;
-
-  company_website:
-    | string
-    | null;
-
-  contact_email:
-    | string
-    | null;
-
-  contact_phone:
-    | string
-    | null;
-
-  talent_interests:
-    string[] | null;
+  organisation_name: string | null;
+  industry: string | null;
+  company_description: string | null;
+  location: string | null;
+  company_website: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  talent_interests: string[] | null;
 };
+
+/* =========================================================
+   INPUT HELPERS
+========================================================= */
+
+function cleanSingleLine(
+  value: string,
+  maxLength = 120
+) {
+  return value
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function cleanMultiline(
+  value: string,
+  maxLength = 1500
+) {
+  return value
+    .replace(/\u0000/g, "")
+    .replace(/\r\n/g, "\n")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function cleanEmail(
+  value: string
+) {
+  return value
+    .trim()
+    .toLowerCase()
+    .slice(0, 254);
+}
+
+function isValidEmail(
+  value: string
+) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+    value
+  );
+}
+
+function cleanWebsite(
+  value: string
+) {
+  return value
+    .trim()
+    .replace(/\s/g, "")
+    .slice(0, 300);
+}
+
+function isValidWebsite(
+  value: string
+) {
+  if (!value) {
+    return true;
+  }
+
+  try {
+    const normalised =
+      value.startsWith("http://") ||
+      value.startsWith("https://")
+        ? value
+        : `https://${value}`;
+
+    const url =
+      new URL(normalised);
+
+    return (
+      url.protocol === "http:" ||
+      url.protocol === "https:"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function cleanPhone(
+  value: string
+) {
+  return value
+    .replace(
+      /[^0-9+\-()\s]/g,
+      ""
+    )
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 30);
+}
+
+function isValidPhone(
+  value: string
+) {
+  if (!value) {
+    return true;
+  }
+
+  const digits =
+    value.replace(/\D/g, "");
+
+  return (
+    digits.length >= 7 &&
+    digits.length <= 15
+  );
+}
+
+function cleanTalentInterests(
+  value: string
+) {
+  const seen =
+    new Set<string>();
+
+  return value
+    .split(",")
+    .map(item =>
+      cleanSingleLine(
+        item,
+        50
+      )
+    )
+    .filter(Boolean)
+    .filter(item => {
+      const key =
+        item.toLowerCase();
+
+      if (
+        seen.has(key)
+      ) {
+        return false;
+      }
+
+      seen.add(key);
+
+      return true;
+    })
+    .slice(0, 25);
+}
+
+/* =========================================================
+   SCREEN
+========================================================= */
 
 export default function EditBusinessProfileScreen() {
   const [
@@ -107,86 +220,74 @@ export default function EditBusinessProfileScreen() {
   const [
     organisationName,
     setOrganisationName,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     industry,
     setIndustry,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     description,
     setDescription,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     location,
     setLocation,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     website,
     setWebsite,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     contactEmail,
     setContactEmail,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     contactPhone,
     setContactPhone,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     talentInterests,
     setTalentInterests,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     loading,
     setLoading,
-  ] =
-    useState(true);
+  ] = useState(true);
 
   const [
     saving,
     setSaving,
-  ] =
-    useState(false);
+  ] = useState(false);
 
   const [
     uploading,
     setUploading,
-  ] =
-    useState(false);
+  ] = useState(false);
+
+  const [
+    loggingOut,
+    setLoggingOut,
+  ] = useState(false);
 
   useEffect(() => {
     loadProfile();
   }, []);
 
-  // =========================================================
-  // LOAD PROFILE
-  // =========================================================
+  /* =========================================================
+     LOAD PROFILE
+  ========================================================= */
 
   async function loadProfile() {
     try {
-      setLoading(
-        true
-      );
-
-      console.log(
-        "EDIT PROFILE: 1 - getting auth user"
-      );
+      setLoading(true);
 
       const {
         data:
@@ -197,14 +298,7 @@ export default function EditBusinessProfileScreen() {
         await supabase.auth
           .getUser();
 
-      if (
-        authError
-      ) {
-        console.log(
-          "EDIT PROFILE AUTH ERROR:",
-          authError
-        );
-
+      if (authError) {
         throw authError;
       }
 
@@ -212,26 +306,15 @@ export default function EditBusinessProfileScreen() {
         authData.user;
 
       if (!user) {
-        throw new Error(
-          "You must be logged in."
+        router.replace(
+          "/login"
         );
-      }
 
-      console.log(
-        "EDIT PROFILE: 2 - authenticated:",
-        user.id
-      );
+        return;
+      }
 
       setUserId(
         user.id
-      );
-
-      // =====================================================
-      // MAIN PROFILE
-      // =====================================================
-
-      console.log(
-        "EDIT PROFILE: 3 - loading profiles table"
       );
 
       const {
@@ -255,21 +338,9 @@ export default function EditBusinessProfileScreen() {
             user.id
           );
 
-      if (
-        profileError
-      ) {
-        console.log(
-          "EDIT PROFILE MAIN PROFILE ERROR:",
-          profileError
-        );
-
+      if (profileError) {
         throw profileError;
       }
-
-      console.log(
-        "EDIT PROFILE: 4 - profile rows:",
-        profileRows
-      );
 
       const profile:
         MainProfile | null =
@@ -279,9 +350,7 @@ export default function EditBusinessProfileScreen() {
           ? profileRows[0]
           : null;
 
-      if (
-        !profile
-      ) {
+      if (!profile) {
         throw new Error(
           "Your account exists, but no profile row was found."
         );
@@ -298,15 +367,7 @@ export default function EditBusinessProfileScreen() {
 
       setLogoUrl(
         profile.avatar_url ||
-          null
-      );
-
-      // =====================================================
-      // BUSINESS PROFILE
-      // =====================================================
-
-      console.log(
-        "EDIT PROFILE: 5 - loading business_profiles table"
+        null
       );
 
       const {
@@ -335,21 +396,9 @@ export default function EditBusinessProfileScreen() {
             user.id
           );
 
-      if (
-        businessError
-      ) {
-        console.log(
-          "EDIT PROFILE BUSINESS QUERY ERROR:",
-          businessError
-        );
-
+      if (businessError) {
         throw businessError;
       }
-
-      console.log(
-        "EDIT PROFILE: 6 - business rows:",
-        businessRows
-      );
 
       const business:
         BusinessProfile | null =
@@ -359,104 +408,68 @@ export default function EditBusinessProfileScreen() {
           ? businessRows[0]
           : null;
 
-      // =====================================================
-      // IF NO BUSINESS PROFILE EXISTS YET
-      // DO NOT INSERT ANYTHING HERE.
-      // JUST USE DEFAULT FORM VALUES.
-      // =====================================================
-
-      if (
-        !business
-      ) {
-        console.log(
-          "EDIT PROFILE: 7 - no business profile row. Using local defaults."
-        );
-
+      if (!business) {
         setOrganisationName(
           profile.full_name ||
-            ""
-        );
-
-        setIndustry(
           ""
         );
 
-        setDescription(
-          ""
-        );
-
-        setLocation(
-          ""
-        );
-
-        setWebsite(
-          ""
-        );
+        setIndustry("");
+        setDescription("");
+        setLocation("");
+        setWebsite("");
 
         setContactEmail(
           user.email ||
-            ""
-        );
-
-        setContactPhone(
           ""
         );
 
-        setTalentInterests(
-          ""
-        );
-
-        console.log(
-          "EDIT PROFILE: 8 - defaults loaded"
-        );
+        setContactPhone("");
+        setTalentInterests("");
 
         return;
       }
 
-      // =====================================================
-      // EXISTING BUSINESS PROFILE
-      // =====================================================
-
       setOrganisationName(
         business
           .organisation_name ||
-          profile.full_name ||
-          ""
+        profile.full_name ||
+        ""
       );
 
       setIndustry(
         business.industry ||
-          ""
+        ""
       );
 
       setDescription(
         business
           .company_description ||
-          ""
+        ""
       );
 
       setLocation(
         business.location ||
-          ""
+        ""
       );
 
       setWebsite(
         business
           .company_website ||
-          ""
+        ""
       );
 
       setContactEmail(
         business
           .contact_email ||
-          user.email ||
-          ""
+        user.email ||
+        ""
       );
 
       setContactPhone(
         business
           .contact_phone ||
-          ""
+        ""
       );
 
       setTalentInterests(
@@ -466,15 +479,11 @@ export default function EditBusinessProfileScreen() {
           []
         ).join(", ")
       );
-
-      console.log(
-        "EDIT PROFILE: 9 - profile loaded successfully"
-      );
     } catch (
       error: any
     ) {
       console.log(
-        "EDIT PROFILE FINAL ERROR:",
+        "EDIT PROFILE ERROR:",
         error
       );
 
@@ -484,15 +493,13 @@ export default function EditBusinessProfileScreen() {
           "Could not load your company profile."
       );
     } finally {
-      setLoading(
-        false
-      );
+      setLoading(false);
     }
   }
 
-  // =========================================================
-  // CHOOSE COMPANY LOGO
-  // =========================================================
+  /* =========================================================
+     CHOOSE COMPANY LOGO
+  ========================================================= */
 
   async function chooseLogo() {
     if (!userId) {
@@ -546,32 +553,50 @@ export default function EditBusinessProfileScreen() {
         return;
       }
 
-      setUploading(
-        true
-      );
+      setUploading(true);
 
       const asset =
         result.assets[0];
+
+      if (
+        asset.fileSize &&
+        asset.fileSize >
+          5 * 1024 * 1024
+      ) {
+        Alert.alert(
+          "Image too large",
+          "Please select an image smaller than 5 MB."
+        );
+
+        return;
+      }
 
       const uri =
         asset.uri;
 
       const response =
-        await fetch(
-          uri
-        );
+        await fetch(uri);
 
       const arrayBuffer =
         await response
           .arrayBuffer();
 
+      const mimeType =
+        asset.mimeType ||
+        "image/jpeg";
+
+      if (
+        !mimeType.startsWith(
+          "image/"
+        )
+      ) {
+        throw new Error(
+          "Please select a valid image."
+        );
+      }
+
       const filePath =
         `${userId}/business-logo-${Date.now()}.jpg`;
-
-      console.log(
-        "EDIT PROFILE: uploading logo",
-        filePath
-      );
 
       const {
         error:
@@ -586,8 +611,7 @@ export default function EditBusinessProfileScreen() {
             arrayBuffer,
             {
               contentType:
-                asset.mimeType ||
-                "image/jpeg",
+                mimeType,
 
               cacheControl:
                 "3600",
@@ -597,14 +621,7 @@ export default function EditBusinessProfileScreen() {
             }
           );
 
-      if (
-        uploadError
-      ) {
-        console.log(
-          "EDIT PROFILE LOGO UPLOAD ERROR:",
-          uploadError
-        );
-
+      if (uploadError) {
         throw uploadError;
       }
 
@@ -623,10 +640,6 @@ export default function EditBusinessProfileScreen() {
       const publicUrl =
         publicUrlData
           .publicUrl;
-
-      console.log(
-        "EDIT PROFILE: updating avatar_url"
-      );
 
       const {
         data:
@@ -653,11 +666,6 @@ export default function EditBusinessProfileScreen() {
       if (
         profileUpdateError
       ) {
-        console.log(
-          "EDIT PROFILE AVATAR UPDATE ERROR:",
-          profileUpdateError
-        );
-
         throw profileUpdateError;
       }
 
@@ -693,15 +701,13 @@ export default function EditBusinessProfileScreen() {
           "Could not upload the company logo."
       );
     } finally {
-      setUploading(
-        false
-      );
+      setUploading(false);
     }
   }
 
-  // =========================================================
-  // SAVE PROFILE
-  // =========================================================
+  /* =========================================================
+     SAVE PROFILE
+  ========================================================= */
 
   async function save() {
     if (!userId) {
@@ -714,15 +720,50 @@ export default function EditBusinessProfileScreen() {
     }
 
     const cleanName =
-      organisationName
-        .trim();
+      cleanSingleLine(
+        organisationName,
+        120
+      );
 
     const cleanIndustry =
-      industry.trim();
+      cleanSingleLine(
+        industry,
+        100
+      );
 
-    if (
-      !cleanName
-    ) {
+    const cleanDescription =
+      cleanMultiline(
+        description,
+        1500
+      );
+
+    const cleanLocation =
+      cleanSingleLine(
+        location,
+        150
+      );
+
+    const cleanWebsiteValue =
+      cleanWebsite(
+        website
+      );
+
+    const cleanEmailValue =
+      cleanEmail(
+        contactEmail
+      );
+
+    const cleanPhoneValue =
+      cleanPhone(
+        contactPhone
+      );
+
+    const talents =
+      cleanTalentInterests(
+        talentInterests
+      );
+
+    if (!cleanName) {
       Alert.alert(
         "Organisation name",
         "Please enter your organisation name."
@@ -731,9 +772,7 @@ export default function EditBusinessProfileScreen() {
       return;
     }
 
-    if (
-      !cleanIndustry
-    ) {
+    if (!cleanIndustry) {
       Alert.alert(
         "Industry",
         "Please enter your industry."
@@ -742,31 +781,70 @@ export default function EditBusinessProfileScreen() {
       return;
     }
 
-    setSaving(
-      true
-    );
-
-    try {
-      const talents =
-        talentInterests
-          .split(",")
-          .map(
-            item =>
-              item.trim()
-          )
-          .filter(
-            item =>
-              item.length >
-              0
-          );
-
-      console.log(
-        "EDIT PROFILE SAVE: 1 - checking business row"
+    if (
+      cleanEmailValue &&
+      !isValidEmail(
+        cleanEmailValue
+      )
+    ) {
+      Alert.alert(
+        "Contact email",
+        "Please enter a valid email address."
       );
 
-      // =====================================================
-      // CHECK WHETHER ROW EXISTS
-      // =====================================================
+      return;
+    }
+
+    if (
+      cleanWebsiteValue &&
+      !isValidWebsite(
+        cleanWebsiteValue
+      )
+    ) {
+      Alert.alert(
+        "Company website",
+        "Please enter a valid website address."
+      );
+
+      return;
+    }
+
+    if (
+      cleanPhoneValue &&
+      !isValidPhone(
+        cleanPhoneValue
+      )
+    ) {
+      Alert.alert(
+        "Contact phone",
+        "Please enter a valid phone number."
+      );
+
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const {
+        data:
+          authData,
+        error:
+          authError,
+      } =
+        await supabase.auth
+          .getUser();
+
+      if (
+        authError ||
+        !authData.user ||
+        authData.user.id !==
+          userId
+      ) {
+        throw new Error(
+          "Your session is no longer valid. Please log in again."
+        );
+      }
 
       const {
         data:
@@ -786,14 +864,7 @@ export default function EditBusinessProfileScreen() {
             userId
           );
 
-      if (
-        existingError
-      ) {
-        console.log(
-          "EDIT PROFILE SAVE CHECK ERROR:",
-          existingError
-        );
-
+      if (existingError) {
         throw existingError;
       }
 
@@ -805,28 +876,23 @@ export default function EditBusinessProfileScreen() {
           cleanIndustry,
 
         company_description:
-          description
-            .trim() ||
+          cleanDescription ||
           null,
 
         location:
-          location
-            .trim() ||
+          cleanLocation ||
           null,
 
         company_website:
-          website
-            .trim() ||
+          cleanWebsiteValue ||
           null,
 
         contact_email:
-          contactEmail
-            .trim() ||
+          cleanEmailValue ||
           null,
 
         contact_phone:
-          contactPhone
-            .trim() ||
+          cleanPhoneValue ||
           null,
 
         talent_interests:
@@ -837,19 +903,11 @@ export default function EditBusinessProfileScreen() {
             .toISOString(),
       };
 
-      // =====================================================
-      // UPDATE EXISTING ROW
-      // =====================================================
-
       if (
         existingRows &&
         existingRows.length >
           0
       ) {
-        console.log(
-          "EDIT PROFILE SAVE: 2 - updating existing row"
-        );
-
         const {
           data:
             updatedBusinessRows,
@@ -874,11 +932,6 @@ export default function EditBusinessProfileScreen() {
         if (
           updateBusinessError
         ) {
-          console.log(
-            "EDIT PROFILE BUSINESS UPDATE ERROR:",
-            updateBusinessError
-          );
-
           throw updateBusinessError;
         }
 
@@ -891,17 +944,7 @@ export default function EditBusinessProfileScreen() {
             "Your company profile could not be updated. Check the business_profiles RLS update policy."
           );
         }
-      }
-
-      // =====================================================
-      // INSERT NEW ROW
-      // =====================================================
-
-      else {
-        console.log(
-          "EDIT PROFILE SAVE: 2 - creating new row"
-        );
-
+      } else {
         const {
           data:
             insertedBusinessRows,
@@ -925,11 +968,6 @@ export default function EditBusinessProfileScreen() {
         if (
           insertBusinessError
         ) {
-          console.log(
-            "EDIT PROFILE BUSINESS INSERT ERROR:",
-            insertBusinessError
-          );
-
           throw insertBusinessError;
         }
 
@@ -943,14 +981,6 @@ export default function EditBusinessProfileScreen() {
           );
         }
       }
-
-      // =====================================================
-      // UPDATE GENERAL PROFILE
-      // =====================================================
-
-      console.log(
-        "EDIT PROFILE SAVE: 3 - updating headline"
-      );
 
       const {
         data:
@@ -974,14 +1004,7 @@ export default function EditBusinessProfileScreen() {
             "id"
           );
 
-      if (
-        profileError
-      ) {
-        console.log(
-          "EDIT PROFILE HEADLINE ERROR:",
-          profileError
-        );
-
+      if (profileError) {
         throw profileError;
       }
 
@@ -995,8 +1018,36 @@ export default function EditBusinessProfileScreen() {
         );
       }
 
-      console.log(
-        "EDIT PROFILE SAVE: 4 - completed successfully"
+      setOrganisationName(
+        cleanName
+      );
+
+      setIndustry(
+        cleanIndustry
+      );
+
+      setDescription(
+        cleanDescription
+      );
+
+      setLocation(
+        cleanLocation
+      );
+
+      setWebsite(
+        cleanWebsiteValue
+      );
+
+      setContactEmail(
+        cleanEmailValue
+      );
+
+      setContactPhone(
+        cleanPhoneValue
+      );
+
+      setTalentInterests(
+        talents.join(", ")
       );
 
       Alert.alert(
@@ -1017,7 +1068,7 @@ export default function EditBusinessProfileScreen() {
       error: any
     ) {
       console.log(
-        "BUSINESS PROFILE SAVE FINAL ERROR:",
+        "BUSINESS PROFILE SAVE ERROR:",
         error
       );
 
@@ -1027,15 +1078,81 @@ export default function EditBusinessProfileScreen() {
           "Something went wrong while updating your company profile."
       );
     } finally {
-      setSaving(
-        false
-      );
+      setSaving(false);
     }
   }
 
-  // =========================================================
-  // LOADING
-  // =========================================================
+  /* =========================================================
+     LOGOUT
+  ========================================================= */
+
+  function handleLogout() {
+    if (
+      loggingOut ||
+      saving ||
+      uploading
+    ) {
+      return;
+    }
+
+    Alert.alert(
+      "Log out",
+      "Are you sure you want to log out of your business account?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+
+        {
+          text: "Log out",
+          style: "destructive",
+
+          onPress:
+            performLogout,
+        },
+      ]
+    );
+  }
+
+  async function performLogout() {
+    try {
+      setLoggingOut(true);
+
+      const {
+        error,
+      } =
+        await supabase.auth
+          .signOut();
+
+      if (error) {
+        throw error;
+      }
+
+      router.replace(
+        "/login"
+      );
+    } catch (
+      error: any
+    ) {
+      console.log(
+        "LOGOUT ERROR:",
+        error
+      );
+
+      Alert.alert(
+        "Log out failed",
+        error?.message ||
+          "Could not log out. Please try again."
+      );
+    } finally {
+      setLoggingOut(false);
+    }
+  }
+
+  /* =========================================================
+     LOADING
+  ========================================================= */
 
   if (loading) {
     return (
@@ -1062,9 +1179,9 @@ export default function EditBusinessProfileScreen() {
     );
   }
 
-  // =========================================================
-  // SCREEN
-  // =========================================================
+  /* =========================================================
+     SCREEN
+  ========================================================= */
 
   return (
     <SafeAreaView
@@ -1220,6 +1337,7 @@ export default function EditBusinessProfileScreen() {
               setOrganisationName
             }
             placeholder="e.g. Tech Solutions Africa"
+            maxLength={120}
           />
 
           <FormField
@@ -1231,6 +1349,7 @@ export default function EditBusinessProfileScreen() {
               setIndustry
             }
             placeholder="e.g. Software & Technology"
+            maxLength={100}
           />
 
           <FormField
@@ -1243,6 +1362,8 @@ export default function EditBusinessProfileScreen() {
             }
             placeholder="Tell students about your company, culture and what you do."
             multiline
+            maxLength={1500}
+            helper={`${description.length}/1500 characters`}
           />
 
           <FormField
@@ -1254,6 +1375,7 @@ export default function EditBusinessProfileScreen() {
               setLocation
             }
             placeholder="e.g. Johannesburg, Gauteng"
+            maxLength={150}
           />
 
           <SectionHeader
@@ -1271,7 +1393,9 @@ export default function EditBusinessProfileScreen() {
             }
             placeholder="https://company.co.za"
             autoCapitalize="none"
+            autoCorrect={false}
             keyboardType="url"
+            maxLength={300}
           />
 
           <FormField
@@ -1285,6 +1409,8 @@ export default function EditBusinessProfileScreen() {
             placeholder="careers@company.co.za"
             keyboardType="email-address"
             autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={254}
           />
 
           <FormField
@@ -1297,6 +1423,7 @@ export default function EditBusinessProfileScreen() {
             }
             placeholder="+27 10 000 0000"
             keyboardType="phone-pad"
+            maxLength={30}
           />
 
           <SectionHeader
@@ -1314,7 +1441,8 @@ export default function EditBusinessProfileScreen() {
             }
             placeholder="React, Java, Data Science, Cloud, Cybersecurity"
             multiline
-            helper="Separate each skill or talent area with a comma."
+            maxLength={1000}
+            helper="Separate each skill or talent area with a comma. Maximum 25 skills."
           />
 
           <Pressable
@@ -1363,9 +1491,9 @@ export default function EditBusinessProfileScreen() {
   );
 }
 
-// =========================================================
-// SECTION HEADER
-// =========================================================
+/* =========================================================
+   SECTION HEADER
+========================================================= */
 
 function SectionHeader({
   title,
@@ -1399,9 +1527,9 @@ function SectionHeader({
   );
 }
 
-// =========================================================
-// FORM FIELD
-// =========================================================
+/* =========================================================
+   FORM FIELD
+========================================================= */
 
 function FormField({
   label,
@@ -1485,9 +1613,9 @@ function FormField({
   );
 }
 
-// =========================================================
-// STYLES
-// =========================================================
+/* =========================================================
+   STYLES
+========================================================= */
 
 const styles =
   StyleSheet.create({
@@ -1558,7 +1686,7 @@ const styles =
     content: {
       padding: 18,
       paddingBottom:
-        80,
+        110,
     },
 
     logoSection: {
@@ -1784,5 +1912,62 @@ const styles =
         "800",
 
       fontSize: 14,
+    },
+
+    accountSection: {
+      marginTop: 36,
+      paddingTop: 25,
+      borderTopWidth: 1,
+      borderTopColor: "#E6E6EB",
+    },
+
+    accountSectionTitle: {
+      fontSize: 17,
+      fontWeight: "900",
+      color: "#171717",
+    },
+
+    accountSectionSubtitle: {
+      marginTop: 4,
+      marginBottom: 14,
+      fontSize: 11,
+      color: "#888",
+    },
+
+    logoutButton: {
+      minHeight: 68,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      borderWidth: 1,
+      borderColor: "#FFD4D4",
+      backgroundColor: "#FFF8F8",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 11,
+    },
+
+    logoutButtonDisabled: {
+      opacity: 0.6,
+    },
+
+    logoutIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: "#FFE8E8",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    logoutTitle: {
+      fontSize: 14,
+      fontWeight: "800",
+      color: "#D32F2F",
+    },
+
+    logoutSubtitle: {
+      marginTop: 2,
+      fontSize: 10.5,
+      color: "#888",
     },
   });

@@ -35,7 +35,6 @@ const PRIMARY = "#0300cf";
 export default function LoginScreen() {
   const {
     signIn,
-    signInWithMicrosoft,
     loading: authLoading,
   } = useAuth();
 
@@ -57,11 +56,6 @@ export default function LoginScreen() {
   const [
     loading,
     setLoading,
-  ] = useState(false);
-
-  const [
-    microsoftLoading,
-    setMicrosoftLoading,
   ] = useState(false);
 
   useEffect(() => {
@@ -206,28 +200,6 @@ export default function LoginScreen() {
     }
   };
 
-  const handleMicrosoftLogin =
-    async () => {
-      try {
-        setMicrosoftLoading(true);
-
-        await signInWithMicrosoft();
-      } catch (error: any) {
-        console.log(
-          "Microsoft login error:",
-          error
-        );
-
-        Alert.alert(
-          "Microsoft Login",
-          error?.message ||
-            "Unable to start Microsoft login."
-        );
-
-        setMicrosoftLoading(false);
-      }
-    };
-
   return (
     <SafeAreaView
       style={styles.safeArea}
@@ -281,70 +253,6 @@ export default function LoginScreen() {
             community.
           </Text>
 
-          <Pressable
-            style={[
-              styles.microsoftButton,
-              microsoftLoading &&
-                styles.buttonDisabled,
-            ]}
-            onPress={
-              handleMicrosoftLogin
-            }
-            disabled={
-              microsoftLoading ||
-              authLoading ||
-              loading
-            }
-          >
-            {microsoftLoading ? (
-              <ActivityIndicator
-                color="#111"
-              />
-            ) : (
-              <>
-                <View
-                  style={
-                    styles.microsoftLogo
-                  }
-                >
-                  <View
-                    style={styles.msRed}
-                  />
-
-                  <View
-                    style={styles.msGreen}
-                  />
-
-                  <View
-                    style={styles.msBlue}
-                  />
-
-                  <View
-                    style={styles.msYellow}
-                  />
-                </View>
-
-                <Text
-                  style={
-                    styles.microsoftText
-                  }
-                >
-                  Continue with Microsoft
-                </Text>
-              </>
-            )}
-          </Pressable>
-
-          <View style={styles.divider}>
-            <View style={styles.line} />
-
-            <Text style={styles.or}>
-              OR
-            </Text>
-
-            <View style={styles.line} />
-          </View>
-
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -354,7 +262,10 @@ export default function LoginScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
-            editable={!loading}
+            editable={
+              !loading &&
+              !authLoading
+            }
           />
 
           <TextInput
@@ -364,7 +275,10 @@ export default function LoginScreen() {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
-            editable={!loading}
+            editable={
+              !loading &&
+              !authLoading
+            }
             onSubmitEditing={
               handleLogin
             }
@@ -380,7 +294,6 @@ export default function LoginScreen() {
             onPress={handleLogin}
             disabled={
               loading ||
-              microsoftLoading ||
               authLoading
             }
           >
@@ -402,6 +315,10 @@ export default function LoginScreen() {
               router.push(
                 "/(auth)/signup"
               )
+            }
+            disabled={
+              loading ||
+              authLoading
             }
           >
             <Text style={styles.signup}>
@@ -455,6 +372,10 @@ export default function LoginScreen() {
 
               <Pressable
                 hitSlop={8}
+                disabled={
+                  loading ||
+                  authLoading
+                }
                 onPress={() =>
                   router.push(
                     "/(business-auth)/auth/login"
@@ -531,77 +452,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: "#666",
     marginBottom: 28,
-  },
-
-  microsoftButton: {
-    height: 52,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#D4D4D4",
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    marginBottom: 20,
-  },
-
-  microsoftLogo: {
-    width: 20,
-    height: 20,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginRight: 10,
-  },
-
-  msRed: {
-    width: 9,
-    height: 9,
-    backgroundColor: "#F25022",
-    marginRight: 2,
-    marginBottom: 2,
-  },
-
-  msGreen: {
-    width: 9,
-    height: 9,
-    backgroundColor: "#7FBA00",
-  },
-
-  msBlue: {
-    width: 9,
-    height: 9,
-    backgroundColor: "#00A4EF",
-    marginRight: 2,
-  },
-
-  msYellow: {
-    width: 9,
-    height: 9,
-    backgroundColor: "#FFB900",
-  },
-
-  microsoftText: {
-    color: "#111",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-
-  divider: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-
-  line: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#E5E5E5",
-  },
-
-  or: {
-    color: "#999",
-    fontSize: 12,
-    marginHorizontal: 12,
   },
 
   input: {

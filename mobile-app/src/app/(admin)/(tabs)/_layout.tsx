@@ -9,12 +9,15 @@ export default function AdminTabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+
         tabBarActiveTintColor: PRIMARY,
         tabBarInactiveTintColor: "#777",
+
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 9,
           fontWeight: "600",
         },
+
         tabBarStyle: {
           height: 66,
           paddingBottom: 7,
@@ -23,13 +26,23 @@ export default function AdminTabsLayout() {
         },
       }}
     >
+      {/* FEED */}
       <Tabs.Screen
         name="feed"
         options={{
           title: "Feed",
-          tabBarIcon: ({ color, size }) => (
+
+          tabBarIcon: ({
+            color,
+            size,
+            focused,
+          }) => (
             <Ionicons
-              name="newspaper-outline"
+              name={
+                focused
+                  ? "newspaper"
+                  : "newspaper-outline"
+              }
               size={size}
               color={color}
             />
@@ -37,13 +50,23 @@ export default function AdminTabsLayout() {
         }}
       />
 
+      {/* REVIEW */}
       <Tabs.Screen
         name="review"
         options={{
           title: "Review",
-          tabBarIcon: ({ color, size }) => (
+
+          tabBarIcon: ({
+            color,
+            size,
+            focused,
+          }) => (
             <Ionicons
-              name="checkmark-done-outline"
+              name={
+                focused
+                  ? "checkmark-done"
+                  : "checkmark-done-outline"
+              }
               size={size}
               color={color}
             />
@@ -51,13 +74,23 @@ export default function AdminTabsLayout() {
         }}
       />
 
+      {/* EVENTS */}
       <Tabs.Screen
         name="events"
         options={{
           title: "Events",
-          tabBarIcon: ({ color, size }) => (
+
+          tabBarIcon: ({
+            color,
+            size,
+            focused,
+          }) => (
             <Ionicons
-              name="calendar-outline"
+              name={
+                focused
+                  ? "calendar"
+                  : "calendar-outline"
+              }
               size={size}
               color={color}
             />
@@ -65,13 +98,23 @@ export default function AdminTabsLayout() {
         }}
       />
 
+      {/* USERS */}
       <Tabs.Screen
         name="users"
         options={{
           title: "Users",
-          tabBarIcon: ({ color, size }) => (
+
+          tabBarIcon: ({
+            color,
+            size,
+            focused,
+          }) => (
             <Ionicons
-              name="people-outline"
+              name={
+                focused
+                  ? "people"
+                  : "people-outline"
+              }
               size={size}
               color={color}
             />
@@ -79,13 +122,47 @@ export default function AdminTabsLayout() {
         }}
       />
 
+      {/* ANALYTICS */}
+      <Tabs.Screen
+        name="analytics"
+        options={{
+          title: "Analytics",
+
+          tabBarIcon: ({
+            color,
+            size,
+            focused,
+          }) => (
+            <Ionicons
+              name={
+                focused
+                  ? "bar-chart"
+                  : "bar-chart-outline"
+              }
+              size={size}
+              color={color}
+            />
+          ),
+        }}
+      />
+
+      {/* PROFILE */}
       <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color, size }) => (
+
+          tabBarIcon: ({
+            color,
+            size,
+            focused,
+          }) => (
             <Ionicons
-              name="person-circle-outline"
+              name={
+                focused
+                  ? "person-circle"
+                  : "person-circle-outline"
+              }
               size={size}
               color={color}
             />
@@ -93,6 +170,7 @@ export default function AdminTabsLayout() {
         }}
       />
 
+      {/* HIDDEN OPPORTUNITIES ROUTE */}
       <Tabs.Screen
         name="opportunities"
         options={{

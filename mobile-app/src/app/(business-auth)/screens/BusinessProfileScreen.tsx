@@ -38,91 +38,43 @@ const PRIMARY = "#0300cf";
 
 type ProfileData = {
   id: string;
-
-  full_name:
-    | string
-    | null;
-
-  username:
-    | string
-    | null;
-
-  headline:
-    | string
-    | null;
-
-  avatar_url:
-    | string
-    | null;
-
-  role:
-    | string
-    | null;
-
-  status:
-    | string
-    | null;
+  full_name: string | null;
+  username: string | null;
+  headline: string | null;
+  avatar_url: string | null;
+  role: string | null;
+  status: string | null;
 };
 
 type BusinessData = {
   user_id: string;
-
-  organisation_name:
-    | string
-    | null;
-
-  industry:
-    | string
-    | null;
-
-  company_description:
-    | string
-    | null;
-
-  location:
-    | string
-    | null;
-
-  company_website:
-    | string
-    | null;
-
-  contact_email:
-    | string
-    | null;
-
-  contact_phone:
-    | string
-    | null;
-
-  talent_interests:
-    string[];
+  organisation_name: string | null;
+  industry: string | null;
+  company_description: string | null;
+  location: string | null;
+  company_website: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  talent_interests: string[];
 };
 
 function getInitials(
-  value:
-    | string
-    | null
+  value: string | null
 ) {
   if (!value) {
     return "CO";
   }
 
-  const words =
-    value
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
+  const words = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
 
-  if (
-    words.length === 0
-  ) {
+  if (words.length === 0) {
     return "CO";
   }
 
-  if (
-    words.length === 1
-  ) {
+  if (words.length === 1) {
     return words[0]
       .charAt(0)
       .toUpperCase();
@@ -174,20 +126,22 @@ export default function BusinessProfileScreen() {
   const [
     loading,
     setLoading,
-  ] =
-    useState(true);
+  ] = useState(true);
 
   const [
     refreshing,
     setRefreshing,
-  ] =
-    useState(false);
+  ] = useState(false);
 
   const [
     chatOpening,
     setChatOpening,
-  ] =
-    useState(false);
+  ] = useState(false);
+
+  const [
+    loggingOut,
+    setLoggingOut,
+  ] = useState(false);
 
   const [
     stats,
@@ -211,16 +165,16 @@ export default function BusinessProfileScreen() {
           } =
             await supabase.auth.getUser();
 
-          if (
-            authError
-          ) {
+          if (authError) {
             throw authError;
           }
 
           if (!user) {
-            throw new Error(
-              "You must be logged in."
+            router.replace(
+              "/login"
             );
+
+            return;
           }
 
           setCurrentUserId(
@@ -261,15 +215,11 @@ export default function BusinessProfileScreen() {
               )
               .maybeSingle();
 
-          if (
-            profileError
-          ) {
+          if (profileError) {
             throw profileError;
           }
 
-          if (
-            !profileData
-          ) {
+          if (!profileData) {
             throw new Error(
               "Business account could not be found."
             );
@@ -315,15 +265,11 @@ export default function BusinessProfileScreen() {
               )
               .maybeSingle();
 
-          if (
-            businessError
-          ) {
+          if (businessError) {
             throw businessError;
           }
 
-          if (
-            businessData
-          ) {
+          if (businessData) {
             setBusiness({
               ...businessData,
 
@@ -333,14 +279,6 @@ export default function BusinessProfileScreen() {
                 [],
             } as BusinessData);
           } else {
-            /*
-             * Business exists but hasn't
-             * created company profile yet.
-             *
-             * Show safe empty profile instead
-             * of crashing with PGRST116.
-             */
-
             setBusiness({
               user_id:
                 requestedId,
@@ -571,9 +509,7 @@ export default function BusinessProfileScreen() {
           }
         );
 
-      if (
-        error
-      ) {
+      if (error) {
         throw error;
       }
 
@@ -632,9 +568,70 @@ export default function BusinessProfileScreen() {
     }
   }
 
-  if (
-    loading
-  ) {
+  function handleLogout() {
+    if (loggingOut) {
+      return;
+    }
+
+    Alert.alert(
+      "Log out",
+      "Are you sure you want to log out of your business account?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Log out",
+          style:
+            "destructive",
+
+          onPress:
+            performLogout,
+        },
+      ]
+    );
+  }
+
+  async function performLogout() {
+    try {
+      setLoggingOut(
+        true
+      );
+
+      const {
+        error,
+      } =
+        await supabase.auth.signOut();
+
+      if (error) {
+        throw error;
+      }
+
+      router.replace(
+        "/login"
+      );
+    } catch (
+      error: any
+    ) {
+      console.log(
+        "Logout error:",
+        error
+      );
+
+      Alert.alert(
+        "Log out failed",
+        error?.message ||
+          "Could not log out. Please try again."
+      );
+    } finally {
+      setLoggingOut(
+        false
+      );
+    }
+  }
+
+  if (loading) {
     return (
       <SafeAreaView
         style={
@@ -1198,6 +1195,86 @@ export default function BusinessProfileScreen() {
               />
             ) : null}
           </View>
+
+          {isOwnProfile ? (
+            <View
+              style={
+                styles.accountSection
+              }
+            >
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                Account
+              </Text>
+
+              <Pressable
+                style={
+                  styles.logoutButton
+                }
+                onPress={
+                  handleLogout
+                }
+                disabled={
+                  loggingOut
+                }
+              >
+                <View
+                  style={
+                    styles.logoutIcon
+                  }
+                >
+                  {loggingOut ? (
+                    <ActivityIndicator
+                      size="small"
+                      color="#D32F2F"
+                    />
+                  ) : (
+                    <Ionicons
+                      name="log-out-outline"
+                      size={21}
+                      color="#D32F2F"
+                    />
+                  )}
+                </View>
+
+                <View
+                  style={{
+                    flex: 1,
+                  }}
+                >
+                  <Text
+                    style={
+                      styles.logoutTitle
+                    }
+                  >
+                    {loggingOut
+                      ? "Logging out..."
+                      : "Log out"}
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.logoutDescription
+                    }
+                  >
+                    Sign out of your
+                    business account
+                  </Text>
+                </View>
+
+                {!loggingOut ? (
+                  <Ionicons
+                    name="chevron-forward"
+                    size={19}
+                    color="#D32F2F"
+                  />
+                ) : null}
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -1393,7 +1470,7 @@ const styles =
 
     content: {
       paddingHorizontal: 20,
-      paddingBottom: 80,
+      paddingBottom: 110,
     },
 
     nameRow: {
@@ -1627,5 +1704,44 @@ const styles =
       fontSize: 12,
       color: "#333",
       fontWeight: "600",
+    },
+
+    accountSection: {
+      marginTop: 32,
+      paddingTop: 5,
+    },
+
+    logoutButton: {
+      minHeight: 68,
+      marginTop: 11,
+      paddingHorizontal: 14,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: "#FFD4D4",
+      backgroundColor: "#FFF8F8",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 11,
+    },
+
+    logoutIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: "#FFE8E8",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    logoutTitle: {
+      fontSize: 14,
+      fontWeight: "800",
+      color: "#D32F2F",
+    },
+
+    logoutDescription: {
+      marginTop: 2,
+      fontSize: 10.5,
+      color: "#888",
     },
   });
