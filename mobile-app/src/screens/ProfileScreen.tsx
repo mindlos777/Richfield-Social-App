@@ -488,6 +488,14 @@ export default function ProfileScreen() {
     );
   }
 
+  function openAnalytics() {
+    setMenuVisible(false);
+
+    router.push(
+      "/(student)/analytics"
+    );
+  }
+
   function createPost() {
     router.push(
       "/(student)/create-post"
@@ -1299,6 +1307,12 @@ export default function ProfileScreen() {
               icon="briefcase-outline"
               title="Portfolio"
               onPress={openPortfolio}
+            />
+
+            <MenuItem
+              icon="analytics-outline"
+              title="Analytics"
+              onPress={openAnalytics}
             />
 
             <MenuItem

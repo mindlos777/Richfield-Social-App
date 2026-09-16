@@ -701,7 +701,7 @@ export default function NetworkScreen() {
     ) => {
       router.push({
         pathname:
-          "/(tabs)/profile",
+          "/member-profile",
 
         params: {
           userId:
@@ -1383,21 +1383,25 @@ const styles =
       paddingHorizontal:
         20,
       paddingVertical:
-        15,
+        12,
       gap: 8,
+      alignItems: "center",
+      minHeight: 64,
     },
 
     filter: {
+      height: 40,
+      minWidth: 82,
       paddingHorizontal:
         16,
-      paddingVertical:
-        9,
       backgroundColor:
         "#FFFFFF",
       borderRadius: 20,
       borderWidth: 1,
       borderColor:
         "#E3E3E3",
+      alignItems: "center",
+      justifyContent: "center",
     },
 
     activeFilter: {
