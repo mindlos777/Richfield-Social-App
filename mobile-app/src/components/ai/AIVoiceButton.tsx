@@ -24,24 +24,18 @@ import {
   transcribeAudio,
 } from "../../ai/voice/SpeechToText";
 
-const PRIMARY =
-  "#0300CF";
+const PRIMARY = "#0300CF";
 
 type Props = {
-  disabled?:
-    boolean;
+  disabled?: boolean;
 
-  onTranscript:
-    (
-      transcript:
-        string
-    ) => void;
+  onTranscript: (
+    transcript: string
+  ) => void;
 
-  onError?:
-    (
-      message:
-        string
-    ) => void;
+  onError?: (
+    message: string
+  ) => void;
 };
 
 export default function AIVoiceButton({
@@ -51,48 +45,33 @@ export default function AIVoiceButton({
 }: Props) {
   const recorder =
     useAudioRecorder(
-      RecordingPresets
-        .HIGH_QUALITY
+      RecordingPresets.HIGH_QUALITY
     );
 
   const [
     recording,
     setRecording,
-  ] =
-    useState(
-      false
-    );
+  ] = useState(false);
 
   const [
     transcribing,
     setTranscribing,
-  ] =
-    useState(
-      false
-    );
+  ] = useState(false);
 
-  useEffect(
-    () => {
-      return () => {
-        void setAudioModeAsync({
-          allowsRecording:
-            false,
-
-          playsInSilentMode:
-            true,
-        });
-      };
-    },
-    []
-  );
+  useEffect(() => {
+    return () => {
+      void setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
+      });
+    };
+  }, []);
 
   function reportError(
-    error:
-      unknown
+    error: unknown
   ) {
     const message =
-      error instanceof
-      Error
+      error instanceof Error
         ? error.message
         : "Something went wrong with voice input.";
 
@@ -101,9 +80,7 @@ export default function AIVoiceButton({
       error
     );
 
-    onError?.(
-      message
-    );
+    onError?.(message);
   }
 
   async function startRecording() {
@@ -120,9 +97,7 @@ export default function AIVoiceButton({
         await AudioModule
           .requestRecordingPermissionsAsync();
 
-      if (
-        !permission.granted
-      ) {
+      if (!permission.granted) {
         onError?.(
           "Microphone permission is required to use voice input."
         );
@@ -131,11 +106,8 @@ export default function AIVoiceButton({
       }
 
       await setAudioModeAsync({
-        allowsRecording:
-          true,
-
-        playsInSilentMode:
-          true,
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
 
       await recorder
@@ -143,19 +115,11 @@ export default function AIVoiceButton({
 
       recorder.record();
 
-      setRecording(
-        true
-      );
-    } catch (
-      error
-    ) {
-      setRecording(
-        false
-      );
+      setRecording(true);
+    } catch (error) {
+      setRecording(false);
 
-      reportError(
-        error
-      );
+      reportError(error);
     }
   }
 
@@ -168,18 +132,13 @@ export default function AIVoiceButton({
     }
 
     try {
-      setRecording(
-        false
-      );
+      setRecording(false);
 
       await recorder.stop();
 
       await setAudioModeAsync({
-        allowsRecording:
-          false,
-
-        playsInSilentMode:
-          true,
+        allowsRecording: false,
+        playsInSilentMode: true,
       });
 
       const uri =
@@ -191,18 +150,13 @@ export default function AIVoiceButton({
         );
       }
 
-      setTranscribing(
-        true
-      );
+      setTranscribing(true);
 
       const result =
-        await transcribeAudio(
-          uri
-        );
+        await transcribeAudio(uri);
 
       const transcript =
-        result.text
-          .trim();
+        result.text.trim();
 
       if (!transcript) {
         throw new Error(
@@ -210,30 +164,26 @@ export default function AIVoiceButton({
         );
       }
 
+      console.log(
+        "English voice transcript:",
+        transcript
+      );
+
       onTranscript(
         transcript
       );
-    } catch (
-      error
-    ) {
-      reportError(
-        error
-      );
+    } catch (error) {
+      reportError(error);
     } finally {
-      setTranscribing(
-        false
-      );
+      setTranscribing(false);
 
       try {
         await setAudioModeAsync({
-          allowsRecording:
-            false,
-
-          playsInSilentMode:
-            true,
+          allowsRecording: false,
+          playsInSilentMode: true,
         });
       } catch {
-        // Ignore reset error.
+        // Ignore audio reset errors.
       }
     }
   }
@@ -246,9 +196,7 @@ export default function AIVoiceButton({
       return;
     }
 
-    if (
-      recording
-    ) {
+    if (recording) {
       void stopRecording();
     } else {
       void startRecording();
@@ -270,19 +218,15 @@ export default function AIVoiceButton({
         recording &&
           styles.recordingButton,
 
-        (
-          disabled ||
-          transcribing
-        ) &&
+        (disabled ||
+          transcribing) &&
           styles.disabledButton,
       ]}
     >
       {transcribing ? (
         <ActivityIndicator
           size="small"
-          color={
-            PRIMARY
-          }
+          color={PRIMARY}
         />
       ) : (
         <Ionicons
@@ -313,8 +257,7 @@ const styles =
       width: 38,
       height: 38,
 
-      borderRadius:
-        19,
+      borderRadius: 19,
 
       alignItems:
         "center",
@@ -322,11 +265,9 @@ const styles =
       justifyContent:
         "center",
 
-      marginBottom:
-        0,
+      marginBottom: 0,
 
-      marginRight:
-        2,
+      marginRight: 2,
     },
 
     recordingButton: {
@@ -335,7 +276,6 @@ const styles =
     },
 
     disabledButton: {
-      opacity:
-        0.4,
+      opacity: 0.4,
     },
   });

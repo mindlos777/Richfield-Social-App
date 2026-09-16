@@ -5,6 +5,7 @@ import React, {
 
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
   Linking,
@@ -24,10 +25,13 @@ import {
 } from "expo-router";
 
 import { Ionicons } from "@expo/vector-icons";
+
 import {
   useVideoPlayer,
   VideoView,
 } from "expo-video";
+
+import * as DocumentPicker from "expo-document-picker";
 
 import { supabase } from "../lib/supabase";
 
@@ -47,6 +51,17 @@ type ProfilePost = {
   media_type: string | null;
   visibility: string;
   created_at: string;
+};
+
+type UserCV = {
+  id: string;
+  user_id: string;
+  storage_path: string;
+  original_filename: string;
+  mime_type: string;
+  file_size: number | null;
+  uploaded_at: string;
+  updated_at: string;
 };
 
 type UserProfile = {
@@ -118,10 +133,16 @@ export default function ProfileScreen() {
   const [posts, setPosts] =
     useState<ProfilePost[]>([]);
 
+  const [cv, setCv] =
+    useState<UserCV | null>(null);
+
   const [loading, setLoading] =
     useState(true);
 
   const [refreshing, setRefreshing] =
+    useState(false);
+
+  const [cvLoading, setCvLoading] =
     useState(false);
 
   useFocusEffect(
@@ -143,12 +164,6 @@ export default function ProfileScreen() {
         return;
       }
 
-      /*
-       * First load the main profile.
-       *
-       * We need the role before deciding whether
-       * to query student_profiles or alumni_profiles.
-       */
       const {
         data: profileData,
         error: profileError,
@@ -187,14 +202,12 @@ export default function ProfileScreen() {
         );
       }
 
-      /*
-       * Shared data.
-       */
       const [
         postCountResult,
         followerResult,
         followingResult,
         postsResult,
+        cvResult,
       ] = await Promise.all([
         supabase
           .from("posts")
@@ -240,11 +253,35 @@ export default function ProfileScreen() {
           .order("created_at", {
             ascending: false,
           }),
+
+        supabase
+          .from("user_cvs")
+          .select(`
+            id,
+            user_id,
+            storage_path,
+            original_filename,
+            mime_type,
+            file_size,
+            uploaded_at,
+            updated_at
+          `)
+          .eq("user_id", user.id)
+          .maybeSingle(),
       ]);
 
-      /*
-       * Student / Alumni specific data.
-       */
+      if (cvResult.error) {
+        console.log(
+          "CV load error:",
+          cvResult.error
+        );
+      }
+
+      setCv(
+        (cvResult.data as UserCV | null) ||
+          null
+      );
+
       let programme = "";
       let campus = "";
 
@@ -391,10 +428,6 @@ export default function ProfileScreen() {
         currentJobTitle,
         alumniVerified,
 
-        /*
-         * Alumni-specific LinkedIn takes
-         * priority when it exists.
-         */
         linkedin:
           alumniLinkedin ||
           profileData.linkedin_url ||
@@ -450,6 +483,339 @@ export default function ProfileScreen() {
     await loadProfile();
 
     setRefreshing(false);
+  }
+
+  async function uploadCV() {
+    try {
+      setCvLoading(true);
+
+      const {
+        data: { user },
+        error: userError,
+      } =
+        await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        throw new Error(
+          "You must be logged in."
+        );
+      }
+
+      const result =
+        await DocumentPicker.getDocumentAsync({
+          type: "application/pdf",
+          copyToCacheDirectory: true,
+          multiple: false,
+        });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const file =
+        result.assets[0];
+
+      if (!file) {
+        return;
+      }
+
+      if (
+        file.mimeType &&
+        file.mimeType !==
+          "application/pdf"
+      ) {
+        throw new Error(
+          "Only PDF CV files are allowed."
+        );
+      }
+
+      const maxSize =
+        5 * 1024 * 1024;
+
+      if (
+        file.size &&
+        file.size > maxSize
+      ) {
+        throw new Error(
+          "Your CV must be 5 MB or smaller."
+        );
+      }
+
+      const response =
+        await fetch(file.uri);
+
+      const arrayBuffer =
+        await response.arrayBuffer();
+
+      const fileName =
+        `cv-${Date.now()}.pdf`;
+
+      const storagePath =
+        `cvs/${user.id}/${fileName}`;
+
+      const {
+        error: uploadError,
+      } = await supabase.storage
+        .from("career-documents")
+        .upload(
+          storagePath,
+          arrayBuffer,
+          {
+            contentType:
+              "application/pdf",
+            upsert: false,
+          }
+        );
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const oldStoragePath =
+        cv?.storage_path || null;
+
+      const {
+        data: savedCV,
+        error: saveError,
+      } = await supabase
+        .from("user_cvs")
+        .upsert(
+          {
+            user_id: user.id,
+
+            storage_path:
+              storagePath,
+
+            original_filename:
+              file.name || "CV.pdf",
+
+            mime_type:
+              "application/pdf",
+
+            file_size:
+              file.size || null,
+
+            uploaded_at:
+              cv?.uploaded_at ||
+              new Date().toISOString(),
+
+            updated_at:
+              new Date().toISOString(),
+          },
+          {
+            onConflict: "user_id",
+          }
+        )
+        .select()
+        .single();
+
+      if (saveError) {
+        await supabase.storage
+          .from("career-documents")
+          .remove([
+            storagePath,
+          ]);
+
+        throw saveError;
+      }
+
+      if (
+        oldStoragePath &&
+        oldStoragePath !==
+          storagePath
+      ) {
+        const {
+          error: oldFileError,
+        } = await supabase.storage
+          .from("career-documents")
+          .remove([
+            oldStoragePath,
+          ]);
+
+        if (oldFileError) {
+          console.log(
+            "Old CV cleanup error:",
+            oldFileError
+          );
+        }
+      }
+
+      setCv(
+        savedCV as UserCV
+      );
+
+      Alert.alert(
+        cv
+          ? "CV replaced"
+          : "CV uploaded",
+        cv
+          ? "Your CV has been replaced successfully."
+          : "Your CV has been added to your profile."
+      );
+    } catch (error) {
+      console.log(
+        "CV upload error:",
+        error
+      );
+
+      Alert.alert(
+        "CV upload failed",
+        error instanceof Error
+          ? error.message
+          : "Unable to upload your CV."
+      );
+    } finally {
+      setCvLoading(false);
+    }
+  }
+
+  async function viewCV() {
+    if (!cv?.storage_path) {
+      return;
+    }
+
+    try {
+      setCvLoading(true);
+
+      const {
+        data,
+        error,
+      } = await supabase.storage
+        .from("career-documents")
+        .createSignedUrl(
+          cv.storage_path,
+          60 * 10
+        );
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.signedUrl) {
+        throw new Error(
+          "Unable to open this CV."
+        );
+      }
+
+      const supported =
+        await Linking.canOpenURL(
+          data.signedUrl
+        );
+
+      if (!supported) {
+        throw new Error(
+          "Your device cannot open this CV."
+        );
+      }
+
+      await Linking.openURL(
+        data.signedUrl
+      );
+    } catch (error) {
+      console.log(
+        "Open CV error:",
+        error
+      );
+
+      Alert.alert(
+        "CV",
+        error instanceof Error
+          ? error.message
+          : "Unable to open your CV."
+      );
+    } finally {
+      setCvLoading(false);
+    }
+  }
+
+  function removeCV() {
+    if (!cv || cvLoading) {
+      return;
+    }
+
+    Alert.alert(
+      "Remove CV",
+      "Are you sure you want to remove your CV?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Remove",
+          style: "destructive",
+
+          onPress: async () => {
+            try {
+              setCvLoading(true);
+
+              const cvToRemove =
+                cv;
+
+              const {
+                error:
+                  deleteRecordError,
+              } = await supabase
+                .from("user_cvs")
+                .delete()
+                .eq(
+                  "id",
+                  cvToRemove.id
+                );
+
+              if (
+                deleteRecordError
+              ) {
+                throw deleteRecordError;
+              }
+
+              const {
+                error: storageError,
+              } =
+                await supabase.storage
+                  .from(
+                    "career-documents"
+                  )
+                  .remove([
+                    cvToRemove.storage_path,
+                  ]);
+
+              if (storageError) {
+                console.log(
+                  "CV storage cleanup error:",
+                  storageError
+                );
+              }
+
+              setCv(null);
+
+              Alert.alert(
+                "CV removed",
+                "Your CV has been removed."
+              );
+            } catch (error) {
+              console.log(
+                "Remove CV error:",
+                error
+              );
+
+              Alert.alert(
+                "CV",
+                error instanceof Error
+                  ? error.message
+                  : "Unable to remove your CV."
+              );
+            } finally {
+              setCvLoading(false);
+            }
+          },
+        },
+      ]
+    );
   }
 
   function openFollowers() {
@@ -705,6 +1071,14 @@ export default function ProfileScreen() {
                   }
                 >
                   {stats.following}
+                </Text>
+
+                <Text
+                  style={
+                    styles.statLabel
+                  }
+                >
+                  Following
                 </Text>
               </Pressable>
             </View>
@@ -1000,6 +1374,161 @@ export default function ProfileScreen() {
             </Text>
           </Pressable>
         </View>
+
+        {/* CV */}
+
+        <View style={styles.cvCard}>
+          <View style={styles.cvHeader}>
+            <View style={styles.cvIcon}>
+              <Ionicons
+                name="document-text-outline"
+                size={23}
+                color="#fff"
+              />
+            </View>
+
+            <View
+              style={
+                styles.cvContent
+              }
+            >
+              <Text
+                style={styles.cvTitle}
+              >
+                CV / Resume
+              </Text>
+
+              <Text
+                style={
+                  styles.cvSubtitle
+                }
+                numberOfLines={1}
+              >
+                {cv
+                  ? cv.original_filename
+                  : "Add your CV to your career profile"}
+              </Text>
+            </View>
+
+            {cv && (
+              <Ionicons
+                name="checkmark-circle"
+                size={21}
+                color="#15803D"
+              />
+            )}
+          </View>
+
+          {!cv && (
+            <Text
+              style={styles.cvHint}
+            >
+              PDF only · Maximum 5 MB
+            </Text>
+          )}
+
+          {cvLoading ? (
+            <View
+              style={styles.cvLoading}
+            >
+              <ActivityIndicator
+                size="small"
+                color={PRIMARY}
+              />
+
+              <Text
+                style={
+                  styles.cvLoadingText
+                }
+              >
+                Updating CV...
+              </Text>
+            </View>
+          ) : cv ? (
+            <View
+              style={styles.cvActions}
+            >
+              <Pressable
+                style={
+                  styles.cvPrimaryButton
+                }
+                onPress={viewCV}
+              >
+                <Ionicons
+                  name="eye-outline"
+                  size={17}
+                  color="#fff"
+                />
+
+                <Text
+                  style={
+                    styles.cvPrimaryButtonText
+                  }
+                >
+                  View
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={
+                  styles.cvSecondaryButton
+                }
+                onPress={uploadCV}
+              >
+                <Ionicons
+                  name="swap-horizontal-outline"
+                  size={17}
+                  color={PRIMARY}
+                />
+
+                <Text
+                  style={
+                    styles.cvSecondaryButtonText
+                  }
+                >
+                  Replace
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={
+                  styles.cvDeleteButton
+                }
+                onPress={removeCV}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={18}
+                  color="#C62828"
+                />
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              style={[
+                styles.cvPrimaryButton,
+                styles.cvUploadButton,
+              ]}
+              onPress={uploadCV}
+            >
+              <Ionicons
+                name="cloud-upload-outline"
+                size={18}
+                color="#fff"
+              />
+
+              <Text
+                style={
+                  styles.cvPrimaryButtonText
+                }
+              >
+                Upload CV
+              </Text>
+            </Pressable>
+          )}
+        </View>
+
+        {/* PORTFOLIO */}
 
         <Pressable
           style={styles.portfolioCard}
@@ -1703,6 +2232,129 @@ const styles =
       fontWeight: "700",
       fontSize: 14,
       color: "#222",
+    },
+
+    cvCard: {
+      marginHorizontal: 20,
+      marginBottom: 14,
+      padding: 16,
+      borderRadius: 14,
+      backgroundColor: "#fff",
+      borderWidth: 1,
+      borderColor: "#E7E7F3",
+    },
+
+    cvHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    cvIcon: {
+      width: 46,
+      height: 46,
+      borderRadius: 12,
+      backgroundColor: PRIMARY,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 13,
+    },
+
+    cvContent: {
+      flex: 1,
+      paddingRight: 8,
+    },
+
+    cvTitle: {
+      fontSize: 16,
+      fontWeight: "800",
+      color: "#111",
+    },
+
+    cvSubtitle: {
+      fontSize: 12,
+      color: "#666",
+      marginTop: 3,
+    },
+
+    cvHint: {
+      marginTop: 12,
+      fontSize: 11,
+      color: "#888",
+    },
+
+    cvActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: 14,
+      gap: 8,
+    },
+
+    cvPrimaryButton: {
+      minHeight: 42,
+      flex: 1,
+      borderRadius: 10,
+      backgroundColor: PRIMARY,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 7,
+      paddingHorizontal: 12,
+    },
+
+    cvUploadButton: {
+      flex: 0,
+      marginTop: 14,
+      alignSelf: "stretch",
+    },
+
+    cvPrimaryButtonText: {
+      color: "#fff",
+      fontSize: 12,
+      fontWeight: "800",
+    },
+
+    cvSecondaryButton: {
+      minHeight: 42,
+      flex: 1,
+      borderRadius: 10,
+      backgroundColor: "#F1F1FF",
+      borderWidth: 1,
+      borderColor: "#DCDCFF",
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 7,
+      paddingHorizontal: 12,
+    },
+
+    cvSecondaryButtonText: {
+      color: PRIMARY,
+      fontSize: 12,
+      fontWeight: "800",
+    },
+
+    cvDeleteButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 10,
+      backgroundColor: "#FFF1F1",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    cvLoading: {
+      minHeight: 42,
+      marginTop: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+    },
+
+    cvLoadingText: {
+      color: "#666",
+      fontSize: 12,
+      fontWeight: "600",
     },
 
     portfolioCard: {

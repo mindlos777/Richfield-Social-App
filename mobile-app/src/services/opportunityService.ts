@@ -67,6 +67,37 @@ function normalizeArray(
     .filter(Boolean);
 }
 
+function uniqueStrings(
+  values: string[]
+) {
+  const seen =
+    new Set<string>();
+
+  return values.filter(
+    value => {
+      const cleaned =
+        value.trim();
+
+      if (!cleaned) {
+        return false;
+      }
+
+      const key =
+        cleaned.toLowerCase();
+
+      if (
+        seen.has(key)
+      ) {
+        return false;
+      }
+
+      seen.add(key);
+
+      return true;
+    }
+  );
+}
+
 function programmeMatches(
   programme: string,
   keywords: string[]
@@ -78,14 +109,25 @@ function programmeMatches(
     return false;
   }
 
-  return keywords.some(keyword => {
-    const value = normalize(keyword);
+  return keywords.some(
+    keyword => {
+      const value =
+        normalize(keyword);
 
-    return (
-      userProgramme.includes(value) ||
-      value.includes(userProgramme)
-    );
-  });
+      if (!value) {
+        return false;
+      }
+
+      return (
+        userProgramme.includes(
+          value
+        ) ||
+        value.includes(
+          userProgramme
+        )
+      );
+    }
+  );
 }
 
 export function calculateOpportunityMatch(
@@ -93,7 +135,9 @@ export function calculateOpportunityMatch(
   student: StudentCareerProfile
 ) {
   const studentSkills =
-    normalizeArray(student.skills);
+    normalizeArray(
+      student.skills
+    );
 
   const requiredSkills =
     normalizeArray(
@@ -106,23 +150,35 @@ export function calculateOpportunityMatch(
     );
 
   const matchedSkills =
-    requiredSkills.filter(skill =>
-      studentSkills.some(userSkill => {
-        return (
-          userSkill === skill ||
-          userSkill.includes(skill) ||
-          skill.includes(userSkill)
-        );
-      })
+    requiredSkills.filter(
+      skill =>
+        studentSkills.some(
+          userSkill => {
+            return (
+              userSkill ===
+                skill ||
+              userSkill.includes(
+                skill
+              ) ||
+              skill.includes(
+                userSkill
+              )
+            );
+          }
+        )
     );
 
   let score = 0;
 
-  const reasons: string[] = [];
+  const reasons: string[] =
+    [];
 
   // ================= SKILLS =================
 
-  if (requiredSkills.length > 0) {
+  if (
+    requiredSkills.length >
+    0
+  ) {
     const skillPercentage =
       matchedSkills.length /
       requiredSkills.length;
@@ -130,17 +186,22 @@ export function calculateOpportunityMatch(
     score +=
       skillPercentage * 70;
 
-    if (matchedSkills.length > 0) {
+    if (
+      matchedSkills.length >
+      0
+    ) {
       reasons.push(
-        `${matchedSkills.length} matching ${
-          matchedSkills.length === 1
+        `${
+          matchedSkills.length
+        } matching ${
+          matchedSkills.length ===
+          1
             ? "skill"
             : "skills"
         }`
       );
     }
   } else {
-    // No specific skills requested
     score += 35;
   }
 
@@ -152,8 +213,13 @@ export function calculateOpportunityMatch(
       programmeKeywords
     );
 
-  if (programmeKeywords.length > 0) {
-    if (programmeMatch) {
+  if (
+    programmeKeywords.length >
+    0
+  ) {
+    if (
+      programmeMatch
+    ) {
       score += 30;
 
       reasons.push(
@@ -181,11 +247,16 @@ export function calculateOpportunityMatch(
     );
 
   const interestMatch =
-    interests.some(interest =>
-      searchableText.includes(interest)
+    interests.some(
+      interest =>
+        searchableText.includes(
+          interest
+        )
     );
 
-  if (interestMatch) {
+  if (
+    interestMatch
+  ) {
     score += 5;
 
     reasons.push(
@@ -198,7 +269,9 @@ export function calculateOpportunityMatch(
     100
   );
 
-  if (reasons.length === 0) {
+  if (
+    reasons.length === 0
+  ) {
     reasons.push(
       "Explore this opportunity"
     );
@@ -211,6 +284,17 @@ export function calculateOpportunityMatch(
   };
 }
 
+// =====================================================
+// CURRENT USER CAREER PROFILE
+//
+// Kept as getStudentCareerProfile so the existing
+// OpportunitiesScreen does not need to change.
+//
+// Supports:
+// - Student
+// - Alumni
+// =====================================================
+
 export async function getStudentCareerProfile(): Promise<StudentCareerProfile> {
   const {
     data: authData,
@@ -218,67 +302,310 @@ export async function getStudentCareerProfile(): Promise<StudentCareerProfile> {
   } =
     await supabase.auth.getUser();
 
-  if (authError) {
+  if (
+    authError
+  ) {
     throw authError;
   }
 
   const user =
     authData.user;
 
-  if (!user) {
+  if (
+    !user
+  ) {
     throw new Error(
       "You must be signed in."
     );
   }
 
+  // ================= USER ROLE =================
+
   const {
-    data,
-    error,
+    data: profile,
+    error: profileError,
   } =
     await supabase
-      .from("student_profiles")
+      .from("profiles")
+      .select(
+        `
+        id,
+        role,
+        status
+        `
+      )
+      .eq(
+        "id",
+        user.id
+      )
+      .maybeSingle();
+
+  if (
+    profileError
+  ) {
+    throw profileError;
+  }
+
+  if (
+    !profile
+  ) {
+    throw new Error(
+      "Your Richfield profile could not be found."
+    );
+  }
+
+  if (
+    profile.status !==
+    "active"
+  ) {
+    throw new Error(
+      "Your account is not currently active."
+    );
+  }
+
+  if (
+    profile.role !==
+      "student" &&
+    profile.role !==
+      "alumni"
+  ) {
+    throw new Error(
+      "Career opportunities are available to students and alumni."
+    );
+  }
+
+  // =====================================================
+  // STUDENT
+  // =====================================================
+
+  if (
+    profile.role ===
+    "student"
+  ) {
+    const {
+      data:
+        studentProfile,
+      error:
+        studentError,
+    } =
+      await supabase
+        .from(
+          "student_profiles"
+        )
+        .select(
+          `
+          programme,
+          skills,
+          career_interests
+          `
+        )
+        .eq(
+          "user_id",
+          user.id
+        )
+        .maybeSingle();
+
+    if (
+      studentError
+    ) {
+      throw studentError;
+    }
+
+    if (
+      !studentProfile
+    ) {
+      console.log(
+        "Student profile row not found:",
+        user.id
+      );
+
+      return {
+        userId:
+          user.id,
+
+        programme:
+          "",
+
+        skills:
+          [],
+
+        careerInterests:
+          [],
+      };
+    }
+
+    return {
+      userId:
+        user.id,
+
+      programme:
+        studentProfile.programme ||
+        "",
+
+      skills:
+        Array.isArray(
+          studentProfile.skills
+        )
+          ? studentProfile.skills
+          : [],
+
+      careerInterests:
+        Array.isArray(
+          studentProfile.career_interests
+        )
+          ? studentProfile.career_interests
+          : [],
+    };
+  }
+
+  // =====================================================
+  // ALUMNI
+  // =====================================================
+
+  const {
+    data: alumniProfile,
+    error: alumniError,
+  } =
+    await supabase
+      .from(
+        "alumni_profiles"
+      )
       .select(
         `
         programme,
-        skills,
-        career_interests
+        current_company,
+        current_job_title
         `
       )
-      .eq("user_id", user.id)
-      .single();
+      .eq(
+        "user_id",
+        user.id
+      )
+      .maybeSingle();
 
-  if (error) {
-    throw error;
+  if (
+    alumniError
+  ) {
+    throw alumniError;
   }
 
+  // =====================================================
+  // ALUMNI PORTFOLIO SKILLS
+  //
+  // Alumni profiles do not currently have a dedicated
+  // skills column, so portfolio skills are used for
+  // opportunity matching.
+  // =====================================================
+
+  const {
+    data:
+      portfolioRows,
+    error:
+      portfolioError,
+  } =
+    await supabase
+      .from(
+        "portfolio_items"
+      )
+      .select(
+        "skills"
+      )
+      .eq(
+        "user_id",
+        user.id
+      );
+
+  if (
+    portfolioError
+  ) {
+    console.log(
+      "Alumni portfolio skills error:",
+      portfolioError
+    );
+  }
+
+  const portfolioSkills =
+    (
+      portfolioRows ||
+      []
+    ).flatMap(
+      item =>
+        Array.isArray(
+          item.skills
+        )
+          ? item.skills
+          : []
+    );
+
+  // =====================================================
+  // ALUMNI CAREER INTERESTS
+  //
+  // We can safely use their current role/company as
+  // additional matching context without requiring
+  // student_profiles.
+  // =====================================================
+
+  const alumniCareerContext =
+    [
+      alumniProfile
+        ?.current_job_title,
+
+      alumniProfile
+        ?.current_company,
+    ].filter(
+      (
+        value
+      ): value is string =>
+        Boolean(
+          value?.trim()
+        )
+    );
+
   return {
-    userId: user.id,
+    userId:
+      user.id,
 
     programme:
-      data?.programme || "",
+      alumniProfile
+        ?.programme ||
+      "",
 
     skills:
-      data?.skills || [],
+      uniqueStrings(
+        portfolioSkills
+      ),
 
     careerInterests:
-      data?.career_interests || [],
+      uniqueStrings(
+        alumniCareerContext
+      ),
   };
 }
 
+// =====================================================
+// APPROVED OPPORTUNITIES
+// =====================================================
+
 export async function getApprovedOpportunities(
   student: StudentCareerProfile
-): Promise<Opportunity[]> {
+): Promise<
+  Opportunity[]
+> {
   const today =
     new Date()
       .toISOString()
-      .split("T")[0];
+      .split(
+        "T"
+      )[0];
 
   const {
     data,
     error,
   } =
     await supabase
-      .from("opportunities")
+      .from(
+        "opportunities"
+      )
       .select(
         `
         id,
@@ -296,43 +623,59 @@ export async function getApprovedOpportunities(
         created_at
         `
       )
-      .eq("status", "approved")
+      .eq(
+        "status",
+        "approved"
+      )
       .or(
         `closing_date.is.null,closing_date.gte.${today}`
       )
       .order(
         "created_at",
         {
-          ascending: false,
+          ascending:
+            false,
         }
       );
 
-  if (error) {
+  if (
+    error
+  ) {
     throw error;
   }
 
   const rows =
     data || [];
 
-  const businessIds = [
-    ...new Set(
-      rows
-        .map(item =>
-          item.business_id
-        )
-        .filter(Boolean)
-    ),
-  ];
+  const businessIds =
+    [
+      ...new Set(
+        rows
+          .map(
+            item =>
+              item.business_id
+          )
+          .filter(
+            Boolean
+          )
+      ),
+    ];
 
   let businessMap:
-    Record<string, string> = {};
+    Record<
+      string,
+      string
+    > = {};
 
   if (
-    businessIds.length > 0
+    businessIds.length >
+    0
   ) {
     const {
-      data: businesses,
-      error: businessError,
+      data:
+        businesses,
+      error:
+        businessError,
     } =
       await supabase
         .from(
@@ -360,7 +703,8 @@ export async function getApprovedOpportunities(
 
     businessMap =
       (
-        businesses || []
+        businesses ||
+        []
       ).reduce(
         (
           accumulator,
@@ -369,7 +713,8 @@ export async function getApprovedOpportunities(
           accumulator[
             business.user_id
           ] =
-            business.organisation_name ||
+            business
+              .organisation_name ||
             "Company";
 
           return accumulator;
@@ -382,43 +727,48 @@ export async function getApprovedOpportunities(
   }
 
   const opportunities =
-    rows.map(item => {
-      const match =
-        calculateOpportunityMatch(
-          item,
-          student
-        );
+    rows.map(
+      item => {
+        const match =
+          calculateOpportunityMatch(
+            item,
+            student
+          );
 
-      return {
-        ...item,
+        return {
+          ...item,
 
-        company_name:
-          businessMap[
-            item.business_id
-          ] ||
-          "Organisation",
+          company_name:
+            businessMap[
+              item.business_id
+            ] ||
+            "Organisation",
 
-        required_skills:
-          item.required_skills ||
-          [],
+          required_skills:
+            item.required_skills ||
+            [],
 
-        programme_keywords:
-          item.programme_keywords ||
-          [],
+          programme_keywords:
+            item.programme_keywords ||
+            [],
 
-        matchScore:
-          match.score,
+          matchScore:
+            match.score,
 
-        matchedSkills:
-          match.matchedSkills,
+          matchedSkills:
+            match.matchedSkills,
 
-        matchReasons:
-          match.reasons,
-      } as Opportunity;
-    });
+          matchReasons:
+            match.reasons,
+        } as Opportunity;
+      }
+    );
 
   return opportunities.sort(
-    (a, b) =>
+    (
+      a,
+      b
+    ) =>
       b.matchScore -
       a.matchScore
   );

@@ -24,7 +24,6 @@ export type VoiceUsage = {
 
 export type TranscriptionResult = {
   text: string;
-
   voiceUsage: VoiceUsage;
 };
 
@@ -107,8 +106,7 @@ export async function transcribeAudio(
   }
 
   if (
-    audioFile.size !==
-      null &&
+    audioFile.size !== null &&
     audioFile.size <= 0
   ) {
     throw new Error(
@@ -140,23 +138,27 @@ export async function transcribeAudio(
   const formData =
     new FormData();
 
-  /*
-   * This is the important fix.
-   *
-   * expo/fetch supports an Expo File object
-   * as a FormData part.
-   */
-
   formData.append(
     "audio",
     audioFile
+  );
+
+  /*
+   * Force English transcription.
+   *
+   * The Edge Function should read this value and
+   * pass it to the transcription API.
+   */
+  formData.append(
+    "language",
+    "en"
   );
 
   const functionUrl =
     `${supabaseUrl}/functions/v1/ai-transcribe`;
 
   console.log(
-    "Sending voice recording to AI transcription..."
+    "Sending English voice recording to AI transcription..."
   );
 
   try {
@@ -176,15 +178,6 @@ export async function transcribeAudio(
 
             Accept:
               "application/json",
-
-            /*
-             * Do not manually set Content-Type.
-             *
-             * expo/fetch will generate:
-             *
-             * multipart/form-data;
-             * boundary=...
-             */
           },
 
           body:
@@ -245,9 +238,7 @@ export async function transcribeAudio(
       );
     }
 
-    if (
-      body?.error
-    ) {
+    if (body?.error) {
       throw new Error(
         body?.message ||
           body.error
@@ -270,12 +261,16 @@ export async function transcribeAudio(
       );
     }
 
+    console.log(
+      "Voice transcript:",
+      text
+    );
+
     return {
       text,
 
       voiceUsage:
-        body
-          ?.voiceUsage || {
+        body?.voiceUsage || {
           used: 0,
           limit: 0,
           remaining: 0,
@@ -290,8 +285,7 @@ export async function transcribeAudio(
     );
 
     if (
-      error instanceof
-        Error
+      error instanceof Error
     ) {
       throw error;
     }

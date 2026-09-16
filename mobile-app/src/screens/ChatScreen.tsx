@@ -21,29 +21,25 @@ import {
   View,
 } from "react-native";
 
-import {
-  SafeAreaView,
-} from "react-native-safe-area-context";
-
-import {
-  Ionicons,
-} from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 
 import {
   useFocusEffect,
   useRouter,
 } from "expo-router";
 
-import {
-  supabase,
-} from "../lib/supabase";
+import { supabase } from "../lib/supabase";
 
 import {
+  archiveConversation,
   Conversation,
+  hideConversation,
   labelMentor,
   loadConversations,
   loadRequests,
   removeMentorLabel,
+  unarchiveConversation,
 } from "../services/ChatService";
 
 const PRIMARY = "#0300cf";
@@ -51,8 +47,13 @@ const PRIMARY = "#0300cf";
 type UserRole =
   | "student"
   | "alumni"
+  | "staff"
   | "business"
   | "admin";
+
+type FilterType =
+  | "active"
+  | "archived";
 
 function getRoleLabel(
   role: UserRole
@@ -63,6 +64,9 @@ function getRoleLabel(
 
     case "alumni":
       return "Alumni";
+
+    case "staff":
+      return "Staff";
 
     case "business":
       return "Business";
@@ -85,6 +89,9 @@ function getRoleIcon(
     case "alumni":
       return "ribbon-outline";
 
+    case "staff":
+      return "people-outline";
+
     case "business":
       return "briefcase-outline";
 
@@ -97,9 +104,7 @@ function getRoleIcon(
 }
 
 function formatMessageTime(
-  dateString:
-    | string
-    | null
+  dateString: string | null
 ) {
   if (!dateString) {
     return "";
@@ -148,11 +153,10 @@ function formatMessageTime(
     return "Yesterday";
   }
 
-  const sameYear =
+  if (
     date.getFullYear() ===
-    now.getFullYear();
-
-  if (sameYear) {
+    now.getFullYear()
+  ) {
     return date.toLocaleDateString(
       [],
       {
@@ -173,134 +177,27 @@ function formatMessageTime(
 }
 
 function getInitials(
-  name: string
+  name: string | null
 ) {
-  const parts =
-    name
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
+  const value =
+    name?.trim() || "";
 
-  if (
-    parts.length === 0
-  ) {
+  if (!value) {
     return "?";
   }
 
-  if (
-    parts.length === 1
-  ) {
-    return parts[0]
-      .charAt(0)
-      .toUpperCase();
-  }
-
-  return `${parts[0]
-    .charAt(0)
-    .toUpperCase()}${parts[
-    parts.length - 1
-  ]
-    .charAt(0)
-    .toUpperCase()}`;
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) =>
+      part
+        .charAt(0)
+        .toUpperCase()
+    )
+    .join("");
 }
 
-function renderAIAssistant(
-  router: ReturnType<typeof useRouter>
-) {
-  return (
-    <Pressable
-      style={
-        styles.aiCard
-      }
-      onPress={() =>
-        router.push(
-          "/ai-assistant"
-        )
-      }
-    >
-      <View
-        style={
-          styles.aiCardIcon
-        }
-      >
-        <Ionicons
-          name="sparkles"
-          size={23}
-          color="#fff"
-        />
-      </View>
-
-      <View
-        style={
-          styles.aiCardInfo
-        }
-      >
-        <View
-          style={
-            styles.aiCardTitleRow
-          }
-        >
-          <Text
-            style={
-              styles.aiCardTitle
-            }
-          >
-            Richfield AI
-          </Text>
-
-          <View
-            style={
-              styles.aiCardBadge
-            }
-          >
-            <Text
-              style={
-                styles.aiCardBadgeText
-              }
-            >
-              AI
-            </Text>
-          </View>
-        </View>
-
-        <Text
-          style={
-            styles.aiCardSubtitle
-          }
-          numberOfLines={1}
-        >
-          Career, profile and networking assistant
-        </Text>
-
-        <View
-          style={
-            styles.aiPrivateRow
-          }
-        >
-          <Ionicons
-            name="lock-closed-outline"
-            size={10}
-            color="#7A848D"
-          />
-
-          <Text
-            style={
-              styles.aiPrivateText
-            }
-          >
-            Private conversation
-          </Text>
-        </View>
-      </View>
-
-      <Ionicons
-        name="chevron-forward"
-        size={19}
-        color="#89929B"
-      />
-    </Pressable>
-  );
-}
 export default function ChatScreen() {
   const router =
     useRouter();
@@ -309,17 +206,19 @@ export default function ChatScreen() {
     useState("");
 
   const [
-    chats,
-    setChats,
+    selectedFilter,
+    setSelectedFilter,
   ] =
-    useState<
-      Conversation[]
-    >([]);
+    useState<FilterType>(
+      "active"
+    );
 
-  const [
-    loading,
-    setLoading,
-  ] =
+  const [chats, setChats] =
+    useState<Conversation[]>(
+      []
+    );
+
+  const [loading, setLoading] =
     useState(true);
 
   const [
@@ -338,9 +237,9 @@ export default function ChatScreen() {
     selectedChat,
     setSelectedChat,
   ] =
-    useState<
-      Conversation | null
-    >(null);
+    useState<Conversation | null>(
+      null
+    );
 
   const [
     optionsVisible,
@@ -349,8 +248,8 @@ export default function ChatScreen() {
     useState(false);
 
   const [
-    updatingMentor,
-    setUpdatingMentor,
+    processingOption,
+    setProcessingOption,
   ] =
     useState(false);
 
@@ -386,9 +285,7 @@ export default function ChatScreen() {
           }
         } finally {
           if (showLoading) {
-            setLoading(
-              false
-            );
+            setLoading(false);
           }
         }
       },
@@ -403,7 +300,8 @@ export default function ChatScreen() {
             await loadRequests();
 
           setRequestCount(
-            requests.length
+            requests?.length ||
+              0
           );
         } catch (error) {
           console.log(
@@ -419,18 +317,14 @@ export default function ChatScreen() {
     useCallback(
       async () => {
         try {
-          setRefreshing(
-            true
-          );
+          setRefreshing(true);
 
           await Promise.all([
             fetchChats(false),
             fetchRequestCount(),
           ]);
         } finally {
-          setRefreshing(
-            false
-          );
+          setRefreshing(false);
         }
       },
       [
@@ -452,18 +346,6 @@ export default function ChatScreen() {
   );
 
   useEffect(() => {
-    /*
-      IMPORTANT:
-
-      These realtime subscriptions
-      use Postgres Changes.
-
-      For them to work, "messages"
-      and "message_requests" must be
-      included in the
-      supabase_realtime publication.
-    */
-
     const messagesChannel =
       supabase
         .channel(
@@ -476,23 +358,11 @@ export default function ChatScreen() {
             schema: "public",
             table: "messages",
           },
-          payload => {
-            console.log(
-              "Chat list realtime message:",
-              payload.eventType
-            );
-
+          () => {
             fetchChats(false);
           }
         )
-        .subscribe(
-          status => {
-            console.log(
-              "Chat messages realtime:",
-              status
-            );
-          }
-        );
+        .subscribe();
 
     const requestsChannel =
       supabase
@@ -507,23 +377,68 @@ export default function ChatScreen() {
             table:
               "message_requests",
           },
-          payload => {
-            console.log(
-              "Requests realtime:",
-              payload.eventType
-            );
-
+          () => {
             fetchRequestCount();
           }
         )
-        .subscribe(
-          status => {
-            console.log(
-              "Chat requests realtime:",
-              status
-            );
+        .subscribe();
+
+    const membersChannel =
+      supabase
+        .channel(
+          "chat-screen-members"
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table:
+              "conversation_members",
+          },
+          () => {
+            fetchChats(false);
           }
-        );
+        )
+        .subscribe();
+
+    const settingsChannel =
+      supabase
+        .channel(
+          "chat-screen-settings"
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table:
+              "conversation_user_settings",
+          },
+          () => {
+            fetchChats(false);
+          }
+        )
+        .subscribe();
+
+    const blockChannel =
+      supabase
+        .channel(
+          "chat-screen-blocks"
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table:
+              "blocked_users",
+          },
+          () => {
+            fetchChats(false);
+          }
+        )
+        .subscribe();
 
     return () => {
       supabase.removeChannel(
@@ -533,11 +448,43 @@ export default function ChatScreen() {
       supabase.removeChannel(
         requestsChannel
       );
+
+      supabase.removeChannel(
+        membersChannel
+      );
+
+      supabase.removeChannel(
+        settingsChannel
+      );
+
+      supabase.removeChannel(
+        blockChannel
+      );
     };
   }, [
     fetchChats,
     fetchRequestCount,
   ]);
+
+  const activeCount =
+    useMemo(
+      () =>
+        chats.filter(
+          (chat) =>
+            !chat.archived
+        ).length,
+      [chats]
+    );
+
+  const archivedCount =
+    useMemo(
+      () =>
+        chats.filter(
+          (chat) =>
+            chat.archived
+        ).length,
+      [chats]
+    );
 
   const filteredChats =
     useMemo(() => {
@@ -546,12 +493,22 @@ export default function ChatScreen() {
           .trim()
           .toLowerCase();
 
-      if (!value) {
-        return chats;
-      }
-
       return chats.filter(
-        chat => {
+        (chat) => {
+          const correctFolder =
+            selectedFilter ===
+            "archived"
+              ? chat.archived
+              : !chat.archived;
+
+          if (!correctFolder) {
+            return false;
+          }
+
+          if (!value) {
+            return true;
+          }
+
           const name =
             chat.full_name
               ?.toLowerCase() ||
@@ -567,42 +524,34 @@ export default function ChatScreen() {
               ?.toLowerCase() ||
             "";
 
-          const lastMessage =
+          const message =
             chat.last_message
               ?.toLowerCase() ||
             "";
 
           return (
-            name.includes(
-              value
-            ) ||
+            name.includes(value) ||
             username.includes(
               value
             ) ||
-            role.includes(
-              value
-            ) ||
-            lastMessage.includes(
+            role.includes(value) ||
+            message.includes(
               value
             )
           );
         }
       );
     }, [
-      search,
       chats,
+      search,
+      selectedFilter,
     ]);
 
   function openConversation(
     chat: Conversation
   ) {
-    setOptionsVisible(
-      false
-    );
-
-    setSelectedChat(
-      null
-    );
+    setOptionsVisible(false);
+    setSelectedChat(null);
 
     router.push({
       pathname:
@@ -612,27 +561,33 @@ export default function ChatScreen() {
         id:
           chat.conversation_id,
 
+        conversationId:
+          chat.conversation_id,
+
         userId:
           chat.user_id,
 
+        otherUserId:
+          chat.user_id,
+
         name:
-          chat.full_name,
+          chat.full_name ||
+          "Richfield Member",
 
         username:
-          chat.username ||
-          "",
+          chat.username || "",
 
         image:
-          chat.avatar_url ||
-          "",
+          chat.avatar_url || "",
+
+        role:
+          chat.role ||
+          "student",
 
         online:
           chat.online
             ? "true"
             : "false",
-
-        role:
-          chat.role,
 
         isMentor:
           chat.is_mentor
@@ -649,35 +604,163 @@ export default function ChatScreen() {
 
   function openRequests() {
     router.push(
-      "/(student)/requests"
+      "/requests"
     );
   }
 
-  function openChatOptions(
+  function openOptions(
     chat: Conversation
   ) {
-    setSelectedChat(
-      chat
-    );
-
-    setOptionsVisible(
-      true
-    );
+    setSelectedChat(chat);
+    setOptionsVisible(true);
   }
 
   function closeOptions() {
+    if (processingOption) {
+      return;
+    }
+
+    setOptionsVisible(false);
+    setSelectedChat(null);
+  }
+
+  async function handleArchive() {
     if (
-      updatingMentor
+      !selectedChat ||
+      processingOption
     ) {
       return;
     }
 
-    setOptionsVisible(
-      false
-    );
+    try {
+      setProcessingOption(true);
 
-    setSelectedChat(
-      null
+      if (
+        selectedChat.archived
+      ) {
+        await unarchiveConversation(
+          selectedChat.conversation_id
+        );
+      } else {
+        await archiveConversation(
+          selectedChat.conversation_id
+        );
+      }
+
+      const conversationId =
+        selectedChat.conversation_id;
+
+      const newArchived =
+        !selectedChat.archived;
+
+      setChats(
+        (current) =>
+          current.map(
+            (chat) =>
+              chat.conversation_id ===
+              conversationId
+                ? {
+                    ...chat,
+                    archived:
+                      newArchived,
+                  }
+                : chat
+          )
+      );
+
+      setOptionsVisible(false);
+      setSelectedChat(null);
+    } catch (error) {
+      console.log(
+        "Archive error:",
+        error
+      );
+
+      Alert.alert(
+        "Conversation",
+        error instanceof Error
+          ? error.message
+          : "Unable to update this conversation."
+      );
+    } finally {
+      setProcessingOption(false);
+    }
+  }
+
+  function handleDeleteFromChats() {
+    if (
+      !selectedChat ||
+      processingOption
+    ) {
+      return;
+    }
+
+    const chat =
+      selectedChat;
+
+    Alert.alert(
+      "Delete from my chats?",
+      `This will remove your conversation with ${
+        chat.full_name ||
+        "this member"
+      } from your chat list. It will not delete it for the other person.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style:
+            "destructive",
+
+          onPress:
+            async () => {
+              try {
+                setProcessingOption(
+                  true
+                );
+
+                await hideConversation(
+                  chat.conversation_id
+                );
+
+                setChats(
+                  (current) =>
+                    current.filter(
+                      (item) =>
+                        item.conversation_id !==
+                        chat.conversation_id
+                    )
+                );
+
+                setOptionsVisible(
+                  false
+                );
+
+                setSelectedChat(
+                  null
+                );
+              } catch (error) {
+                console.log(
+                  "Hide conversation error:",
+                  error
+                );
+
+                Alert.alert(
+                  "Delete chat",
+                  error instanceof Error
+                    ? error.message
+                    : "Unable to remove this conversation."
+                );
+              } finally {
+                setProcessingOption(
+                  false
+                );
+              }
+            },
+        },
+      ]
     );
   }
 
@@ -686,13 +769,13 @@ export default function ChatScreen() {
       !selectedChat ||
       selectedChat.role !==
         "alumni" ||
-      updatingMentor
+      processingOption
     ) {
       return;
     }
 
     try {
-      setUpdatingMentor(
+      setProcessingOption(
         true
       );
 
@@ -711,12 +794,15 @@ export default function ChatScreen() {
       const newValue =
         !selectedChat.is_mentor;
 
+      const conversationId =
+        selectedChat.conversation_id;
+
       setChats(
-        currentChats =>
-          currentChats.map(
-            chat =>
+        (current) =>
+          current.map(
+            (chat) =>
               chat.conversation_id ===
-              selectedChat.conversation_id
+              conversationId
                 ? {
                     ...chat,
                     is_mentor:
@@ -726,22 +812,11 @@ export default function ChatScreen() {
           )
       );
 
-      setSelectedChat({
-        ...selectedChat,
-        is_mentor:
-          newValue,
-      });
-
-      setOptionsVisible(
-        false
-      );
-
-      setSelectedChat(
-        null
-      );
+      setOptionsVisible(false);
+      setSelectedChat(null);
     } catch (error) {
       console.log(
-        "Mentor update error:",
+        "Mentor error:",
         error
       );
 
@@ -752,7 +827,7 @@ export default function ChatScreen() {
           : "Unable to update mentor."
       );
     } finally {
-      setUpdatingMentor(
+      setProcessingOption(
         false
       );
     }
@@ -761,18 +836,14 @@ export default function ChatScreen() {
   function renderAvatar(
     chat: Conversation
   ) {
-    if (
-      chat.avatar_url
-    ) {
+    if (chat.avatar_url) {
       return (
         <Image
           source={{
             uri:
               chat.avatar_url,
           }}
-          style={
-            styles.avatar
-          }
+          style={styles.avatar}
         />
       );
     }
@@ -802,24 +873,27 @@ export default function ChatScreen() {
   }: {
     item: Conversation;
   }) => {
-    const unreadCount =
+    const unread =
       Number(
         item.unread_count
       ) || 0;
 
     const hasUnread =
-      unreadCount > 0;
+      unread > 0;
+
+    const role =
+      (item.role ||
+        "student") as UserRole;
 
     return (
       <TouchableOpacity
-        style={
-          styles.chatItem
-        }
+        style={styles.chatItem}
         activeOpacity={0.7}
         onPress={() =>
-          openConversation(
-            item
-          )
+          openConversation(item)
+        }
+        onLongPress={() =>
+          openOptions(item)
         }
       >
         <View
@@ -827,9 +901,7 @@ export default function ChatScreen() {
             styles.avatarContainer
           }
         >
-          {renderAvatar(
-            item
-          )}
+          {renderAvatar(item)}
 
           {item.online &&
             !item.blocked && (
@@ -863,13 +935,10 @@ export default function ChatScreen() {
                   hasUnread &&
                     styles.unreadName,
                 ]}
-                numberOfLines={
-                  1
-                }
+                numberOfLines={1}
               >
-                {
-                  item.full_name
-                }
+                {item.full_name ||
+                  "Richfield Member"}
               </Text>
 
               {item.is_mentor && (
@@ -901,27 +970,13 @@ export default function ChatScreen() {
             }
           >
             <View
-              style={[
-                styles.roleBadge,
-
-                item.role ===
-                  "alumni" &&
-                  styles.alumniBadge,
-
-                item.role ===
-                  "business" &&
-                  styles.businessBadge,
-
-                item.role ===
-                  "admin" &&
-                  styles.adminBadge,
-              ]}
+              style={
+                styles.roleBadge
+              }
             >
               <Ionicons
                 name={
-                  getRoleIcon(
-                    item.role as UserRole
-                  )
+                  getRoleIcon(role)
                 }
                 size={11}
                 color="#555"
@@ -932,9 +987,7 @@ export default function ChatScreen() {
                   styles.roleText
                 }
               >
-                {getRoleLabel(
-                  item.role as UserRole
-                )}
+                {getRoleLabel(role)}
               </Text>
             </View>
 
@@ -968,7 +1021,7 @@ export default function ChatScreen() {
 
                 <Text
                   style={
-                    styles.blockedBadgeText
+                    styles.blockedText
                   }
                 >
                   Blocked
@@ -988,16 +1041,11 @@ export default function ChatScreen() {
 
                 hasUnread &&
                   styles.unreadMessage,
-
-                item.blocked &&
-                  styles.blockedMessage,
               ]}
-              numberOfLines={
-                1
-              }
+              numberOfLines={1}
             >
               {item.blocked
-                ? "You blocked this user"
+                ? "Messaging unavailable"
                 : item.last_message ||
                   "Start the conversation"}
             </Text>
@@ -1014,10 +1062,9 @@ export default function ChatScreen() {
                       styles.unreadText
                     }
                   >
-                    {unreadCount >
-                    99
+                    {unread > 99
                       ? "99+"
-                      : unreadCount}
+                      : unread}
                   </Text>
                 </View>
               )}
@@ -1027,12 +1074,9 @@ export default function ChatScreen() {
               style={
                 styles.moreButton
               }
-              onPress={event => {
+              onPress={(event) => {
                 event.stopPropagation();
-
-                openChatOptions(
-                  item
-                );
+                openOptions(item);
               }}
             >
               <Ionicons
@@ -1049,29 +1093,21 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView
-      style={
-        styles.safeArea
-      }
+      style={styles.safeArea}
     >
       <StatusBar
         barStyle="dark-content"
       />
 
       <View
-        style={
-          styles.container
-        }
+        style={styles.container}
       >
         <View
-          style={
-            styles.header
-          }
+          style={styles.header}
         >
           <View>
             <Text
-              style={
-                styles.title
-              }
+              style={styles.title}
             >
               Messages
             </Text>
@@ -1094,7 +1130,6 @@ export default function ChatScreen() {
               style={
                 styles.requestsButton
               }
-              activeOpacity={0.7}
               onPress={
                 openRequests
               }
@@ -1130,19 +1165,12 @@ export default function ChatScreen() {
               style={
                 styles.newButton
               }
-              activeOpacity={0.8}
-              onPress={() => {
-                /*
-                  We will connect this
-                  to user discovery /
-                  new message requests
-                  next.
-                */
+              onPress={() =>
                 Alert.alert(
                   "New conversation",
-                  "Student and alumni discovery will be connected here next."
-                );
-              }}
+                  "Open a member profile to send a connection request."
+                )
+              }
             >
               <Ionicons
                 name="create-outline"
@@ -1170,7 +1198,7 @@ export default function ChatScreen() {
               setSearch
             }
             placeholder="Search messages"
-            placeholderTextColor="#8b8b96"
+            placeholderTextColor="#8B8B96"
             style={
               styles.searchInput
             }
@@ -1179,7 +1207,6 @@ export default function ChatScreen() {
           {search.length >
             0 && (
             <Pressable
-              hitSlop={10}
               onPress={() =>
                 setSearch("")
               }
@@ -1193,6 +1220,88 @@ export default function ChatScreen() {
           )}
         </View>
 
+        <View
+          style={
+            styles.filters
+          }
+        >
+          <Pressable
+            style={[
+              styles.filterButton,
+
+              selectedFilter ===
+                "active" &&
+                styles.activeFilter,
+            ]}
+            onPress={() =>
+              setSelectedFilter(
+                "active"
+              )
+            }
+          >
+            <Ionicons
+              name="chatbubbles-outline"
+              size={15}
+              color={
+                selectedFilter ===
+                "active"
+                  ? "#fff"
+                  : "#555"
+              }
+            />
+
+            <Text
+              style={[
+                styles.filterText,
+
+                selectedFilter ===
+                  "active" &&
+                  styles.activeFilterText,
+              ]}
+            >
+              Chats {activeCount}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.filterButton,
+
+              selectedFilter ===
+                "archived" &&
+                styles.activeFilter,
+            ]}
+            onPress={() =>
+              setSelectedFilter(
+                "archived"
+              )
+            }
+          >
+            <Ionicons
+              name="archive-outline"
+              size={15}
+              color={
+                selectedFilter ===
+                "archived"
+                  ? "#fff"
+                  : "#555"
+              }
+            />
+
+            <Text
+              style={[
+                styles.filterText,
+
+                selectedFilter ===
+                  "archived" &&
+                  styles.activeFilterText,
+              ]}
+            >
+              Archived {archivedCount}
+            </Text>
+          </Pressable>
+        </View>
+
         {loading ? (
           <View
             style={
@@ -1200,7 +1309,6 @@ export default function ChatScreen() {
             }
           >
             <ActivityIndicator
-              size="small"
               color={PRIMARY}
             />
 
@@ -1214,12 +1322,12 @@ export default function ChatScreen() {
           </View>
         ) : (
           <FlatList
-            data={filteredChats}
-
-            ListHeaderComponent={() =>
-              renderAIAssistant(router)
+            data={
+              filteredChats
             }
-            keyExtractor={item =>
+            keyExtractor={(
+              item
+            ) =>
               item.conversation_id
             }
             renderItem={
@@ -1228,7 +1336,6 @@ export default function ChatScreen() {
             showsVerticalScrollIndicator={
               false
             }
-            keyboardShouldPersistTaps="handled"
             refreshControl={
               <RefreshControl
                 refreshing={
@@ -1245,8 +1352,8 @@ export default function ChatScreen() {
             contentContainerStyle={
               filteredChats.length ===
               0
-                ? styles.emptyListContent
-                : styles.listContent
+                ? styles.emptyList
+                : styles.list
             }
             ListEmptyComponent={
               <View
@@ -1261,11 +1368,12 @@ export default function ChatScreen() {
                 >
                   <Ionicons
                     name={
-                      search
-                        ? "search-outline"
+                      selectedFilter ===
+                      "archived"
+                        ? "archive-outline"
                         : "chatbubbles-outline"
                     }
-                    size={35}
+                    size={34}
                     color={PRIMARY}
                   />
                 </View>
@@ -1277,6 +1385,9 @@ export default function ChatScreen() {
                 >
                   {search
                     ? "No results"
+                    : selectedFilter ===
+                      "archived"
+                    ? "No archived chats"
                     : "No conversations"}
                 </Text>
 
@@ -1287,7 +1398,10 @@ export default function ChatScreen() {
                 >
                   {search
                     ? "No conversations match your search."
-                    : "Accepted conversations with students and alumni will appear here."}
+                    : selectedFilter ===
+                      "archived"
+                    ? "Chats you archive will appear here."
+                    : "Accepted conversations will appear here."}
                 </Text>
               </View>
             }
@@ -1315,15 +1429,15 @@ export default function ChatScreen() {
         >
           <Pressable
             style={
-              styles.optionsSheet
+              styles.sheet
             }
-            onPress={event =>
+            onPress={(event) =>
               event.stopPropagation()
             }
           >
             <View
               style={
-                styles.modalHandle
+                styles.handle
               }
             />
 
@@ -1331,7 +1445,7 @@ export default function ChatScreen() {
               <>
                 <View
                   style={
-                    styles.optionProfile
+                    styles.sheetProfile
                   }
                 >
                   {selectedChat.avatar_url ? (
@@ -1341,19 +1455,19 @@ export default function ChatScreen() {
                           selectedChat.avatar_url,
                       }}
                       style={
-                        styles.optionAvatar
+                        styles.sheetAvatar
                       }
                     />
                   ) : (
                     <View
                       style={[
-                        styles.optionAvatar,
+                        styles.sheetAvatar,
                         styles.avatarFallback,
                       ]}
                     >
                       <Text
                         style={
-                          styles.optionAvatarText
+                          styles.avatarInitials
                         }
                       >
                         {getInitials(
@@ -1364,102 +1478,37 @@ export default function ChatScreen() {
                   )}
 
                   <View
-                    style={
-                      styles.optionProfileInfo
-                    }
+                    style={{
+                      flex: 1,
+                    }}
                   >
                     <Text
                       style={
-                        styles.optionsTitle
-                      }
-                      numberOfLines={
-                        1
+                        styles.sheetName
                       }
                     >
-                      {
-                        selectedChat.full_name
-                      }
+                      {selectedChat.full_name ||
+                        "Richfield Member"}
                     </Text>
 
                     <Text
                       style={
-                        styles.optionsUsername
+                        styles.sheetRole
                       }
                     >
-                      {selectedChat.username
-                        ? `@${selectedChat.username}`
-                        : getRoleLabel(
-                            selectedChat.role as UserRole
-                          )}
+                      {getRoleLabel(
+                        selectedChat.role
+                      )}
                     </Text>
                   </View>
                 </View>
 
-                {selectedChat.role ===
-                  "alumni" && (
-                  <Pressable
-                    style={
-                      styles.optionRow
-                    }
-                    disabled={
-                      updatingMentor
-                    }
-                    onPress={
-                      toggleMentor
-                    }
-                  >
-                    {updatingMentor ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={
-                          PRIMARY
-                        }
-                      />
-                    ) : (
-                      <Ionicons
-                        name={
-                          selectedChat.is_mentor
-                            ? "star"
-                            : "star-outline"
-                        }
-                        size={22}
-                        color={
-                          PRIMARY
-                        }
-                      />
-                    )}
-
-                    <View
-                      style={
-                        styles.optionInfo
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.optionTitle
-                        }
-                      >
-                        {selectedChat.is_mentor
-                          ? "Remove mentor label"
-                          : "Label as mentor"}
-                      </Text>
-
-                      <Text
-                        style={
-                          styles.optionSubtitle
-                        }
-                      >
-                        {selectedChat.is_mentor
-                          ? "Remove this alumni member from your mentors"
-                          : "Mark this alumni member as one of your mentors"}
-                      </Text>
-                    </View>
-                  </Pressable>
-                )}
-
                 <Pressable
                   style={
                     styles.optionRow
+                  }
+                  disabled={
+                    processingOption
                   }
                   onPress={() =>
                     openConversation(
@@ -1469,61 +1518,144 @@ export default function ChatScreen() {
                 >
                   <Ionicons
                     name="chatbubble-outline"
-                    size={22}
+                    size={21}
                     color="#333"
                   />
 
-                  <View
+                  <Text
                     style={
-                      styles.optionInfo
+                      styles.optionText
                     }
                   >
-                    <Text
-                      style={
-                        styles.optionTitle
-                      }
-                    >
-                      Open conversation
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.optionSubtitle
-                      }
-                    >
-                      View messages and conversation options
-                    </Text>
-                  </View>
+                    Open conversation
+                  </Text>
                 </Pressable>
 
-                {selectedChat.blocked && (
-                  <View
+                <Pressable
+                  style={
+                    styles.optionRow
+                  }
+                  disabled={
+                    processingOption
+                  }
+                  onPress={
+                    handleArchive
+                  }
+                >
+                  <Ionicons
+                    name={
+                      selectedChat.archived
+                        ? "arrow-undo-outline"
+                        : "archive-outline"
+                    }
+                    size={21}
+                    color="#333"
+                  />
+
+                  <Text
                     style={
-                      styles.blockedInfo
+                      styles.optionText
+                    }
+                  >
+                    {selectedChat.archived
+                      ? "Unarchive chat"
+                      : "Archive chat"}
+                  </Text>
+                </Pressable>
+
+                {selectedChat.role ===
+                  "alumni" && (
+                  <Pressable
+                    style={
+                      styles.optionRow
+                    }
+                    disabled={
+                      processingOption
+                    }
+                    onPress={
+                      toggleMentor
                     }
                   >
                     <Ionicons
-                      name="ban-outline"
-                      size={17}
-                      color="#A33"
+                      name={
+                        selectedChat.is_mentor
+                          ? "star"
+                          : "star-outline"
+                      }
+                      size={21}
+                      color="#333"
                     />
 
                     <Text
                       style={
-                        styles.blockedInfoText
+                        styles.optionText
                       }
                     >
-                      You have blocked this user.
-                      Open the conversation to unblock them.
+                      {selectedChat.is_mentor
+                        ? "Remove mentor label"
+                        : "Label as mentor"}
+                    </Text>
+                  </Pressable>
+                )}
+
+                <Pressable
+                  style={[
+                    styles.optionRow,
+                    styles.deleteRow,
+                  ]}
+                  disabled={
+                    processingOption
+                  }
+                  onPress={
+                    handleDeleteFromChats
+                  }
+                >
+                  <Ionicons
+                    name="trash-outline"
+                    size={21}
+                    color="#D53535"
+                  />
+
+                  <View
+                    style={{
+                      flex: 1,
+                    }}
+                  >
+                    <Text
+                      style={
+                        styles.deleteText
+                      }
+                    >
+                      Delete from my chats
+                    </Text>
+
+                    <Text
+                      style={
+                        styles.deleteDescription
+                      }
+                    >
+                      Only removes it from your chat list
                     </Text>
                   </View>
+                </Pressable>
+
+                {processingOption && (
+                  <ActivityIndicator
+                    style={{
+                      marginTop: 14,
+                    }}
+                    color={PRIMARY}
+                  />
                 )}
               </>
             )}
 
             <Pressable
               style={
-                styles.cancelOption
+                styles.cancelButton
+              }
+              disabled={
+                processingOption
               }
               onPress={
                 closeOptions
@@ -1531,7 +1663,7 @@ export default function ChatScreen() {
             >
               <Text
                 style={
-                  styles.cancelOptionText
+                  styles.cancelText
                 }
               >
                 Cancel
@@ -1548,54 +1680,47 @@ const styles =
   StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor:
-        "#ffffff",
+      backgroundColor: "#fff",
     },
 
     container: {
       flex: 1,
-      backgroundColor:
-        "#ffffff",
+      backgroundColor: "#fff",
     },
 
     header: {
-      paddingHorizontal:
-        20,
+      paddingHorizontal: 20,
       paddingTop: 10,
-      paddingBottom: 18,
+      paddingBottom: 16,
       flexDirection: "row",
+      justifyContent: "space-between",
       alignItems: "center",
-      justifyContent:
-        "space-between",
-    },
-
-    headerActions: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 9,
     },
 
     title: {
       fontSize: 28,
       fontWeight: "800",
-      color: "#111111",
+      color: "#111",
     },
 
     subtitle: {
       marginTop: 3,
-      fontSize: 14,
-      color: "#777782",
+      color: "#777",
+      fontSize: 13,
+    },
+
+    headerActions: {
+      flexDirection: "row",
+      gap: 9,
     },
 
     requestsButton: {
       width: 42,
       height: 42,
       borderRadius: 21,
-      backgroundColor:
-        "#F2F2F5",
+      backgroundColor: "#F2F2F5",
       alignItems: "center",
-      justifyContent:
-        "center",
+      justifyContent: "center",
       position: "relative",
     },
 
@@ -1607,14 +1732,11 @@ const styles =
       height: 19,
       paddingHorizontal: 4,
       borderRadius: 10,
-      backgroundColor:
-        "#E53935",
+      backgroundColor: "#E53935",
       alignItems: "center",
-      justifyContent:
-        "center",
+      justifyContent: "center",
       borderWidth: 2,
-      borderColor:
-        "#fff",
+      borderColor: "#fff",
     },
 
     requestBadgeText: {
@@ -1627,142 +1749,84 @@ const styles =
       width: 42,
       height: 42,
       borderRadius: 21,
-      backgroundColor:
-        PRIMARY,
+      backgroundColor: PRIMARY,
       alignItems: "center",
-      justifyContent:
-        "center",
+      justifyContent: "center",
     },
 
     searchContainer: {
+      marginHorizontal: 20,
       height: 48,
-      marginHorizontal:
-        20,
-      marginBottom: 8,
       borderRadius: 14,
-      backgroundColor:
-        "#F3F3F6",
+      backgroundColor: "#F3F3F6",
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal:
-        14,
+      paddingHorizontal: 14,
       gap: 8,
     },
 
     searchInput: {
       flex: 1,
       fontSize: 15,
-      color: "#111111",
+      color: "#111",
+    },
+
+    filters: {
+      flexDirection: "row",
+      paddingHorizontal: 20,
+      paddingVertical: 12,
+      gap: 8,
+    },
+
+    filterButton: {
+      height: 35,
+      paddingHorizontal: 13,
+      borderRadius: 18,
+      backgroundColor: "#F1F1F4",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+
+    activeFilter: {
+      backgroundColor: PRIMARY,
+    },
+
+    filterText: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: "#555",
+    },
+
+    activeFilterText: {
+      color: "#fff",
     },
 
     loadingContainer: {
       flex: 1,
       alignItems: "center",
-      justifyContent:
-        "center",
-      paddingBottom: 60,
+      justifyContent: "center",
     },
 
     loadingText: {
-      marginTop: 10,
-      fontSize: 13,
-      color: "#85858E",
+      marginTop: 9,
+      fontSize: 12,
+      color: "#888",
     },
 
-    listContent: {
+    list: {
       paddingBottom: 30,
     },
 
-    emptyListContent: {
+    emptyList: {
       flexGrow: 1,
-      paddingBottom: 30,
-    },
-
-    aiCard: {
-      marginHorizontal: 16,
-      marginTop: 6,
-      marginBottom: 18,
-      padding: 14,
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: "#E3E6EA",
-      backgroundColor: "#FFFFFF",
-      flexDirection: "row",
-      alignItems: "center",
-
-      shadowColor: "#000",
-      shadowOpacity: 0.04,
-      shadowRadius: 8,
-      shadowOffset: {
-        width: 0,
-        height: 3,
-      },
-      elevation: 2,
-    },
-
-    aiCardIcon: {
-      width: 50,
-      height: 50,
-      borderRadius: 16,
-      backgroundColor: PRIMARY,
-      alignItems: "center",
-      justifyContent: "center",
-      marginRight: 12,
-    },
-
-    aiCardInfo: {
-      flex: 1,
-    },
-
-    aiCardTitleRow: {
-      flexDirection: "row",
-      alignItems: "center",
-    },
-
-    aiCardTitle: {
-      fontSize: 15,
-      fontWeight: "800",
-      color: "#17212B",
-    },
-
-    aiCardBadge: {
-      marginLeft: 7,
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: 5,
-      backgroundColor: "#EEF0FF",
-    },
-
-    aiCardBadgeText: {
-      fontSize: 8,
-      fontWeight: "800",
-      color: PRIMARY,
-    },
-
-    aiCardSubtitle: {
-      marginTop: 4,
-      fontSize: 11,
-      color: "#66717B",
-    },
-
-    aiPrivateRow: {
-      marginTop: 5,
-      flexDirection: "row",
-      alignItems: "center",
-    },
-
-    aiPrivateText: {
-      marginLeft: 4,
-      fontSize: 9.5,
-      color: "#8A939C",
     },
 
     chatItem: {
       flexDirection: "row",
-      alignItems: "center",
-      paddingHorizontal:
-        20,
+      paddingHorizontal: 20,
       paddingVertical: 14,
+      alignItems: "center",
     },
 
     avatarContainer: {
@@ -1774,22 +1838,19 @@ const styles =
       width: 56,
       height: 56,
       borderRadius: 28,
-      backgroundColor:
-        "#EEEEEE",
+      backgroundColor: "#eee",
     },
 
     avatarFallback: {
-      backgroundColor:
-        "#ECECFF",
+      backgroundColor: "#ECECFF",
       alignItems: "center",
-      justifyContent:
-        "center",
+      justifyContent: "center",
     },
 
     avatarInitials: {
       color: PRIMARY,
-      fontSize: 17,
       fontWeight: "800",
+      fontSize: 16,
     },
 
     onlineDot: {
@@ -1799,76 +1860,19 @@ const styles =
       width: 14,
       height: 14,
       borderRadius: 7,
-      backgroundColor:
-        "#20C76B",
+      backgroundColor: "#20C76B",
       borderWidth: 2,
-      borderColor:
-        "#FFFFFF",
-    },
-    aiIcon: {
-      width: 48,
-      height: 48,
-      borderRadius: 15,
-      backgroundColor: "#243447",
-      alignItems: "center",
-      justifyContent: "center",
-      marginRight: 12,
-    },
-
-    aiTitleRow: {
-      flexDirection: "row",
-      alignItems: "center",
-    },
-
-    aiTitle: {
-      fontSize: 15,
-      fontWeight: "800",
-      color: "#17212B",
-    },
-
-    aiBadge: {
-      marginLeft: 7,
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: 5,
-      backgroundColor: "#EEF2F5",
-    },
-
-    aiBadgeText: {
-      fontSize: 8,
-      fontWeight: "800",
-      color: "#243447",
-    },
-
-    aiSubtitle: {
-      marginTop: 3,
-      fontSize: 11,
-      color: "#5F6B76",
-    },
-
-    localRow: {
-      marginTop: 5,
-      flexDirection: "row",
-      alignItems: "center",
-    },
-
-    localText: {
-      marginLeft: 4,
-      fontSize: 9.5,
-      color: "#8A949E",
+      borderColor: "#fff",
     },
 
     chatContent: {
       flex: 1,
-      minWidth: 0,
     },
 
     chatTopRow: {
       flexDirection: "row",
+      justifyContent: "space-between",
       alignItems: "center",
-      justifyContent:
-        "space-between",
-      marginBottom: 4,
     },
 
     nameSection: {
@@ -1887,11 +1891,11 @@ const styles =
     },
 
     unreadName: {
-      fontWeight: "800",
+      fontWeight: "900",
     },
 
     chatTime: {
-      fontSize: 12,
+      fontSize: 11,
       color: "#92929B",
     },
 
@@ -1902,72 +1906,54 @@ const styles =
 
     roleRow: {
       flexDirection: "row",
-      alignItems: "center",
-      marginBottom: 6,
       gap: 5,
+      marginTop: 4,
+      marginBottom: 6,
     },
 
     roleBadge: {
       flexDirection: "row",
-      alignItems: "center",
       gap: 3,
-      backgroundColor:
-        "#F1F1F3",
+      alignItems: "center",
+      backgroundColor: "#F1F1F3",
+      borderRadius: 6,
       paddingHorizontal: 7,
       paddingVertical: 3,
-      borderRadius: 6,
-    },
-
-    alumniBadge: {
-      backgroundColor:
-        "#FFF4DA",
-    },
-
-    businessBadge: {
-      backgroundColor:
-        "#EAF3FF",
-    },
-
-    adminBadge: {
-      backgroundColor:
-        "#EEEAFE",
     },
 
     roleText: {
-      fontSize: 10,
+      fontSize: 9,
       color: "#555",
       fontWeight: "700",
     },
 
     mentorBadge: {
-      backgroundColor:
-        "#FFF6DB",
+      backgroundColor: "#FFF6DB",
       paddingHorizontal: 7,
       paddingVertical: 3,
       borderRadius: 6,
     },
 
     mentorText: {
-      fontSize: 10,
-      fontWeight: "700",
+      fontSize: 9,
       color: "#A26B00",
+      fontWeight: "700",
     },
 
     blockedBadge: {
       flexDirection: "row",
       alignItems: "center",
       gap: 3,
-      backgroundColor:
-        "#FFF0F0",
+      backgroundColor: "#FFF0F0",
       paddingHorizontal: 7,
       paddingVertical: 3,
       borderRadius: 6,
     },
 
-    blockedBadgeText: {
-      fontSize: 10,
-      fontWeight: "700",
+    blockedText: {
       color: "#A33",
+      fontSize: 9,
+      fontWeight: "700",
     },
 
     chatBottomRow: {
@@ -1977,55 +1963,45 @@ const styles =
 
     lastMessage: {
       flex: 1,
-      fontSize: 14,
+      fontSize: 13,
       color: "#85858E",
     },
 
     unreadMessage: {
-      color: "#22222A",
+      color: "#222",
       fontWeight: "600",
-    },
-
-    blockedMessage: {
-      fontStyle: "italic",
-      color: "#A2A2AA",
     },
 
     unreadBadge: {
       minWidth: 21,
       height: 21,
-      paddingHorizontal: 6,
+      paddingHorizontal: 5,
       borderRadius: 11,
-      backgroundColor:
-        PRIMARY,
+      backgroundColor: PRIMARY,
       alignItems: "center",
-      justifyContent:
-        "center",
-      marginLeft: 8,
+      justifyContent: "center",
+      marginLeft: 7,
     },
 
     unreadText: {
-      color: "#FFFFFF",
-      fontSize: 11,
-      fontWeight: "700",
+      color: "#fff",
+      fontSize: 10,
+      fontWeight: "800",
     },
 
     moreButton: {
-      marginLeft: 8,
-      width: 28,
-      height: 28,
+      width: 30,
+      height: 30,
+      marginLeft: 5,
       alignItems: "center",
-      justifyContent:
-        "center",
+      justifyContent: "center",
     },
 
     emptyContainer: {
       flex: 1,
       alignItems: "center",
-      justifyContent:
-        "center",
-      paddingHorizontal:
-        35,
+      justifyContent: "center",
+      paddingHorizontal: 35,
       paddingBottom: 70,
     },
 
@@ -2033,153 +2009,115 @@ const styles =
       width: 68,
       height: 68,
       borderRadius: 34,
-      backgroundColor:
-        "#EEEEFF",
+      backgroundColor: "#EEEEFF",
       alignItems: "center",
-      justifyContent:
-        "center",
+      justifyContent: "center",
     },
 
     emptyTitle: {
-      marginTop: 15,
+      marginTop: 14,
       fontSize: 18,
       fontWeight: "800",
-      color: "#222222",
+      color: "#222",
     },
 
     emptyText: {
-      marginTop: 7,
-      fontSize: 13,
-      lineHeight: 19,
-      color: "#85858E",
+      marginTop: 6,
+      fontSize: 12,
+      color: "#888",
       textAlign: "center",
     },
 
     modalOverlay: {
       flex: 1,
-      backgroundColor:
-        "rgba(0,0,0,0.35)",
-      justifyContent:
-        "flex-end",
+      backgroundColor: "rgba(0,0,0,0.35)",
+      justifyContent: "flex-end",
     },
 
-    optionsSheet: {
-      backgroundColor:
-        "#FFFFFF",
-      borderTopLeftRadius:
-        24,
-      borderTopRightRadius:
-        24,
-      paddingHorizontal:
-        20,
+    sheet: {
+      backgroundColor: "#fff",
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingHorizontal: 20,
       paddingTop: 12,
-      paddingBottom: 32,
+      paddingBottom: 30,
     },
 
-    modalHandle: {
+    handle: {
       width: 40,
       height: 4,
-      backgroundColor:
-        "#D3D3D8",
-      alignSelf: "center",
       borderRadius: 2,
-      marginBottom: 20,
+      backgroundColor: "#D4D4D9",
+      alignSelf: "center",
+      marginBottom: 18,
     },
 
-    optionProfile: {
+    sheetProfile: {
       flexDirection: "row",
       alignItems: "center",
-      marginBottom: 12,
+      marginBottom: 10,
     },
 
-    optionAvatar: {
+    sheetAvatar: {
       width: 48,
       height: 48,
       borderRadius: 24,
-      backgroundColor:
-        "#EEEEEE",
+      marginRight: 12,
     },
 
-    optionAvatarText: {
-      color: PRIMARY,
-      fontSize: 15,
-      fontWeight: "800",
-    },
-
-    optionProfileInfo: {
-      flex: 1,
-      marginLeft: 12,
-    },
-
-    optionsTitle: {
-      fontSize: 18,
+    sheetName: {
+      fontSize: 17,
       fontWeight: "800",
       color: "#171717",
     },
 
-    optionsUsername: {
-      marginTop: 2,
-      fontSize: 12,
+    sheetRole: {
+      marginTop: 3,
+      fontSize: 11,
       color: "#888",
     },
 
     optionRow: {
-      minHeight: 62,
+      minHeight: 58,
+      borderBottomWidth: 1,
+      borderBottomColor: "#EEEEF1",
       flexDirection: "row",
       alignItems: "center",
-      borderBottomWidth: 1,
-      borderBottomColor:
-        "#EEEEF1",
+      gap: 14,
     },
 
-    optionInfo: {
-      marginLeft: 14,
-      flex: 1,
-    },
-
-    optionTitle: {
+    optionText: {
       fontSize: 14,
       fontWeight: "700",
       color: "#222",
     },
 
-    optionSubtitle: {
-      fontSize: 11,
-      color: "#888",
-      marginTop: 3,
-      lineHeight: 15,
+    deleteRow: {
+      borderBottomWidth: 0,
     },
 
-    blockedInfo: {
+    deleteText: {
+      color: "#D53535",
+      fontSize: 14,
+      fontWeight: "700",
+    },
+
+    deleteDescription: {
+      marginTop: 2,
+      color: "#999",
+      fontSize: 10,
+    },
+
+    cancelButton: {
       marginTop: 14,
-      borderRadius: 10,
-      backgroundColor:
-        "#FFF2F2",
-      padding: 11,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-    },
-
-    blockedInfoText: {
-      flex: 1,
-      fontSize: 11,
-      lineHeight: 16,
-      color: "#8D3B3B",
-    },
-
-    cancelOption: {
-      marginTop: 16,
-      height: 48,
+      height: 47,
       borderRadius: 12,
-      backgroundColor:
-        "#F3F3F5",
+      backgroundColor: "#F3F3F5",
       alignItems: "center",
-      justifyContent:
-        "center",
+      justifyContent: "center",
     },
 
-    cancelOptionText: {
+    cancelText: {
       fontSize: 14,
       fontWeight: "700",
       color: "#333",

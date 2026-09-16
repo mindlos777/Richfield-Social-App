@@ -29,9 +29,18 @@ import FeedPostCard, {
   UserRole,
 } from "../../components/feed/FeedPostCard";
 
+import {
+  getProfileCompletion,
+  ProfileCompletionResult,
+} from "../../services/ProfileCompletionService";
+
 const PRIMARY = "#0300cf";
 
-type ScreenRole = "student" | "alumni" | "business" | "admin";
+type ScreenRole =
+  | "student"
+  | "alumni"
+  | "business"
+  | "admin";
 
 type ProfileRow = {
   id: string;
@@ -60,47 +69,135 @@ type RawPost = {
   created_at: string;
 };
 
-type RankedFeedPost = FeedPostItem & {
-  rankingScore: number;
-};
+type RankedFeedPost =
+  FeedPostItem & {
+    rankingScore: number;
+  };
 
 type Props = {
   mode: ScreenRole;
 };
 
-export default function RoleFeedScreen({ mode }: Props) {
-  const [profile, setProfile] = useState<ProfileRow | null>(null);
-  const [posts, setPosts] = useState<RankedFeedPost[]>([]);
-  const [following, setFollowing] = useState<string[]>([]);
-  const [search, setSearch] = useState("");
-  const [personFilter, setPersonFilter] = useState<
+export default function RoleFeedScreen({
+  mode,
+}: Props) {
+  const [profile, setProfile] =
+    useState<ProfileRow | null>(
+      null
+    );
+
+  const [posts, setPosts] =
+    useState<RankedFeedPost[]>(
+      []
+    );
+
+  const [following, setFollowing] =
+    useState<string[]>([]);
+
+  const [search, setSearch] =
+    useState("");
+
+  const [
+    personFilter,
+    setPersonFilter,
+  ] = useState<
     "all" | "students" | "alumni"
   >("all");
 
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [likeLoading, setLikeLoading] = useState<string[]>([]);
-  const [messageLoadingId, setMessageLoadingId] = useState<string | null>(null);
-  const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
+  const [loading, setLoading] =
+    useState(true);
 
-  const isSocial = mode === "student" || mode === "alumni";
-  const isTalent = mode === "business";
-  const isAdmin = mode === "admin";
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  const [
+    likeLoading,
+    setLikeLoading,
+  ] = useState<string[]>([]);
+
+  const [
+    messageLoadingId,
+    setMessageLoadingId,
+  ] = useState<string | null>(
+    null
+  );
+
+  const [
+    deleteLoadingId,
+    setDeleteLoadingId,
+  ] = useState<string | null>(
+    null
+  );
+
+  const [
+    profileCompletion,
+    setProfileCompletion,
+  ] =
+    useState<ProfileCompletionResult | null>(
+      null
+    );
+
+  const isSocial =
+    mode === "student" ||
+    mode === "alumni";
+
+  const isTalent =
+    mode === "business";
+
+  const isAdmin =
+    mode === "admin";
+
+  const loadProfileCompletion =
+    useCallback(async () => {
+      if (!isSocial) {
+        setProfileCompletion(null);
+        return;
+      }
+
+      try {
+        const result =
+          await getProfileCompletion();
+
+        setProfileCompletion(
+          result
+        );
+      } catch (error) {
+        console.log(
+          "Profile completion error:",
+          error
+        );
+      }
+    }, [isSocial]);
 
   const loadFeed = useCallback(
-    async (showLoader = true) => {
+    async (
+      showLoader = true
+    ) => {
       try {
-        if (showLoader) setLoading(true);
+        if (showLoader) {
+          setLoading(true);
+        }
 
         const {
           data: { user },
           error: authError,
-        } = await supabase.auth.getUser();
+        } =
+          await supabase.auth.getUser();
 
-        if (authError) throw authError;
-        if (!user) throw new Error("No signed-in user.");
+        if (authError) {
+          throw authError;
+        }
 
-        const { data: me, error: meError } = await supabase
+        if (!user) {
+          throw new Error(
+            "No signed-in user."
+          );
+        }
+
+        const {
+          data: me,
+          error: meError,
+        } = await supabase
           .from("profiles")
           .select(`
             id,
@@ -114,36 +211,58 @@ export default function RoleFeedScreen({ mode }: Props) {
           .eq("id", user.id)
           .single();
 
-        if (meError) throw meError;
+        if (meError) {
+          throw meError;
+        }
 
         if (me.role !== mode) {
           throw new Error(
-            `This account is ${me.role || "unknown"}, but this is the ${mode} feed.`
+            `This account is ${
+              me.role || "unknown"
+            }, but this is the ${mode} feed.`
           );
         }
 
-        setProfile(me as ProfileRow);
+        setProfile(
+          me as ProfileRow
+        );
 
-        let followedIds: string[] = [];
+        let followedIds:
+          string[] = [];
 
         if (isSocial) {
-          const { data: followRows, error: followError } = await supabase
+          const {
+            data: followRows,
+            error: followError,
+          } = await supabase
             .from("follows")
             .select("following_id")
-            .eq("follower_id", user.id);
+            .eq(
+              "follower_id",
+              user.id
+            );
 
-          if (followError) throw followError;
+          if (followError) {
+            throw followError;
+          }
 
-          followedIds = (followRows || []).map(
-            (row) => row.following_id
+          followedIds =
+            (followRows || []).map(
+              row =>
+                row.following_id
+            );
+
+          setFollowing(
+            followedIds
           );
-
-          setFollowing(followedIds);
         } else {
           setFollowing([]);
         }
 
-        const { data: postRows, error: postsError } = await supabase
+        const {
+          data: postRows,
+          error: postsError,
+        } = await supabase
           .from("posts")
           .select(`
             id,
@@ -154,22 +273,39 @@ export default function RoleFeedScreen({ mode }: Props) {
             visibility,
             created_at
           `)
-          .order("created_at", { ascending: false })
+          .order("created_at", {
+            ascending: false,
+          })
           .limit(120);
 
-        if (postsError) throw postsError;
+        if (postsError) {
+          throw postsError;
+        }
 
-        const rawPosts = (postRows || []) as RawPost[];
+        const rawPosts =
+          (postRows ||
+            []) as RawPost[];
 
         if (!rawPosts.length) {
           setPosts([]);
           return;
         }
 
-        const authorIds = [...new Set(rawPosts.map((post) => post.user_id))];
-        const postIds = rawPosts.map((post) => post.id);
+        const authorIds = [
+          ...new Set(
+            rawPosts.map(
+              post => post.user_id
+            )
+          ),
+        ];
 
-        const requests: PromiseLike<any>[] = [
+        const postIds =
+          rawPosts.map(
+            post => post.id
+          );
+
+        const requests:
+          PromiseLike<any>[] = [
           supabase
             .from("profiles")
             .select(`
@@ -185,212 +321,429 @@ export default function RoleFeedScreen({ mode }: Props) {
 
           supabase
             .from("post_likes")
-            .select("post_id,user_id")
-            .in("post_id", postIds),
+            .select(
+              "post_id,user_id"
+            )
+            .in(
+              "post_id",
+              postIds
+            ),
 
           supabase
-            .from("post_comments")
+            .from(
+              "post_comments"
+            )
             .select("post_id")
-            .in("post_id", postIds),
+            .in(
+              "post_id",
+              postIds
+            ),
 
           supabase
             .from("post_shares")
             .select("post_id")
-            .in("post_id", postIds),
+            .in(
+              "post_id",
+              postIds
+            ),
         ];
 
         if (isTalent) {
           requests.push(
             supabase
-              .from("student_profiles")
-              .select("user_id,programme,campus,skills")
-              .in("user_id", authorIds)
+              .from(
+                "student_profiles"
+              )
+              .select(
+                "user_id,programme,campus,skills"
+              )
+              .in(
+                "user_id",
+                authorIds
+              )
           );
         }
 
-        const results = await Promise.all(requests);
+        const results =
+          await Promise.all(
+            requests
+          );
 
-        const profilesResult = results[0];
-        const likesResult = results[1];
-        const commentsResult = results[2];
-        const sharesResult = results[3];
-        const studentsResult = isTalent ? results[4] : null;
+        const profilesResult =
+          results[0];
 
-        if (profilesResult.error) throw profilesResult.error;
-        if (likesResult.error) throw likesResult.error;
-        if (commentsResult.error) throw commentsResult.error;
-        if (sharesResult.error) throw sharesResult.error;
+        const likesResult =
+          results[1];
 
-        if (studentsResult?.error) {
-          console.log("Student profile feed data:", studentsResult.error);
+        const commentsResult =
+          results[2];
+
+        const sharesResult =
+          results[3];
+
+        const studentsResult =
+          isTalent
+            ? results[4]
+            : null;
+
+        if (
+          profilesResult.error
+        ) {
+          throw profilesResult.error;
         }
 
-        const profileMap = new Map<string, ProfileRow>();
-        (profilesResult.data || []).forEach((item: ProfileRow) => {
-          profileMap.set(item.id, item);
-        });
+        if (likesResult.error) {
+          throw likesResult.error;
+        }
 
-        const studentMap = new Map<string, StudentRow>();
-        (studentsResult?.data || []).forEach((item: StudentRow) => {
-          studentMap.set(item.user_id, item);
-        });
+        if (
+          commentsResult.error
+        ) {
+          throw commentsResult.error;
+        }
 
-        const likes = likesResult.data || [];
-        const comments = commentsResult.data || [];
-        const shares = sharesResult.data || [];
+        if (sharesResult.error) {
+          throw sharesResult.error;
+        }
 
-        const now = Date.now();
+        if (
+          studentsResult?.error
+        ) {
+          console.log(
+            "Student profile feed data:",
+            studentsResult.error
+          );
+        }
 
-        const merged: RankedFeedPost[] = rawPosts
-          .map((post) => {
-            const author = profileMap.get(post.user_id);
+        const profileMap =
+          new Map<
+            string,
+            ProfileRow
+          >();
 
-            if (!author && !isAdmin) {
-              return null;
-            }
-
-            if (
-              isTalent &&
-              author &&
-              author.role !== "student" &&
-              author.role !== "alumni"
-            ) {
-              return null;
-            }
-
-            if (
-              isTalent &&
-              !["everyone", "public"].includes(
-                String(post.visibility || "everyone").toLowerCase()
-              )
-            ) {
-              return null;
-            }
-
-            const postLikes = likes.filter(
-              (item: any) => item.post_id === post.id
+        (
+          profilesResult.data || []
+        ).forEach(
+          (item: ProfileRow) => {
+            profileMap.set(
+              item.id,
+              item
             );
+          }
+        );
 
-            const likeCount = postLikes.length;
+        const studentMap =
+          new Map<
+            string,
+            StudentRow
+          >();
 
-            const commentCount = comments.filter(
-              (item: any) => item.post_id === post.id
-            ).length;
-
-            const shareCount = shares.filter(
-              (item: any) => item.post_id === post.id
-            ).length;
-
-            const liked = postLikes.some(
-              (item: any) => item.user_id === user.id
+        (
+          studentsResult?.data ||
+          []
+        ).forEach(
+          (item: StudentRow) => {
+            studentMap.set(
+              item.user_id,
+              item
             );
+          }
+        );
 
-            const ageHours = Math.max(
-              0,
-              (now - new Date(post.created_at).getTime()) / 3600000
-            );
+        const likes =
+          likesResult.data || [];
 
-            let rankingScore = 0;
+        const comments =
+          commentsResult.data || [];
 
-            if (isSocial) {
-              if (followedIds.includes(post.user_id)) {
-                rankingScore += 50;
+        const shares =
+          sharesResult.data || [];
+
+        const now =
+          Date.now();
+
+        const merged:
+          RankedFeedPost[] =
+          rawPosts
+            .map(post => {
+              const author =
+                profileMap.get(
+                  post.user_id
+                );
+
+              if (
+                !author &&
+                !isAdmin
+              ) {
+                return null;
               }
 
-              if (post.user_id === user.id) {
-                rankingScore += 8;
+              if (
+                isTalent &&
+                author &&
+                author.role !==
+                  "student" &&
+                author.role !==
+                  "alumni"
+              ) {
+                return null;
               }
 
-              if (mode === "alumni" && author?.role === "alumni") {
-                rankingScore += 10;
+              if (
+                isTalent &&
+                ![
+                  "everyone",
+                  "public",
+                ].includes(
+                  String(
+                    post.visibility ||
+                      "everyone"
+                  ).toLowerCase()
+                )
+              ) {
+                return null;
               }
 
-              if (mode === "student" && author?.role === "student") {
-                rankingScore += 8;
+              const postLikes =
+                likes.filter(
+                  (item: any) =>
+                    item.post_id ===
+                    post.id
+                );
+
+              const likeCount =
+                postLikes.length;
+
+              const commentCount =
+                comments.filter(
+                  (item: any) =>
+                    item.post_id ===
+                    post.id
+                ).length;
+
+              const shareCount =
+                shares.filter(
+                  (item: any) =>
+                    item.post_id ===
+                    post.id
+                ).length;
+
+              const liked =
+                postLikes.some(
+                  (item: any) =>
+                    item.user_id ===
+                    user.id
+                );
+
+              const ageHours =
+                Math.max(
+                  0,
+                  (now -
+                    new Date(
+                      post.created_at
+                    ).getTime()) /
+                    3600000
+                );
+
+              let rankingScore =
+                0;
+
+              if (isSocial) {
+                if (
+                  followedIds.includes(
+                    post.user_id
+                  )
+                ) {
+                  rankingScore +=
+                    50;
+                }
+
+                if (
+                  post.user_id ===
+                  user.id
+                ) {
+                  rankingScore +=
+                    8;
+                }
+
+                if (
+                  mode ===
+                    "alumni" &&
+                  author?.role ===
+                    "alumni"
+                ) {
+                  rankingScore +=
+                    10;
+                }
+
+                if (
+                  mode ===
+                    "student" &&
+                  author?.role ===
+                    "student"
+                ) {
+                  rankingScore +=
+                    8;
+                }
+
+                rankingScore +=
+                  likeCount * 2;
+
+                rankingScore +=
+                  commentCount * 4;
+
+                rankingScore +=
+                  shareCount * 5;
+
+                rankingScore +=
+                  Math.max(
+                    0,
+                    48 - ageHours
+                  );
+              } else {
+                rankingScore =
+                  new Date(
+                    post.created_at
+                  ).getTime();
               }
 
-              rankingScore += likeCount * 2;
-              rankingScore += commentCount * 4;
-              rankingScore += shareCount * 5;
-              rankingScore += Math.max(0, 48 - ageHours);
-            } else {
-              rankingScore = new Date(post.created_at).getTime();
-            }
+              const student =
+                studentMap.get(
+                  post.user_id
+                );
 
-            const student = studentMap.get(post.user_id);
+              return {
+                id: post.id,
+                user_id:
+                  post.user_id,
+                content:
+                  post.content,
+                image_url:
+                  post.image_url,
+                media_type:
+                  post.media_type,
+                visibility:
+                  post.visibility,
+                created_at:
+                  post.created_at,
 
-            return {
-              id: post.id,
-              user_id: post.user_id,
-              content: post.content,
-              image_url: post.image_url,
-              media_type: post.media_type,
-              visibility: post.visibility,
-              created_at: post.created_at,
+                full_name:
+                  author?.full_name ||
+                  "Richfield Member",
 
-              full_name:
-                author?.full_name ||
-                "Richfield Member",
+                username:
+                  author?.username ||
+                  null,
 
-              username:
-                author?.username || null,
+                avatar_url:
+                  author?.avatar_url ||
+                  null,
 
-              avatar_url:
-                author?.avatar_url || null,
+                role:
+                  author?.role ||
+                  null,
 
-              role:
-                author?.role || null,
+                headline:
+                  author?.headline ||
+                  null,
 
-              headline:
-                author?.headline || null,
+                programme:
+                  student?.programme ||
+                  null,
 
-              programme:
-                student?.programme || null,
+                campus:
+                  student?.campus ||
+                  null,
 
-              campus:
-                student?.campus || null,
+                skills:
+                  Array.isArray(
+                    student?.skills
+                  )
+                    ? student?.skills ||
+                      []
+                    : [],
 
-              skills:
-                Array.isArray(student?.skills)
-                  ? student?.skills || []
-                  : [],
+                likes: likeCount,
+                comments:
+                  commentCount,
+                shares: shareCount,
+                liked,
+                rankingScore,
+              } as RankedFeedPost;
+            })
+            .filter(
+              Boolean
+            ) as RankedFeedPost[];
 
-              likes: likeCount,
-              comments: commentCount,
-              shares: shareCount,
-              liked,
-              rankingScore,
-            } as RankedFeedPost;
-          })
-          .filter(Boolean) as RankedFeedPost[];
-
-        merged.sort((a, b) => b.rankingScore - a.rankingScore);
+        merged.sort(
+          (a, b) =>
+            b.rankingScore -
+            a.rankingScore
+        );
 
         setPosts(merged);
       } catch (error: any) {
-        console.log(`${mode} feed error:`, error);
+        console.log(
+          `${mode} feed error:`,
+          error
+        );
 
         Alert.alert(
           "Feed",
-          error?.message || "Could not load this feed."
+          error?.message ||
+            "Could not load this feed."
         );
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [isAdmin, isSocial, isTalent, mode]
+    [
+      isAdmin,
+      isSocial,
+      isTalent,
+      mode,
+    ]
   );
+
+  const loadScreen =
+    useCallback(
+      async (
+        showLoader = true
+      ) => {
+        if (isSocial) {
+          await Promise.all([
+            loadFeed(
+              showLoader
+            ),
+            loadProfileCompletion(),
+          ]);
+
+          return;
+        }
+
+        await loadFeed(
+          showLoader
+        );
+      },
+      [
+        isSocial,
+        loadFeed,
+        loadProfileCompletion,
+      ]
+    );
 
   useFocusEffect(
     useCallback(() => {
-      loadFeed(true);
-    }, [loadFeed])
+      loadScreen(true);
+    }, [loadScreen])
   );
 
   useEffect(() => {
     const channel = supabase
-      .channel(`${mode}-feed-realtime`)
+      .channel(
+        `${mode}-feed-realtime`
+      )
       .on(
         "postgres_changes",
         {
@@ -398,7 +751,8 @@ export default function RoleFeedScreen({ mode }: Props) {
           schema: "public",
           table: "posts",
         },
-        () => loadFeed(false)
+        () =>
+          loadFeed(false)
       )
       .on(
         "postgres_changes",
@@ -407,79 +761,138 @@ export default function RoleFeedScreen({ mode }: Props) {
           schema: "public",
           table: "post_likes",
         },
-        () => loadFeed(false)
+        () =>
+          loadFeed(false)
       )
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
-          table: "post_comments",
+          table:
+            "post_comments",
         },
-        () => loadFeed(false)
+        () =>
+          loadFeed(false)
       )
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
-          table: "post_shares",
+          table:
+            "post_shares",
         },
-        () => loadFeed(false)
+        () =>
+          loadFeed(false)
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(
+        channel
+      );
     };
-  }, [loadFeed, mode]);
+  }, [
+    loadFeed,
+    mode,
+  ]);
 
-  const visiblePosts = useMemo(() => {
-    let list = [...posts];
+  const visiblePosts =
+    useMemo(() => {
+      let list = [...posts];
 
-    if (personFilter === "students") {
-      list = list.filter((post) => post.role === "student");
+      if (
+        personFilter ===
+        "students"
+      ) {
+        list = list.filter(
+          post =>
+            post.role ===
+            "student"
+        );
+      }
+
+      if (
+        personFilter ===
+        "alumni"
+      ) {
+        list = list.filter(
+          post =>
+            post.role ===
+            "alumni"
+        );
+      }
+
+      const value =
+        search
+          .trim()
+          .toLowerCase();
+
+      if (!value) {
+        return list;
+      }
+
+      return list.filter(
+        post => {
+          const searchable = `
+            ${post.full_name}
+            ${post.username || ""}
+            ${post.headline || ""}
+            ${post.programme || ""}
+            ${post.campus || ""}
+            ${(post.skills || []).join(
+              " "
+            )}
+            ${post.content || ""}
+          `.toLowerCase();
+
+          return searchable.includes(
+            value
+          );
+        }
+      );
+    }, [
+      personFilter,
+      posts,
+      search,
+    ]);
+
+  async function toggleLike(
+    post: RankedFeedPost
+  ) {
+    if (
+      !profile?.id ||
+      likeLoading.includes(
+        post.id
+      )
+    ) {
+      return;
     }
 
-    if (personFilter === "alumni") {
-      list = list.filter((post) => post.role === "alumni");
-    }
+    setLikeLoading(
+      current => [
+        ...current,
+        post.id,
+      ]
+    );
 
-    const value = search.trim().toLowerCase();
+    const nextLiked =
+      !post.liked;
 
-    if (!value) return list;
-
-    return list.filter((post) => {
-      const searchable = `
-        ${post.full_name}
-        ${post.username || ""}
-        ${post.headline || ""}
-        ${post.programme || ""}
-        ${post.campus || ""}
-        ${(post.skills || []).join(" ")}
-        ${post.content || ""}
-      `.toLowerCase();
-
-      return searchable.includes(value);
-    });
-  }, [personFilter, posts, search]);
-
-  async function toggleLike(post: RankedFeedPost) {
-    if (!profile?.id || likeLoading.includes(post.id)) return;
-
-    setLikeLoading((current) => [...current, post.id]);
-
-    const nextLiked = !post.liked;
-
-    setPosts((current) =>
-      current.map((item) =>
+    setPosts(current =>
+      current.map(item =>
         item.id === post.id
           ? {
               ...item,
-              liked: nextLiked,
+              liked:
+                nextLiked,
               likes: nextLiked
                 ? item.likes + 1
-                : Math.max(0, item.likes - 1),
+                : Math.max(
+                    0,
+                    item.likes - 1
+                  ),
             }
           : item
       )
@@ -487,35 +900,66 @@ export default function RoleFeedScreen({ mode }: Props) {
 
     try {
       if (post.liked) {
-        const { error } = await supabase
+        const {
+          error,
+        } = await supabase
           .from("post_likes")
           .delete()
-          .eq("post_id", post.id)
-          .eq("user_id", profile.id);
+          .eq(
+            "post_id",
+            post.id
+          )
+          .eq(
+            "user_id",
+            profile.id
+          );
 
-        if (error) throw error;
+        if (error) {
+          throw error;
+        }
       } else {
-        const { error } = await supabase.from("post_likes").insert({
-          post_id: post.id,
-          user_id: profile.id,
-        });
+        const {
+          error,
+        } = await supabase
+          .from("post_likes")
+          .insert({
+            post_id:
+              post.id,
+            user_id:
+              profile.id,
+          });
 
-        if (error && error.code !== "23505") {
+        if (
+          error &&
+          error.code !== "23505"
+        ) {
           throw error;
         }
       }
     } catch (error: any) {
-      console.log("Like error:", error);
+      console.log(
+        "Like error:",
+        error
+      );
+
       await loadFeed(false);
     } finally {
-      setLikeLoading((current) =>
-        current.filter((id) => id !== post.id)
+      setLikeLoading(
+        current =>
+          current.filter(
+            id =>
+              id !== post.id
+          )
       );
     }
   }
 
-  async function sharePost(post: RankedFeedPost) {
-    if (!profile?.id) return;
+  async function sharePost(
+    post: RankedFeedPost
+  ) {
+    if (!profile?.id) {
+      return;
+    }
 
     try {
       await Share.share({
@@ -524,132 +968,184 @@ export default function RoleFeedScreen({ mode }: Props) {
           : `View this post from ${post.full_name} on Richfield Connect.`,
       });
 
-      const { error } = await supabase.from("post_shares").insert({
-        post_id: post.id,
-        user_id: profile.id,
-      });
+      const {
+        error,
+      } = await supabase
+        .from("post_shares")
+        .insert({
+          post_id: post.id,
+          user_id:
+            profile.id,
+        });
 
-      if (error && error.code !== "23505") {
+      if (
+        error &&
+        error.code !== "23505"
+      ) {
         throw error;
       }
     } catch (error) {
-      console.log("Share post error:", error);
+      console.log(
+        "Share post error:",
+        error
+      );
     }
   }
 
   function openProfile(
     post: RankedFeedPost
-    ) {
+  ) {
     if (
-        post.user_id ===
-        profile?.id
+      post.user_id ===
+      profile?.id
     ) {
-        if (
+      if (
         mode === "admin"
-        ) {
+      ) {
         router.push(
-            "/(admin)/(tabs)/profile"
+          "/(admin)/(tabs)/profile"
         );
 
         return;
-        }
+      }
 
-        if (
+      if (
         mode === "student"
-        ) {
+      ) {
         router.push(
-            "/(tabs)/profile"
+          "/(tabs)/profile"
         );
 
         return;
-        }
+      }
 
-        if (
+      if (
         mode === "alumni"
-        ) {
+      ) {
         router.push(
-            "/(alumni)/(tabs)/profile"
+          "/(alumni)/(tabs)/profile"
         );
 
         return;
-        }
+      }
     }
 
     router.push({
-        pathname:
+      pathname:
         "/member-profile",
 
-        params: {
+      params: {
         userId:
-            post.user_id,
+          post.user_id,
 
         id:
-            post.user_id,
+          post.user_id,
 
         name:
-            post.full_name,
+          post.full_name,
 
         username:
-            post.username ||
-            "",
+          post.username ||
+          "",
 
         image:
-            post.avatar_url ||
-            "",
+          post.avatar_url ||
+          "",
 
         role:
-            post.role ||
-            "student",
-        },
+          post.role ||
+          "student",
+      },
     });
-    }
+  }
 
-  async function openMessage(post: RankedFeedPost) {
+  async function openMessage(
+    post: RankedFeedPost
+  ) {
     try {
-      setMessageLoadingId(post.user_id);
+      setMessageLoadingId(
+        post.user_id
+      );
 
-      const { data, error } = await supabase.rpc(
+      const {
+        data,
+        error,
+      } = await supabase.rpc(
         "open_direct_conversation",
         {
-          p_other_user_id: post.user_id,
+          p_other_user_id:
+            post.user_id,
         }
       );
 
-      if (error) throw error;
-      if (!data) throw new Error("Conversation could not be opened.");
+      if (error) {
+        throw error;
+      }
+
+      if (!data) {
+        throw new Error(
+          "Conversation could not be opened."
+        );
+      }
 
       router.push({
-        pathname: "/conversation",
+        pathname:
+          "/conversation",
+
         params: {
           id: String(data),
-          otherUserId: post.user_id,
-          userId: post.user_id,
-          name: post.full_name,
-          username: post.username || "",
-          image: post.avatar_url || "",
-          role: post.role || "student",
+
+          otherUserId:
+            post.user_id,
+
+          userId:
+            post.user_id,
+
+          name:
+            post.full_name,
+
+          username:
+            post.username ||
+            "",
+
+          image:
+            post.avatar_url ||
+            "",
+
+          role:
+            post.role ||
+            "student",
         },
       });
     } catch (error: any) {
       Alert.alert(
         "Message",
-        error?.message || "Could not open this conversation."
+        error?.message ||
+          "Could not open this conversation."
       );
     } finally {
-      setMessageLoadingId(null);
+      setMessageLoadingId(
+        null
+      );
     }
   }
 
-  function openPost(post: RankedFeedPost) {
+  function openPost(
+    post: RankedFeedPost
+  ) {
     router.push({
-        pathname: "/post/[id]" as never,
-        params: {
-        id: post.id,
-        },
-    });
-    }
+      pathname:
+        "/post/[id]" as never,
 
-  async function removePost(post: RankedFeedPost) {
+      params: {
+        id: post.id,
+      },
+    });
+  }
+
+  async function removePost(
+    post: RankedFeedPost
+  ) {
     Alert.alert(
       "Remove post",
       "Remove this post from Richfield Connect?",
@@ -660,30 +1156,55 @@ export default function RoleFeedScreen({ mode }: Props) {
         },
         {
           text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setDeleteLoadingId(post.id);
+          style:
+            "destructive",
 
-              const { error } = await supabase
-                .from("posts")
-                .delete()
-                .eq("id", post.id);
+          onPress:
+            async () => {
+              try {
+                setDeleteLoadingId(
+                  post.id
+                );
 
-              if (error) throw error;
+                const {
+                  error,
+                } =
+                  await supabase
+                    .from(
+                      "posts"
+                    )
+                    .delete()
+                    .eq(
+                      "id",
+                      post.id
+                    );
 
-              setPosts((current) =>
-                current.filter((item) => item.id !== post.id)
-              );
-            } catch (error: any) {
-              Alert.alert(
-                "Moderation",
-                error?.message || "Could not remove this post."
-              );
-            } finally {
-              setDeleteLoadingId(null);
-            }
-          },
+                if (error) {
+                  throw error;
+                }
+
+                setPosts(
+                  current =>
+                    current.filter(
+                      item =>
+                        item.id !==
+                        post.id
+                    )
+                );
+              } catch (
+                error: any
+              ) {
+                Alert.alert(
+                  "Moderation",
+                  error?.message ||
+                    "Could not remove this post."
+                );
+              } finally {
+                setDeleteLoadingId(
+                  null
+                );
+              }
+            },
         },
       ]
     );
@@ -691,13 +1212,185 @@ export default function RoleFeedScreen({ mode }: Props) {
 
   async function refresh() {
     setRefreshing(true);
-    await loadFeed(false);
+
+    try {
+      await loadScreen(false);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  function openProfileCompletion() {
+    /*
+     * Your existing Student and Alumni
+     * profile editing currently uses the
+     * student edit-profile route.
+     *
+     * The CV itself is available from
+     * ProfileScreen.
+     */
+    router.push(
+      "/(student)/edit-profile"
+    );
+  }
+
+  function renderCompletionCard() {
+    if (
+      !isSocial ||
+      !profileCompletion ||
+      profileCompletion.isComplete
+    ) {
+      return null;
+    }
+
+    const missing =
+      profileCompletion.missing;
+
+    return (
+      <View
+        style={
+          styles.completionWrapper
+        }
+      >
+        <View
+          style={
+            styles.completionCard
+          }
+        >
+          <View
+            style={
+              styles.completionTop
+            }
+          >
+            <View
+              style={
+                styles.completionIcon
+              }
+            >
+              <Ionicons
+                name="person-outline"
+                size={20}
+                color={PRIMARY}
+              />
+            </View>
+
+            <View
+              style={
+                styles.completionInfo
+              }
+            >
+              <Text
+                style={
+                  styles.completionTitle
+                }
+              >
+                Complete your profile
+              </Text>
+
+              <Text
+                style={
+                  styles.completionSubtitle
+                }
+              >
+                Build a stronger
+                Richfield profile.
+              </Text>
+            </View>
+
+            <Text
+              style={
+                styles.completionPercentage
+              }
+            >
+              {
+                profileCompletion.percentage
+              }
+              %
+            </Text>
+          </View>
+
+          <View
+            style={
+              styles.progressBackground
+            }
+          >
+            <View
+              style={[
+                styles.progressFill,
+                {
+                  width:
+                    `${profileCompletion.percentage}%`,
+                },
+              ]}
+            />
+          </View>
+
+          <Text
+            style={
+              styles.missingTitle
+            }
+          >
+            {missing.length}{" "}
+            {missing.length === 1
+              ? "thing"
+              : "things"}{" "}
+            left
+          </Text>
+
+          <Text
+            style={
+              styles.missingText
+            }
+            numberOfLines={2}
+          >
+            Add{" "}
+            {missing
+              .slice(0, 3)
+              .join(", ")}
+            {missing.length > 3
+              ? ` +${
+                  missing.length -
+                  3
+                } more`
+              : ""}
+          </Text>
+
+          <Pressable
+            style={
+              styles.completeProfileButton
+            }
+            onPress={
+              openProfileCompletion
+            }
+          >
+            <Text
+              style={
+                styles.completeProfileButtonText
+              }
+            >
+              Complete profile
+            </Text>
+
+            <Ionicons
+              name="arrow-forward"
+              size={16}
+              color="#fff"
+            />
+          </Pressable>
+        </View>
+      </View>
+    );
   }
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.loading}>
-        <ActivityIndicator size="large" color={PRIMARY} />
+      <SafeAreaView
+        style={styles.loading}
+      >
+        <ActivityIndicator
+          size="large"
+          color={PRIMARY}
+        />
       </SafeAreaView>
     );
   }
@@ -728,42 +1421,84 @@ export default function RoleFeedScreen({ mode }: Props) {
       : "social";
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
+    <SafeAreaView
+      style={styles.screen}
+    >
+      <View
+        style={styles.header}
+      >
+        <View
+          style={{ flex: 1 }}
+        >
+          <Text
+            style={styles.title}
+          >
+            {title}
+          </Text>
+
+          <Text
+            style={styles.subtitle}
+          >
+            {subtitle}
+          </Text>
         </View>
 
-        {mode === "student" || mode === "alumni" ? (
+        {mode === "student" ||
+        mode === "alumni" ? (
           <Pressable
-            style={styles.createButton}
-            onPress={() => router.push("/(student)/create-post")}
+            style={
+              styles.createButton
+            }
+            onPress={() =>
+              router.push(
+                "/(student)/create-post"
+              )
+            }
           >
-            <Ionicons name="add" size={22} color="#fff" />
+            <Ionicons
+              name="add"
+              size={22}
+              color="#fff"
+            />
           </Pressable>
         ) : null}
       </View>
 
-      {(isTalent || isAdmin) && (
+      {(isTalent ||
+        isAdmin) && (
         <>
-          <View style={styles.search}>
-            <Ionicons name="search-outline" size={19} color="#777" />
+          <View
+            style={styles.search}
+          >
+            <Ionicons
+              name="search-outline"
+              size={19}
+              color="#777"
+            />
 
             <TextInput
               value={search}
-              onChangeText={setSearch}
+              onChangeText={
+                setSearch
+              }
               placeholder={
                 isTalent
                   ? "Search people, skills or posts"
                   : "Search posts or members"
               }
               placeholderTextColor="#999"
-              style={styles.searchInput}
+              style={
+                styles.searchInput
+              }
             />
 
-            {search.length > 0 ? (
-              <Pressable onPress={() => setSearch("")}>
+            {search.length >
+            0 ? (
+              <Pressable
+                onPress={() =>
+                  setSearch("")
+                }
+              >
                 <Ionicons
                   name="close-circle"
                   size={19}
@@ -773,23 +1508,46 @@ export default function RoleFeedScreen({ mode }: Props) {
             ) : null}
           </View>
 
-          <View style={styles.filters}>
+          <View
+            style={styles.filters}
+          >
             <FilterButton
               label="All"
-              active={personFilter === "all"}
-              onPress={() => setPersonFilter("all")}
+              active={
+                personFilter ===
+                "all"
+              }
+              onPress={() =>
+                setPersonFilter(
+                  "all"
+                )
+              }
             />
 
             <FilterButton
               label="Students"
-              active={personFilter === "students"}
-              onPress={() => setPersonFilter("students")}
+              active={
+                personFilter ===
+                "students"
+              }
+              onPress={() =>
+                setPersonFilter(
+                  "students"
+                )
+              }
             />
 
             <FilterButton
               label="Alumni"
-              active={personFilter === "alumni"}
-              onPress={() => setPersonFilter("alumni")}
+              active={
+                personFilter ===
+                "alumni"
+              }
+              onPress={() =>
+                setPersonFilter(
+                  "alumni"
+                )
+              }
             />
           </View>
         </>
@@ -797,90 +1555,122 @@ export default function RoleFeedScreen({ mode }: Props) {
 
       <FlatList
         data={visiblePosts}
-        keyExtractor={(item) => item.id}
-        showsVerticalScrollIndicator={false}
+        keyExtractor={item =>
+          item.id
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            refreshing={
+              refreshing
+            }
             onRefresh={refresh}
             tintColor={PRIMARY}
           />
         }
         contentContainerStyle={
-          visiblePosts.length ? styles.list : styles.emptyList
+          visiblePosts.length
+            ? styles.list
+            : styles.emptyList
+        }
+        ListHeaderComponent={
+          renderCompletionCard
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
+          <View
+            style={styles.empty}
+          >
             <Ionicons
               name="newspaper-outline"
               size={36}
               color="#999"
             />
 
-            <Text style={styles.emptyTitle}>Nothing to show yet</Text>
+            <Text
+              style={
+                styles.emptyTitle
+              }
+            >
+              Nothing to show yet
+            </Text>
 
-            <Text style={styles.emptyText}>
-              Posts you are allowed to see will appear here.
+            <Text
+              style={
+                styles.emptyText
+              }
+            >
+              Posts you are allowed
+              to see will appear
+              here.
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
+        renderItem={({
+          item,
+        }) => (
           <FeedPostCard
             post={item}
             variant={variant}
-
             onProfilePress={() =>
-                openProfile(item)
+              openProfile(item)
             }
-
             onLikePress={
-                (isSocial || isAdmin) &&
-                !likeLoading.includes(
+              (isSocial ||
+                isAdmin) &&
+              !likeLoading.includes(
                 item.id
-                )
+              )
                 ? () =>
-                    toggleLike(item)
+                    toggleLike(
+                      item
+                    )
                 : undefined
             }
-
             onCommentPress={
-                isSocial || isAdmin
+              isSocial ||
+              isAdmin
                 ? () =>
-                    openPost(item)
+                    openPost(
+                      item
+                    )
                 : undefined
             }
-
             onSharePress={
-                isSocial || isAdmin
+              isSocial ||
+              isAdmin
                 ? () =>
-                    sharePost(item)
+                    sharePost(
+                      item
+                    )
                 : undefined
             }
-
             onMessagePress={
-                isTalent
+              isTalent
                 ? () =>
-                    openMessage(item)
+                    openMessage(
+                      item
+                    )
                 : undefined
             }
-
             messageLoading={
-                messageLoadingId ===
-                item.user_id
+              messageLoadingId ===
+              item.user_id
             }
-
             onDeletePress={
-                isAdmin
+              isAdmin
                 ? () =>
-                    removePost(item)
+                    removePost(
+                      item
+                    )
                 : undefined
             }
-
             deleteLoading={
-                deleteLoadingId ===
-                item.id
+              deleteLoadingId ===
+              item.id
             }
-            />
+          />
         )}
       />
     </SafeAreaView>
@@ -900,14 +1690,16 @@ function FilterButton({
     <Pressable
       style={[
         styles.filterButton,
-        active && styles.filterButtonActive,
+        active &&
+          styles.filterButtonActive,
       ]}
       onPress={onPress}
     >
       <Text
         style={[
           styles.filterText,
-          active && styles.filterTextActive,
+          active &&
+            styles.filterTextActive,
         ]}
       >
         {label}
@@ -916,115 +1708,245 @@ function FilterButton({
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#F5F5F7",
-  },
-  loading: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fff",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 13,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#ECECEE",
-  },
-  title: {
-    color: "#111",
-    fontSize: 25,
-    fontWeight: "800",
-    letterSpacing: -0.4,
-  },
-  subtitle: {
-    marginTop: 3,
-    color: "#777",
-    fontSize: 12,
-  },
-  createButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: PRIMARY,
-  },
-  search: {
-    minHeight: 44,
-    marginHorizontal: 16,
-    marginTop: 12,
-    paddingHorizontal: 13,
-    borderWidth: 1,
-    borderColor: "#E1E1E5",
-    borderRadius: 10,
-    backgroundColor: "#fff",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-  },
-  searchInput: {
-    flex: 1,
-    color: "#111",
-    fontSize: 14,
-  },
-  filters: {
-    flexDirection: "row",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  filterButton: {
-    paddingHorizontal: 13,
-    paddingVertical: 7,
-    borderWidth: 1,
-    borderColor: "#DDDEE2",
-    borderRadius: 8,
-    backgroundColor: "#fff",
-  },
-  filterButtonActive: {
-    borderColor: "#171717",
-    backgroundColor: "#171717",
-  },
-  filterText: {
-    color: "#555",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  filterTextActive: {
-    color: "#fff",
-  },
-  list: {
-    paddingBottom: 30,
-  },
-  emptyList: {
-    flexGrow: 1,
-  },
-  empty: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 28,
-    paddingBottom: 80,
-  },
-  emptyTitle: {
-    marginTop: 12,
-    color: "#222",
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  emptyText: {
-    marginTop: 6,
-    maxWidth: 280,
-    color: "#777",
-    fontSize: 12,
-    lineHeight: 18,
-    textAlign: "center",
-  },
-});
+const styles =
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor:
+        "#F5F5F7",
+    },
+
+    loading: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      backgroundColor: "#fff",
+    },
+
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 18,
+      paddingTop: 10,
+      paddingBottom: 13,
+      backgroundColor: "#fff",
+      borderBottomWidth: 1,
+      borderBottomColor:
+        "#ECECEE",
+    },
+
+    title: {
+      color: "#111",
+      fontSize: 25,
+      fontWeight: "800",
+      letterSpacing: -0.4,
+    },
+
+    subtitle: {
+      marginTop: 3,
+      color: "#777",
+      fontSize: 12,
+    },
+
+    createButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      backgroundColor: PRIMARY,
+    },
+
+    completionWrapper: {
+      paddingHorizontal: 16,
+      paddingTop: 14,
+      paddingBottom: 4,
+    },
+
+    completionCard: {
+      padding: 16,
+      borderRadius: 16,
+      backgroundColor:
+        "#F8F8FF",
+      borderWidth: 1,
+      borderColor: "#E2E2FF",
+    },
+
+    completionTop: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    completionIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor:
+        "#EEEEFF",
+      alignItems: "center",
+      justifyContent:
+        "center",
+      marginRight: 11,
+    },
+
+    completionInfo: {
+      flex: 1,
+    },
+
+    completionTitle: {
+      fontSize: 14,
+      fontWeight: "800",
+      color: "#161616",
+    },
+
+    completionSubtitle: {
+      marginTop: 2,
+      fontSize: 11,
+      color: "#777",
+    },
+
+    completionPercentage: {
+      marginLeft: 10,
+      fontSize: 17,
+      fontWeight: "900",
+      color: PRIMARY,
+    },
+
+    progressBackground: {
+      height: 7,
+      marginTop: 15,
+      borderRadius: 20,
+      backgroundColor:
+        "#E1E1EC",
+      overflow: "hidden",
+    },
+
+    progressFill: {
+      height: "100%",
+      borderRadius: 20,
+      backgroundColor: PRIMARY,
+    },
+
+    missingTitle: {
+      marginTop: 12,
+      fontSize: 12,
+      fontWeight: "800",
+      color: "#333",
+    },
+
+    missingText: {
+      marginTop: 3,
+      fontSize: 11,
+      lineHeight: 16,
+      color: "#777",
+    },
+
+    completeProfileButton: {
+      alignSelf:
+        "flex-start",
+      marginTop: 13,
+      minHeight: 38,
+      paddingHorizontal: 14,
+      borderRadius: 10,
+      backgroundColor: PRIMARY,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "center",
+      gap: 6,
+    },
+
+    completeProfileButtonText: {
+      color: "#fff",
+      fontSize: 12,
+      fontWeight: "800",
+    },
+
+    search: {
+      minHeight: 44,
+      marginHorizontal: 16,
+      marginTop: 12,
+      paddingHorizontal: 13,
+      borderWidth: 1,
+      borderColor: "#E1E1E5",
+      borderRadius: 10,
+      backgroundColor: "#fff",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 9,
+    },
+
+    searchInput: {
+      flex: 1,
+      color: "#111",
+      fontSize: 14,
+    },
+
+    filters: {
+      flexDirection: "row",
+      gap: 8,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+
+    filterButton: {
+      paddingHorizontal: 13,
+      paddingVertical: 7,
+      borderWidth: 1,
+      borderColor: "#DDDEE2",
+      borderRadius: 8,
+      backgroundColor: "#fff",
+    },
+
+    filterButtonActive: {
+      borderColor: "#171717",
+      backgroundColor: "#171717",
+    },
+
+    filterText: {
+      color: "#555",
+      fontSize: 12,
+      fontWeight: "700",
+    },
+
+    filterTextActive: {
+      color: "#fff",
+    },
+
+    list: {
+      paddingBottom: 30,
+    },
+
+    emptyList: {
+      flexGrow: 1,
+      paddingBottom: 30,
+    },
+
+    empty: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      paddingHorizontal: 28,
+      paddingBottom: 80,
+      paddingTop: 50,
+    },
+
+    emptyTitle: {
+      marginTop: 12,
+      color: "#222",
+      fontSize: 16,
+      fontWeight: "800",
+    },
+
+    emptyText: {
+      marginTop: 6,
+      maxWidth: 280,
+      color: "#777",
+      fontSize: 12,
+      lineHeight: 18,
+      textAlign: "center",
+    },
+  });

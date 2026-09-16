@@ -17,10 +17,29 @@ import {
   supabase,
 } from "../../lib/supabase";
 
+import {
+  cleanEmail,
+  cleanPersonName,
+  isValidPersonName,
+  validatePassword,
+} from "../../utils/validation";
+
 const PRIMARY = "#0300cf";
 
 const STUDENT_DOMAIN =
   "@my.richfield.ac.za";
+
+/*
+ * Richfield student number format:
+ *
+ * - Exactly 9 digits
+ * - Must start with 40
+ *
+ * Example:
+ * 401234567
+ */
+const STUDENT_NUMBER_REGEX =
+  /^40\d{7}$/;
 
 const programmes = [
   "BSc IT",
@@ -44,39 +63,127 @@ const campuses = [
   "Sandton",
 ];
 
+/* =========================================================
+   STUDENT NUMBER
+========================================================= */
+
 function getStudentNumber(
   email: string
 ) {
-  const cleanEmail = email
-    .trim()
-    .toLowerCase();
+  const normalizedEmail =
+    cleanEmail(email);
 
   if (
-    !cleanEmail.endsWith(
+    !normalizedEmail.endsWith(
       STUDENT_DOMAIN
     )
   ) {
     return null;
   }
 
-  const number =
-    cleanEmail.slice(
+  const studentNumber =
+    normalizedEmail.slice(
       0,
       -STUDENT_DOMAIN.length
     );
 
-  if (!/^\d+$/.test(number)) {
+  /*
+   * Student number MUST:
+   *
+   * 1. Be exactly 9 digits
+   * 2. Start with 40
+   *
+   * Example:
+   * 401234567
+   */
+  if (
+    !STUDENT_NUMBER_REGEX.test(
+      studentNumber
+    )
+  ) {
     return null;
   }
 
-  return number;
+  /*
+   * Extra fake-number protection.
+   *
+   * Although a valid number starts
+   * with 40, we also reject a number
+   * where everything after 40 is zero.
+   *
+   * Example:
+   * 400000000
+   */
+  if (
+    /^40{1}0{7}$/.test(
+      studentNumber
+    )
+  ) {
+    return null;
+  }
+
+  return studentNumber;
 }
 
-function isStudentEmail(
-  email: string
+/* =========================================================
+   STUDENT EMAIL VALIDATION
+========================================================= */
+
+function validateRichfieldStudentEmail(
+  value: string
 ) {
-  return getStudentNumber(email) !== null;
+  const email =
+    cleanEmail(value);
+
+  if (!email) {
+    return {
+      valid: false,
+      message:
+        "Please enter your Richfield student email.",
+    };
+  }
+
+  /*
+   * Exact required format:
+   *
+   * 40XXXXXXX@my.richfield.ac.za
+   */
+  const studentEmailRegex =
+    /^40\d{7}@my\.richfield\.ac\.za$/;
+
+  if (
+    !studentEmailRegex.test(
+      email
+    )
+  ) {
+    return {
+      valid: false,
+      message:
+        "Use your Richfield student email. The student number must start with 40 and contain exactly 9 digits before @my.richfield.ac.za.",
+    };
+  }
+
+  const studentNumber =
+    getStudentNumber(email);
+
+  if (!studentNumber) {
+    return {
+      valid: false,
+      message:
+        "Please enter a valid Richfield student email.",
+    };
+  }
+
+  return {
+    valid: true,
+    message: "",
+    studentNumber,
+  };
 }
+
+/* =========================================================
+   PASSWORD STRENGTH
+========================================================= */
 
 function getPasswordStrength(
   password: string
@@ -90,12 +197,29 @@ function getPasswordStrength(
 
   let score = 0;
 
-  if (password.length >= 8) score++;
-  if (/[A-Z]/.test(password)) score++;
-  if (/[a-z]/.test(password)) score++;
-  if (/[0-9]/.test(password)) score++;
-  if (/[^A-Za-z0-9]/.test(password))
+  if (password.length >= 8) {
     score++;
+  }
+
+  if (/[A-Z]/.test(password)) {
+    score++;
+  }
+
+  if (/[a-z]/.test(password)) {
+    score++;
+  }
+
+  if (/[0-9]/.test(password)) {
+    score++;
+  }
+
+  if (
+    /[^A-Za-z0-9]/.test(
+      password
+    )
+  ) {
+    score++;
+  }
 
   if (score <= 2) {
     return {
@@ -117,26 +241,40 @@ function getPasswordStrength(
   };
 }
 
+/* =========================================================
+   SCREEN
+========================================================= */
+
 export default function StudentSignupScreen() {
-  const [fullName, setFullName] =
-    useState("");
+  const [
+    fullName,
+    setFullName,
+  ] = useState("");
 
-  const [email, setEmail] =
-    useState("");
+  const [
+    email,
+    setEmail,
+  ] = useState("");
 
-  const [programme, setProgramme] =
-    useState("");
+  const [
+    programme,
+    setProgramme,
+  ] = useState("");
 
-  const [campus, setCampus] =
-    useState("");
+  const [
+    campus,
+    setCampus,
+  ] = useState("");
 
   const [
     yearOfStudy,
     setYearOfStudy,
   ] = useState("");
 
-  const [password, setPassword] =
-    useState("");
+  const [
+    password,
+    setPassword,
+  ] = useState("");
 
   const [
     confirmPassword,
@@ -153,38 +291,128 @@ export default function StudentSignupScreen() {
     setCampusOpen,
   ] = useState(false);
 
-  const [loading, setLoading] =
-    useState(false);
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
+
+  /* =======================================================
+     DERIVED VALUES
+  ======================================================= */
+
+  const cleanedName =
+    cleanPersonName(
+      fullName
+    );
+
+  const cleanedEmail =
+    cleanEmail(email);
+
+  const nameIsValid =
+    isValidPersonName(
+      cleanedName
+    );
+
+  const emailValidation =
+    validateRichfieldStudentEmail(
+      cleanedEmail
+    );
+
+  const emailIsValid =
+    emailValidation.valid;
 
   const studentNumber =
-    getStudentNumber(email);
+    emailIsValid
+      ? getStudentNumber(
+          cleanedEmail
+        )
+      : null;
+
+  const passwordValidation =
+    validatePassword(
+      password
+    );
 
   const passwordStrength =
-    getPasswordStrength(password);
+    getPasswordStrength(
+      password
+    );
 
-  const passwordIsStrong =
+  /*
+   * Strong password rules:
+   *
+   * - At least 8 characters
+   * - Uppercase
+   * - Lowercase
+   * - Number
+   * - Special character
+   * - Must also pass shared validation
+   */
+  const passwordMeetsRules =
     password.length >= 8 &&
     /[A-Z]/.test(password) &&
     /[a-z]/.test(password) &&
     /[0-9]/.test(password) &&
-    /[^A-Za-z0-9]/.test(password);
+    /[^A-Za-z0-9]/.test(
+      password
+    ) &&
+    passwordValidation.valid;
 
   const passwordsMatch =
     password.length > 0 &&
     confirmPassword.length > 0 &&
-    password === confirmPassword;
+    password ===
+      confirmPassword;
 
   const formIsValid =
-    fullName.trim().length > 0 &&
-    isStudentEmail(email) &&
+    nameIsValid &&
+    emailIsValid &&
     programme.length > 0 &&
     campus.length > 0 &&
     yearOfStudy.length > 0 &&
-    passwordIsStrong &&
+    passwordMeetsRules &&
     passwordsMatch;
 
+  /* =======================================================
+     INPUT HANDLERS
+  ======================================================= */
+
+  function handleNameChange(
+    value: string
+  ) {
+    setFullName(
+      cleanPersonName(
+        value
+      )
+    );
+  }
+
+  function handleEmailChange(
+    value: string
+  ) {
+    setEmail(
+      cleanEmail(value)
+    );
+  }
+
+  /* =======================================================
+     SIGNUP
+  ======================================================= */
+
   async function handleSignup() {
-    if (!fullName.trim()) {
+    const finalName =
+      cleanPersonName(
+        fullName
+      );
+
+    const finalEmail =
+      cleanEmail(email);
+
+    /* -----------------------------------------------------
+       FULL NAME
+    ----------------------------------------------------- */
+
+    if (!finalName) {
       Alert.alert(
         "Required field",
         "Please enter your full name."
@@ -193,17 +421,58 @@ export default function StudentSignupScreen() {
       return;
     }
 
-    const derivedStudentNumber =
-      getStudentNumber(email);
-
-    if (!derivedStudentNumber) {
+    if (
+      !isValidPersonName(
+        finalName
+      )
+    ) {
       Alert.alert(
-        "Invalid student email",
-        "Use your Richfield student email. Your student number must appear before @my.richfield.ac.za."
+        "Invalid name",
+        "Please enter your real full name. Numbers are not allowed."
       );
 
       return;
     }
+
+    /* -----------------------------------------------------
+       STUDENT EMAIL
+    ----------------------------------------------------- */
+
+    const finalEmailCheck =
+      validateRichfieldStudentEmail(
+        finalEmail
+      );
+
+    if (
+      !finalEmailCheck.valid
+    ) {
+      Alert.alert(
+        "Invalid student email",
+        finalEmailCheck.message
+      );
+
+      return;
+    }
+
+    const derivedStudentNumber =
+      getStudentNumber(
+        finalEmail
+      );
+
+    if (
+      !derivedStudentNumber
+    ) {
+      Alert.alert(
+        "Invalid student number",
+        "Your student number must start with 40 and contain exactly 9 digits."
+      );
+
+      return;
+    }
+
+    /* -----------------------------------------------------
+       PROGRAMME
+    ----------------------------------------------------- */
 
     if (!programme) {
       Alert.alert(
@@ -214,6 +483,10 @@ export default function StudentSignupScreen() {
       return;
     }
 
+    /* -----------------------------------------------------
+       CAMPUS
+    ----------------------------------------------------- */
+
     if (!campus) {
       Alert.alert(
         "Required field",
@@ -222,6 +495,10 @@ export default function StudentSignupScreen() {
 
       return;
     }
+
+    /* -----------------------------------------------------
+       YEAR OF STUDY
+    ----------------------------------------------------- */
 
     if (!yearOfStudy) {
       Alert.alert(
@@ -232,7 +509,29 @@ export default function StudentSignupScreen() {
       return;
     }
 
-    if (!passwordIsStrong) {
+    /* -----------------------------------------------------
+       PASSWORD
+    ----------------------------------------------------- */
+
+    const finalPasswordCheck =
+      validatePassword(
+        password
+      );
+
+    if (
+      !finalPasswordCheck.valid
+    ) {
+      Alert.alert(
+        "Weak password",
+        finalPasswordCheck.message
+      );
+
+      return;
+    }
+
+    if (
+      !passwordMeetsRules
+    ) {
       Alert.alert(
         "Weak password",
         "Your password must be at least 8 characters and contain uppercase, lowercase, a number and a special character."
@@ -250,25 +549,27 @@ export default function StudentSignupScreen() {
       return;
     }
 
+    /* -----------------------------------------------------
+       CREATE ACCOUNT
+    ----------------------------------------------------- */
+
     try {
       setLoading(true);
-
-      const cleanEmail = email
-        .trim()
-        .toLowerCase();
 
       const {
         data,
         error,
       } =
         await supabase.auth.signUp({
-          email: cleanEmail,
+          email:
+            finalEmail,
+
           password,
 
           options: {
             data: {
               full_name:
-                fullName.trim(),
+                finalName,
 
               signup_role:
                 "student",
@@ -303,7 +604,9 @@ export default function StudentSignupScreen() {
         "Your student account has been created. Please check your Richfield email to verify your account.",
         [
           {
-            text: "Continue",
+            text:
+              "Continue",
+
             onPress: () =>
               router.replace(
                 "/login"
@@ -311,7 +614,14 @@ export default function StudentSignupScreen() {
           },
         ]
       );
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
+      console.log(
+        "Student signup error:",
+        error
+      );
+
       Alert.alert(
         "Signup failed",
         error?.message ||
@@ -322,17 +632,32 @@ export default function StudentSignupScreen() {
     }
   }
 
+  /* =======================================================
+     UI
+  ======================================================= */
+
   return (
     <ScrollView
-      style={styles.screen}
+      style={
+        styles.screen
+      }
       contentContainerStyle={
         styles.container
       }
       keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={
+        false
+      }
     >
+      {/* BACK */}
+
       <Pressable
-        style={styles.backTop}
-        onPress={() => router.back()}
+        style={
+          styles.backTop
+        }
+        onPress={() =>
+          router.back()
+        }
       >
         <Ionicons
           name="arrow-back"
@@ -341,66 +666,138 @@ export default function StudentSignupScreen() {
         />
       </Pressable>
 
-      <Text style={styles.title}>
+      {/* HEADER */}
+
+      <Text
+        style={
+          styles.title
+        }
+      >
         Student signup
       </Text>
 
-      <Text style={styles.subtitle}>
+      <Text
+        style={
+          styles.subtitle
+        }
+      >
         Create your Richfield student
         account and start building your
         professional network.
       </Text>
 
-      <Text style={styles.label}>
+      {/* FULL NAME */}
+
+      <Text
+        style={
+          styles.label
+        }
+      >
         Full name{" "}
-        <Text style={styles.required}>
+        <Text
+          style={
+            styles.required
+          }
+        >
           *
         </Text>
       </Text>
 
       <TextInput
-        value={fullName}
-        onChangeText={setFullName}
+        value={
+          fullName
+        }
+        onChangeText={
+          handleNameChange
+        }
         placeholder="Enter your full name"
-        style={styles.input}
+        autoCapitalize="words"
+        autoCorrect={false}
+        maxLength={100}
+        style={[
+          styles.input,
+
+          fullName.length >
+            0 &&
+          !nameIsValid
+            ? styles.errorInput
+            : null,
+        ]}
       />
 
-      <Text style={styles.label}>
+      {fullName.length >
+        0 &&
+      !nameIsValid ? (
+        <Text
+          style={
+            styles.errorText
+          }
+        >
+          Please enter a valid full
+          name. Numbers are not
+          allowed.
+        </Text>
+      ) : null}
+
+      {/* STUDENT EMAIL */}
+
+      <Text
+        style={
+          styles.label
+        }
+      >
         Richfield student email{" "}
-        <Text style={styles.required}>
+        <Text
+          style={
+            styles.required
+          }
+        >
           *
         </Text>
       </Text>
 
       <TextInput
-        value={email}
-        onChangeText={setEmail}
-        placeholder="123456789@my.richfield.ac.za"
+        value={
+          email
+        }
+        onChangeText={
+          handleEmailChange
+        }
+        placeholder="401234567@my.richfield.ac.za"
         keyboardType="email-address"
         autoCapitalize="none"
         autoCorrect={false}
+        maxLength={254}
         style={[
           styles.input,
 
           email.length > 0 &&
-          !isStudentEmail(email)
+          !emailIsValid
             ? styles.errorInput
             : null,
         ]}
       />
 
       {email.length > 0 &&
-      !isStudentEmail(email) ? (
-        <Text style={styles.errorText}>
-          Use your Richfield student
-          email. It must start with your
-          student number.
+      !emailIsValid ? (
+        <Text
+          style={
+            styles.errorText
+          }
+        >
+          {
+            emailValidation.message
+          }
         </Text>
       ) : null}
 
+      {/* DETECTED STUDENT NUMBER */}
+
       {studentNumber ? (
         <View
-          style={styles.detectedBox}
+          style={
+            styles.detectedBox
+          }
         >
           <Ionicons
             name="checkmark-circle"
@@ -408,7 +805,11 @@ export default function StudentSignupScreen() {
             color="#008A42"
           />
 
-          <View style={{ flex: 1 }}>
+          <View
+            style={{
+              flex: 1,
+            }}
+          >
             <Text
               style={
                 styles.detectedLabel
@@ -428,21 +829,35 @@ export default function StudentSignupScreen() {
         </View>
       ) : null}
 
-      <Text style={styles.label}>
+      {/* PROGRAMME */}
+
+      <Text
+        style={
+          styles.label
+        }
+      >
         Programme{" "}
-        <Text style={styles.required}>
+        <Text
+          style={
+            styles.required
+          }
+        >
           *
         </Text>
       </Text>
 
       <Pressable
-        style={styles.select}
+        style={
+          styles.select
+        }
         onPress={() => {
           setProgrammeOpen(
             !programmeOpen
           );
 
-          setCampusOpen(false);
+          setCampusOpen(
+            false
+          );
         }}
       >
         <Text
@@ -463,50 +878,79 @@ export default function StudentSignupScreen() {
               : "chevron-down"
           }
           size={18}
-          color={PRIMARY}
+          color={
+            PRIMARY
+          }
         />
       </Pressable>
 
       {programmeOpen && (
-        <View style={styles.dropdown}>
-          {programmes.map(item => (
-            <Pressable
-              key={item}
-              style={
-                styles.dropdownItem
-              }
-              onPress={() => {
-                setProgramme(item);
-                setProgrammeOpen(false);
-              }}
-            >
-              <Text
-                style={
-                  styles.dropdownText
+        <View
+          style={
+            styles.dropdown
+          }
+        >
+          {programmes.map(
+            item => (
+              <Pressable
+                key={
+                  item
                 }
+                style={
+                  styles.dropdownItem
+                }
+                onPress={() => {
+                  setProgramme(
+                    item
+                  );
+
+                  setProgrammeOpen(
+                    false
+                  );
+                }}
               >
-                {item}
-              </Text>
-            </Pressable>
-          ))}
+                <Text
+                  style={
+                    styles.dropdownText
+                  }
+                >
+                  {item}
+                </Text>
+              </Pressable>
+            )
+          )}
         </View>
       )}
 
-      <Text style={styles.label}>
+      {/* CAMPUS */}
+
+      <Text
+        style={
+          styles.label
+        }
+      >
         Campus{" "}
-        <Text style={styles.required}>
+        <Text
+          style={
+            styles.required
+          }
+        >
           *
         </Text>
       </Text>
 
       <Pressable
-        style={styles.select}
+        style={
+          styles.select
+        }
         onPress={() => {
           setCampusOpen(
             !campusOpen
           );
 
-          setProgrammeOpen(false);
+          setProgrammeOpen(
+            false
+          );
         }}
       >
         <Text
@@ -527,43 +971,70 @@ export default function StudentSignupScreen() {
               : "chevron-down"
           }
           size={18}
-          color={PRIMARY}
+          color={
+            PRIMARY
+          }
         />
       </Pressable>
 
       {campusOpen && (
-        <View style={styles.dropdown}>
+        <View
+          style={
+            styles.dropdown
+          }
+        >
           <ScrollView
-            style={styles.campusList}
+            style={
+              styles.campusList
+            }
             nestedScrollEnabled
           >
-            {campuses.map(item => (
-              <Pressable
-                key={item}
-                style={
-                  styles.dropdownItem
-                }
-                onPress={() => {
-                  setCampus(item);
-                  setCampusOpen(false);
-                }}
-              >
-                <Text
-                  style={
-                    styles.dropdownText
+            {campuses.map(
+              item => (
+                <Pressable
+                  key={
+                    item
                   }
+                  style={
+                    styles.dropdownItem
+                  }
+                  onPress={() => {
+                    setCampus(
+                      item
+                    );
+
+                    setCampusOpen(
+                      false
+                    );
+                  }}
                 >
-                  {item}
-                </Text>
-              </Pressable>
-            ))}
+                  <Text
+                    style={
+                      styles.dropdownText
+                    }
+                  >
+                    {item}
+                  </Text>
+                </Pressable>
+              )
+            )}
           </ScrollView>
         </View>
       )}
 
-      <Text style={styles.label}>
+      {/* YEAR OF STUDY */}
+
+      <Text
+        style={
+          styles.label
+        }
+      >
         Year of study{" "}
-        <Text style={styles.required}>
+        <Text
+          style={
+            styles.required
+          }
+        >
           *
         </Text>
       </Text>
@@ -573,15 +1044,23 @@ export default function StudentSignupScreen() {
           styles.radioContainer
         }
       >
-        {["1", "2", "3"].map(
+        {[
+          "1",
+          "2",
+          "3",
+        ].map(
           year => (
             <Pressable
-              key={year}
+              key={
+                year
+              }
               style={
                 styles.radioOption
               }
               onPress={() =>
-                setYearOfStudy(year)
+                setYearOfStudy(
+                  year
+                )
               }
             >
               <View
@@ -619,29 +1098,57 @@ export default function StudentSignupScreen() {
         )}
       </View>
 
-      <Text style={styles.label}>
+      {/* PASSWORD */}
+
+      <Text
+        style={
+          styles.label
+        }
+      >
         Password{" "}
-        <Text style={styles.required}>
+        <Text
+          style={
+            styles.required
+          }
+        >
           *
         </Text>
       </Text>
 
       <TextInput
-        value={password}
-        onChangeText={setPassword}
+        value={
+          password
+        }
+        onChangeText={
+          setPassword
+        }
         placeholder="Create a strong password"
         secureTextEntry
-        style={styles.input}
+        autoCapitalize="none"
+        autoCorrect={false}
+        maxLength={128}
+        style={[
+          styles.input,
+
+          password.length >
+            0 &&
+          !passwordMeetsRules
+            ? styles.errorInput
+            : null,
+        ]}
       />
 
-      {password.length > 0 && (
+      {password.length >
+        0 && (
         <View
           style={
             styles.passwordSection
           }
         >
           <View
-            style={styles.strengthRow}
+            style={
+              styles.strengthRow
+            }
           >
             <Text
               style={
@@ -694,43 +1201,60 @@ export default function StudentSignupScreen() {
           </View>
 
           <Text
-            style={styles.passwordRule}
+            style={
+              styles.passwordRule
+            }
           >
-            {password.length >= 8
+            {password.length >=
+            8
               ? "✓"
               : "○"}{" "}
             At least 8 characters
           </Text>
 
           <Text
-            style={styles.passwordRule}
+            style={
+              styles.passwordRule
+            }
           >
-            {/[A-Z]/.test(password)
+            {/[A-Z]/.test(
+              password
+            )
               ? "✓"
               : "○"}{" "}
             Uppercase letter
           </Text>
 
           <Text
-            style={styles.passwordRule}
+            style={
+              styles.passwordRule
+            }
           >
-            {/[a-z]/.test(password)
+            {/[a-z]/.test(
+              password
+            )
               ? "✓"
               : "○"}{" "}
             Lowercase letter
           </Text>
 
           <Text
-            style={styles.passwordRule}
+            style={
+              styles.passwordRule
+            }
           >
-            {/[0-9]/.test(password)
+            {/[0-9]/.test(
+              password
+            )
               ? "✓"
               : "○"}{" "}
             Number
           </Text>
 
           <Text
-            style={styles.passwordRule}
+            style={
+              styles.passwordRule
+            }
           >
             {/[^A-Za-z0-9]/.test(
               password
@@ -739,23 +1263,52 @@ export default function StudentSignupScreen() {
               : "○"}{" "}
             Special character
           </Text>
+
+          {!passwordValidation.valid &&
+          password.length >
+            0 ? (
+            <Text
+              style={
+                styles.passwordError
+              }
+            >
+              {
+                passwordValidation.message
+              }
+            </Text>
+          ) : null}
         </View>
       )}
 
-      <Text style={styles.label}>
+      {/* CONFIRM PASSWORD */}
+
+      <Text
+        style={
+          styles.label
+        }
+      >
         Re-enter password{" "}
-        <Text style={styles.required}>
+        <Text
+          style={
+            styles.required
+          }
+        >
           *
         </Text>
       </Text>
 
       <TextInput
-        value={confirmPassword}
+        value={
+          confirmPassword
+        }
         onChangeText={
           setConfirmPassword
         }
         placeholder="Re-enter your password"
         secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+        maxLength={128}
         style={[
           styles.input,
 
@@ -782,6 +1335,8 @@ export default function StudentSignupScreen() {
         </Text>
       )}
 
+      {/* CREATE ACCOUNT */}
+
       <Pressable
         style={[
           styles.button,
@@ -790,14 +1345,18 @@ export default function StudentSignupScreen() {
             loading) &&
             styles.buttonDisabled,
         ]}
-        onPress={handleSignup}
+        onPress={
+          handleSignup
+        }
         disabled={
           !formIsValid ||
           loading
         }
       >
         <Text
-          style={styles.buttonText}
+          style={
+            styles.buttonText
+          }
         >
           {loading
             ? "Creating account..."
@@ -806,10 +1365,18 @@ export default function StudentSignupScreen() {
       </Pressable>
 
       <Pressable
-        style={styles.backButton}
-        onPress={() => router.back()}
+        style={
+          styles.backButton
+        }
+        onPress={() =>
+          router.back()
+        }
       >
-        <Text style={styles.backText}>
+        <Text
+          style={
+            styles.backText
+          }
+        >
           Back
         </Text>
       </Pressable>
@@ -817,277 +1384,317 @@ export default function StudentSignupScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
+/* =========================================================
+   STYLES
+========================================================= */
 
-  container: {
-    padding: 24,
-    paddingTop: 45,
-    paddingBottom: 40,
-  },
+const styles =
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor:
+        "#fff",
+    },
 
-  backTop: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#F5F5F7",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 22,
-  },
+    container: {
+      padding: 24,
+      paddingTop: 45,
+      paddingBottom: 40,
+    },
 
-  title: {
-    fontSize: 30,
-    fontWeight: "800",
-    color: "#111",
-    marginBottom: 8,
-  },
+    backTop: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor:
+        "#F5F5F7",
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginBottom: 22,
+    },
 
-  subtitle: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#666",
-    marginBottom: 28,
-  },
+    title: {
+      fontSize: 30,
+      fontWeight: "800",
+      color: "#111",
+      marginBottom: 8,
+    },
 
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#222",
-    marginBottom: 8,
-  },
+    subtitle: {
+      fontSize: 15,
+      lineHeight: 22,
+      color: "#666",
+      marginBottom: 28,
+    },
 
-  required: {
-    color: "#e00000",
-  },
+    label: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: "#222",
+      marginBottom: 8,
+    },
 
-  input: {
-    height: 52,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    marginBottom: 16,
-    backgroundColor: "#fff",
-    color: "#111",
-  },
+    required: {
+      color: "#e00000",
+    },
 
-  errorInput: {
-    borderColor: "#e00000",
-  },
+    input: {
+      height: 52,
+      borderWidth: 1,
+      borderColor: "#ddd",
+      borderRadius: 10,
+      paddingHorizontal: 16,
+      fontSize: 15,
+      marginBottom: 16,
+      backgroundColor:
+        "#fff",
+      color: "#111",
+    },
 
-  errorText: {
-    color: "#e00000",
-    fontSize: 12,
-    marginTop: -9,
-    marginBottom: 14,
-  },
+    errorInput: {
+      borderColor:
+        "#e00000",
+    },
 
-  detectedBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    backgroundColor: "#F0FAF4",
-    borderWidth: 1,
-    borderColor: "#CDEAD8",
-    borderRadius: 10,
-    padding: 12,
-    marginTop: -7,
-    marginBottom: 18,
-  },
+    errorText: {
+      color: "#e00000",
+      fontSize: 12,
+      marginTop: -9,
+      marginBottom: 14,
+    },
 
-  detectedLabel: {
-    color: "#568064",
-    fontSize: 11,
-    fontWeight: "600",
-  },
+    passwordError: {
+      color: "#e00000",
+      fontSize: 12,
+      lineHeight: 17,
+      marginTop: 6,
+    },
 
-  detectedValue: {
-    color: "#166534",
-    fontSize: 14,
-    fontWeight: "800",
-    marginTop: 1,
-  },
+    detectedBox: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      gap: 9,
+      backgroundColor:
+        "#F0FAF4",
+      borderWidth: 1,
+      borderColor:
+        "#CDEAD8",
+      borderRadius: 10,
+      padding: 12,
+      marginTop: -7,
+      marginBottom: 18,
+    },
 
-  select: {
-    height: 52,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent:
-      "space-between",
-    marginBottom: 16,
-  },
+    detectedLabel: {
+      color: "#568064",
+      fontSize: 11,
+      fontWeight: "600",
+    },
 
-  selectText: {
-    color: "#111",
-    fontSize: 15,
-  },
+    detectedValue: {
+      color: "#166534",
+      fontSize: 14,
+      fontWeight: "800",
+      marginTop: 1,
+    },
 
-  placeholderText: {
-    color: "#999",
-    fontSize: 15,
-  },
+    select: {
+      height: 52,
+      borderWidth: 1,
+      borderColor: "#ddd",
+      borderRadius: 10,
+      paddingHorizontal: 16,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "space-between",
+      marginBottom: 16,
+    },
 
-  dropdown: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    marginTop: -9,
-    marginBottom: 18,
-    overflow: "hidden",
-    backgroundColor: "#fff",
-  },
+    selectText: {
+      color: "#111",
+      fontSize: 15,
+    },
 
-  campusList: {
-    maxHeight: 220,
-  },
+    placeholderText: {
+      color: "#999",
+      fontSize: 15,
+    },
 
-  dropdownItem: {
-    paddingVertical: 15,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
+    dropdown: {
+      borderWidth: 1,
+      borderColor: "#ddd",
+      borderRadius: 10,
+      marginTop: -9,
+      marginBottom: 18,
+      overflow: "hidden",
+      backgroundColor:
+        "#fff",
+    },
 
-  dropdownText: {
-    fontSize: 15,
-    color: "#222",
-  },
+    campusList: {
+      maxHeight: 220,
+    },
 
-  radioContainer: {
-    flexDirection: "row",
-    justifyContent:
-      "space-between",
-    marginBottom: 24,
-  },
+    dropdownItem: {
+      paddingVertical: 15,
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor:
+        "#eee",
+    },
 
-  radioOption: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+    dropdownText: {
+      fontSize: 15,
+      color: "#222",
+    },
 
-  radio: {
-    width: 21,
-    height: 21,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: "#bbb",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 7,
-  },
+    radioContainer: {
+      flexDirection:
+        "row",
+      justifyContent:
+        "space-between",
+      marginBottom: 24,
+    },
 
-  radioSelected: {
-    borderColor: PRIMARY,
-  },
+    radioOption: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+    },
 
-  radioInner: {
-    width: 11,
-    height: 11,
-    borderRadius: 6,
-    backgroundColor: PRIMARY,
-  },
+    radio: {
+      width: 21,
+      height: 21,
+      borderRadius: 11,
+      borderWidth: 2,
+      borderColor: "#bbb",
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginRight: 7,
+    },
 
-  radioText: {
-    fontSize: 14,
-    color: "#333",
-  },
+    radioSelected: {
+      borderColor:
+        PRIMARY,
+    },
 
-  passwordSection: {
-    marginTop: -7,
-    marginBottom: 20,
-  },
+    radioInner: {
+      width: 11,
+      height: 11,
+      borderRadius: 6,
+      backgroundColor:
+        PRIMARY,
+    },
 
-  strengthRow: {
-    flexDirection: "row",
-    justifyContent:
-      "space-between",
-    marginBottom: 7,
-  },
+    radioText: {
+      fontSize: 14,
+      color: "#333",
+    },
 
-  strengthLabel: {
-    fontSize: 13,
-    color: "#666",
-  },
+    passwordSection: {
+      marginTop: -7,
+      marginBottom: 20,
+    },
 
-  strengthValue: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
+    strengthRow: {
+      flexDirection:
+        "row",
+      justifyContent:
+        "space-between",
+      marginBottom: 7,
+    },
 
-  weak: {
-    color: "#e00000",
-  },
+    strengthLabel: {
+      fontSize: 13,
+      color: "#666",
+    },
 
-  medium: {
-    color: "#d58a00",
-  },
+    strengthValue: {
+      fontSize: 13,
+      fontWeight: "700",
+    },
 
-  strong: {
-    color: "#008a42",
-  },
+    weak: {
+      color: "#e00000",
+    },
 
-  strengthBar: {
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: "#eee",
-    overflow: "hidden",
-    marginBottom: 12,
-  },
+    medium: {
+      color: "#d58a00",
+    },
 
-  strengthProgress: {
-    height: "100%",
-    backgroundColor: PRIMARY,
-  },
+    strong: {
+      color: "#008a42",
+    },
 
-  passwordRule: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 4,
-  },
+    strengthBar: {
+      height: 5,
+      borderRadius: 3,
+      backgroundColor:
+        "#eee",
+      overflow: "hidden",
+      marginBottom: 12,
+    },
 
-  matchText: {
-    color: "#008a42",
-    fontSize: 12,
-    marginTop: -9,
-    marginBottom: 14,
-  },
+    strengthProgress: {
+      height: "100%",
+      backgroundColor:
+        PRIMARY,
+    },
 
-  button: {
-    height: 54,
-    borderRadius: 11,
-    backgroundColor: PRIMARY,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 10,
-  },
+    passwordRule: {
+      fontSize: 12,
+      color: "#666",
+      marginBottom: 4,
+    },
 
-  buttonDisabled: {
-    opacity: 0.45,
-  },
+    matchText: {
+      color: "#008a42",
+      fontSize: 12,
+      marginTop: -9,
+      marginBottom: 14,
+    },
 
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
+    button: {
+      height: 54,
+      borderRadius: 11,
+      backgroundColor:
+        PRIMARY,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginTop: 10,
+    },
 
-  backButton: {
-    alignItems: "center",
-    marginTop: 20,
-  },
+    buttonDisabled: {
+      opacity: 0.45,
+    },
 
-  backText: {
-    color: PRIMARY,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-});
+    buttonText: {
+      color: "#fff",
+      fontSize: 16,
+      fontWeight: "700",
+    },
+
+    backButton: {
+      alignItems:
+        "center",
+      marginTop: 20,
+    },
+
+    backText: {
+      color: PRIMARY,
+      fontSize: 15,
+      fontWeight: "600",
+    },
+  });
