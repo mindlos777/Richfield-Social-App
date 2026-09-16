@@ -24,13 +24,21 @@ import {
 } from "expo-router";
 
 import { Ionicons } from "@expo/vector-icons";
-import { useVideoPlayer, VideoView } from "expo-video";
+import {
+  useVideoPlayer,
+  VideoView,
+} from "expo-video";
+
 import { supabase } from "../lib/supabase";
 
 const { width } = Dimensions.get("window");
 
 const PRIMARY = "#0300cf";
 const DRAWER_WIDTH = width * 0.75;
+
+type CommunityRole =
+  | "student"
+  | "alumni";
 
 type ProfilePost = {
   id: string;
@@ -42,14 +50,23 @@ type ProfilePost = {
 };
 
 type UserProfile = {
+  role: CommunityRole;
+
   fullName: string;
   username: string;
+  headline: string;
   bio: string;
   avatar: string | null;
 
   programme: string;
   campus: string;
+
   yearOfStudy: number | null;
+
+  graduationYear: number | null;
+  currentCompany: string;
+  currentJobTitle: string;
+  alumniVerified: boolean;
 
   linkedin: string | null;
   github: string | null;
@@ -57,32 +74,46 @@ type UserProfile = {
   website: string | null;
 };
 
+const EMPTY_PROFILE: UserProfile = {
+  role: "student",
+
+  fullName: "Your Name",
+  username: "@yourusername",
+  headline: "",
+  bio: "",
+  avatar: null,
+
+  programme: "",
+  campus: "",
+
+  yearOfStudy: null,
+
+  graduationYear: null,
+  currentCompany: "",
+  currentJobTitle: "",
+  alumniVerified: false,
+
+  linkedin: null,
+  github: null,
+  instagram: null,
+  website: null,
+};
+
 export default function ProfileScreen() {
   const [menuVisible, setMenuVisible] =
     useState(false);
 
   const [profile, setProfile] =
-    useState<UserProfile>({
-      fullName: "Your Name",
-      username: "@yourusername",
-      bio: "",
-      avatar: null,
+    useState<UserProfile>(
+      EMPTY_PROFILE
+    );
 
-      programme: "",
-      campus: "",
-      yearOfStudy: null,
-
-      linkedin: null,
-      github: null,
-      instagram: null,
-      website: null,
+  const [stats, setStats] =
+    useState({
+      posts: 0,
+      followers: 0,
+      following: 0,
     });
-
-  const [stats, setStats] = useState({
-    posts: 0,
-    followers: 0,
-    following: 0,
-  });
 
   const [posts, setPosts] =
     useState<ProfilePost[]>([]);
@@ -105,45 +136,66 @@ export default function ProfileScreen() {
 
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } =
+        await supabase.auth.getUser();
 
       if (!user) {
         return;
       }
 
+      /*
+       * First load the main profile.
+       *
+       * We need the role before deciding whether
+       * to query student_profiles or alumni_profiles.
+       */
+      const {
+        data: profileData,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select(`
+          full_name,
+          username,
+          role,
+          headline,
+          bio,
+          avatar_url,
+          linkedin_url,
+          github_url,
+          instagram_url,
+          website_url
+        `)
+        .eq("id", user.id)
+        .single();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const role =
+        String(
+          profileData.role || "student"
+        ).toLowerCase();
+
+      if (
+        role !== "student" &&
+        role !== "alumni"
+      ) {
+        throw new Error(
+          "This profile screen is only available to students and alumni."
+        );
+      }
+
+      /*
+       * Shared data.
+       */
       const [
-        profileResult,
-        studentResult,
         postCountResult,
         followerResult,
         followingResult,
         postsResult,
       ] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select(`
-            full_name,
-            username,
-            bio,
-            avatar_url,
-            linkedin_url,
-            github_url,
-            instagram_url,
-            website_url
-          `)
-          .eq("id", user.id)
-          .single(),
-
-        supabase
-          .from("student_profiles")
-          .select(`
-            programme,
-            campus,
-            year_of_study
-          `)
-          .eq("user_id", user.id)
-          .maybeSingle(),
-
         supabase
           .from("posts")
           .select("*", {
@@ -158,7 +210,10 @@ export default function ProfileScreen() {
             count: "exact",
             head: true,
           })
-          .eq("following_id", user.id),
+          .eq(
+            "following_id",
+            user.id
+          ),
 
         supabase
           .from("follows")
@@ -166,7 +221,10 @@ export default function ProfileScreen() {
             count: "exact",
             head: true,
           })
-          .eq("follower_id", user.id),
+          .eq(
+            "follower_id",
+            user.id
+          ),
 
         supabase
           .from("posts")
@@ -184,41 +242,126 @@ export default function ProfileScreen() {
           }),
       ]);
 
-      if (profileResult.error) {
-        throw profileResult.error;
+      /*
+       * Student / Alumni specific data.
+       */
+      let programme = "";
+      let campus = "";
+
+      let yearOfStudy:
+        | number
+        | null = null;
+
+      let graduationYear:
+        | number
+        | null = null;
+
+      let currentCompany = "";
+      let currentJobTitle = "";
+
+      let alumniLinkedin:
+        | string
+        | null = null;
+
+      let alumniVerified = false;
+
+      if (role === "student") {
+        const {
+          data: studentData,
+          error: studentError,
+        } = await supabase
+          .from("student_profiles")
+          .select(`
+            programme,
+            campus,
+            year_of_study
+          `)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (studentError) {
+          console.log(
+            "Student profile error:",
+            studentError
+          );
+        }
+
+        programme =
+          studentData?.programme || "";
+
+        campus =
+          studentData?.campus || "";
+
+        yearOfStudy =
+          studentData?.year_of_study ??
+          null;
       }
 
-      if (studentResult.error) {
-        console.log(
-          "Student profile error:",
-          studentResult.error
-        );
+      if (role === "alumni") {
+        const {
+          data: alumniData,
+          error: alumniError,
+        } = await supabase
+          .from("alumni_profiles")
+          .select(`
+            graduation_year,
+            programme,
+            campus,
+            current_company,
+            current_job_title,
+            linkedin_url,
+            verified
+          `)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (alumniError) {
+          console.log(
+            "Alumni profile error:",
+            alumniError
+          );
+        }
+
+        programme =
+          alumniData?.programme || "";
+
+        campus =
+          alumniData?.campus || "";
+
+        graduationYear =
+          alumniData?.graduation_year ??
+          null;
+
+        currentCompany =
+          alumniData?.current_company ||
+          "";
+
+        currentJobTitle =
+          alumniData?.current_job_title ||
+          "";
+
+        alumniLinkedin =
+          alumniData?.linkedin_url ||
+          null;
+
+        alumniVerified =
+          alumniData?.verified === true;
       }
-
-      if (postsResult.error) {
-        console.log(
-          "Posts error:",
-          postsResult.error
-        );
-      }
-
-      const profileData =
-        profileResult.data;
-
-      const studentData =
-        studentResult.data;
 
       const fallbackUsername =
         profileData.full_name
           ?.toLowerCase()
           .replace(/\s+/g, "") ||
-        "student";
+        role;
 
       const username =
         profileData.username ||
         `@${fallbackUsername}`;
 
       setProfile({
+        role:
+          role as CommunityRole,
+
         fullName:
           profileData.full_name ||
           "Your Name",
@@ -228,6 +371,9 @@ export default function ProfileScreen() {
             ? username
             : `@${username}`,
 
+        headline:
+          profileData.headline || "",
+
         bio:
           profileData.bio || "",
 
@@ -235,19 +381,22 @@ export default function ProfileScreen() {
           profileData.avatar_url ||
           null,
 
-        programme:
-          studentData?.programme ||
-          "",
+        programme,
+        campus,
 
-        campus:
-          studentData?.campus ||
-          "",
+        yearOfStudy,
 
-        yearOfStudy:
-          studentData?.year_of_study ||
-          null,
+        graduationYear,
+        currentCompany,
+        currentJobTitle,
+        alumniVerified,
 
+        /*
+         * Alumni-specific LinkedIn takes
+         * priority when it exists.
+         */
         linkedin:
+          alumniLinkedin ||
           profileData.linkedin_url ||
           null,
 
@@ -278,6 +427,13 @@ export default function ProfileScreen() {
       setPosts(
         postsResult.data || []
       );
+
+      if (postsResult.error) {
+        console.log(
+          "Posts error:",
+          postsResult.error
+        );
+      }
     } catch (error) {
       console.log(
         "Profile loading error:",
@@ -328,7 +484,15 @@ export default function ProfileScreen() {
     setMenuVisible(false);
 
     router.push(
-      "/(student)/portfolio"
+      "/member-portfolio"
+    );
+  }
+
+  function openAnalytics() {
+    setMenuVisible(false);
+
+    router.push(
+      "/(student)/analytics"
     );
   }
 
@@ -338,12 +502,18 @@ export default function ProfileScreen() {
     );
   }
 
+  function editProfile() {
+    router.push(
+      "/(student)/edit-profile"
+    );
+  }
+
   function openPost(
     post: ProfilePost
   ) {
     router.push({
       pathname:
-        "/(student)/post/[id]" as never,
+        "/post/[id]" as never,
 
       params: {
         id: post.id,
@@ -374,6 +544,9 @@ export default function ProfileScreen() {
       );
     }
   }
+
+  const isAlumni =
+    profile.role === "alumni";
 
   const hasSocials =
     Boolean(profile.linkedin) ||
@@ -412,13 +585,9 @@ export default function ProfileScreen() {
           />
         }
       >
-        <View
-          style={styles.header}
-        >
+        <View style={styles.header}>
           <Text
-            style={
-              styles.headerTitle
-            }
+            style={styles.headerTitle}
           >
             Profile
           </Text>
@@ -445,9 +614,7 @@ export default function ProfileScreen() {
           }
         >
           <View
-            style={
-              styles.profileTop
-            }
+            style={styles.profileTop}
           >
             <View
               style={
@@ -457,12 +624,9 @@ export default function ProfileScreen() {
               {profile.avatar ? (
                 <Image
                   source={{
-                    uri:
-                      profile.avatar,
+                    uri: profile.avatar,
                   }}
-                  style={
-                    styles.avatar
-                  }
+                  style={styles.avatar}
                 />
               ) : (
                 <View
@@ -488,9 +652,7 @@ export default function ProfileScreen() {
                 styles.statsContainer
               }
             >
-              <View
-                style={styles.stat}
-              >
+              <View style={styles.stat}>
                 <Text
                   style={
                     styles.statNumber
@@ -544,47 +706,94 @@ export default function ProfileScreen() {
                 >
                   {stats.following}
                 </Text>
-
-                <Text
-                  style={
-                    styles.statLabel
-                  }
-                >
-                  Following
-                </Text>
               </Pressable>
             </View>
           </View>
 
           <View
-            style={
-              styles.profileInfo
-            }
+            style={styles.profileInfo}
           >
-            <Text
-              style={styles.name}
+            <View
+              style={styles.nameRow}
             >
-              {profile.fullName}
-            </Text>
+              <Text style={styles.name}>
+                {profile.fullName}
+              </Text>
+
+              {isAlumni &&
+                profile.alumniVerified && (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={19}
+                    color={PRIMARY}
+                  />
+                )}
+            </View>
 
             <Text
-              style={
-                styles.username
-              }
+              style={styles.username}
             >
               {profile.username}
             </Text>
 
-            {profile.bio ? (
-              <Text
-                style={styles.bio}
+            <View
+              style={styles.roleRow}
+            >
+              <View
+                style={[
+                  styles.roleBadge,
+
+                  isAlumni &&
+                    styles.alumniBadge,
+                ]}
               >
+                <Ionicons
+                  name={
+                    isAlumni
+                      ? "ribbon"
+                      : "school"
+                  }
+                  size={14}
+                  color={
+                    isAlumni
+                      ? "#FFFFFF"
+                      : PRIMARY
+                  }
+                />
+
+                <Text
+                  style={[
+                    styles.roleBadgeText,
+
+                    isAlumni &&
+                      styles.alumniBadgeText,
+                  ]}
+                >
+                  {isAlumni
+                    ? "Richfield Alumni"
+                    : "Richfield Student"}
+                </Text>
+              </View>
+            </View>
+
+            {profile.headline ? (
+              <Text
+                style={styles.headline}
+              >
+                {profile.headline}
+              </Text>
+            ) : null}
+
+            {profile.bio ? (
+              <Text style={styles.bio}>
                 {profile.bio}
               </Text>
             ) : null}
 
             {(profile.programme ||
-              profile.campus) && (
+              profile.campus ||
+              profile.yearOfStudy ||
+              profile.graduationYear) && (
               <View
                 style={
                   styles.educationInfo
@@ -607,9 +816,7 @@ export default function ProfileScreen() {
                         styles.educationText
                       }
                     >
-                      {
-                        profile.programme
-                      }
+                      {profile.programme}
                     </Text>
                   </View>
                 ) : null}
@@ -632,20 +839,106 @@ export default function ProfileScreen() {
                       }
                     >
                       {profile.campus}
-                      {profile.yearOfStudy
+
+                      {!isAlumni &&
+                      profile.yearOfStudy
                         ? ` · Year ${profile.yearOfStudy}`
                         : ""}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {isAlumni &&
+                profile.graduationYear ? (
+                  <View
+                    style={
+                      styles.educationRow
+                    }
+                  >
+                    <Ionicons
+                      name="ribbon-outline"
+                      size={17}
+                      color="#555"
+                    />
+
+                    <Text
+                      style={
+                        styles.educationText
+                      }
+                    >
+                      Graduated{" "}
+                      {
+                        profile.graduationYear
+                      }
                     </Text>
                   </View>
                 ) : null}
               </View>
             )}
 
+            {isAlumni &&
+              (profile.currentJobTitle ||
+                profile.currentCompany) && (
+                <View
+                  style={
+                    styles.careerCard
+                  }
+                >
+                  <View
+                    style={
+                      styles.careerIcon
+                    }
+                  >
+                    <Ionicons
+                      name="briefcase-outline"
+                      size={20}
+                      color={PRIMARY}
+                    />
+                  </View>
+
+                  <View
+                    style={{
+                      flex: 1,
+                    }}
+                  >
+                    <Text
+                      style={
+                        styles.careerLabel
+                      }
+                    >
+                      CURRENT ROLE
+                    </Text>
+
+                    {profile.currentJobTitle ? (
+                      <Text
+                        style={
+                          styles.careerTitle
+                        }
+                      >
+                        {
+                          profile.currentJobTitle
+                        }
+                      </Text>
+                    ) : null}
+
+                    {profile.currentCompany ? (
+                      <Text
+                        style={
+                          styles.careerCompany
+                        }
+                      >
+                        {
+                          profile.currentCompany
+                        }
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+              )}
+
             {hasSocials && (
               <View
-                style={
-                  styles.socialRow
-                }
+                style={styles.socialRow}
               >
                 {profile.linkedin && (
                   <SocialButton
@@ -695,14 +988,8 @@ export default function ProfileScreen() {
           </View>
 
           <Pressable
-            style={
-              styles.editButton
-            }
-            onPress={() =>
-              router.push(
-                "/(student)/edit-profile"
-              )
-            }
+            style={styles.editButton}
+            onPress={editProfile}
           >
             <Text
               style={
@@ -715,12 +1002,8 @@ export default function ProfileScreen() {
         </View>
 
         <Pressable
-          style={
-            styles.portfolioCard
-          }
-          onPress={
-            openPortfolio
-          }
+          style={styles.portfolioCard}
+          onPress={openPortfolio}
         >
           <View
             style={
@@ -728,7 +1011,7 @@ export default function ProfileScreen() {
             }
           >
             <Ionicons
-              name="briefcase-outline"
+              name="folder-open-outline"
               size={23}
               color="#fff"
             />
@@ -765,9 +1048,7 @@ export default function ProfileScreen() {
         </Pressable>
 
         <View
-          style={
-            styles.postsHeader
-          }
+          style={styles.postsHeader}
         >
           <Ionicons
             name="grid-outline"
@@ -776,9 +1057,7 @@ export default function ProfileScreen() {
           />
 
           <Text
-            style={
-              styles.postsTitle
-            }
+            style={styles.postsTitle}
           >
             Posts
           </Text>
@@ -786,14 +1065,10 @@ export default function ProfileScreen() {
 
         {posts.length === 0 ? (
           <View
-            style={
-              styles.emptyPosts
-            }
+            style={styles.emptyPosts}
           >
             <View
-              style={
-                styles.emptyIcon
-              }
+              style={styles.emptyIcon}
             >
               <Ionicons
                 name="camera-outline"
@@ -803,21 +1078,17 @@ export default function ProfileScreen() {
             </View>
 
             <Text
-              style={
-                styles.emptyTitle
-              }
+              style={styles.emptyTitle}
             >
               No posts yet
             </Text>
 
             <Text
-              style={
-                styles.emptyText
-              }
+              style={styles.emptyText}
             >
-              Share your projects,
-              achievements and student
-              journey.
+              {isAlumni
+                ? "Share your career journey, achievements and experiences with the Richfield community."
+                : "Share your projects, achievements and student journey."}
             </Text>
 
             <Pressable
@@ -837,55 +1108,61 @@ export default function ProfileScreen() {
           </View>
         ) : (
           <View
-            style={
-              styles.postsGrid
-            }
+            style={styles.postsGrid}
           >
-            {posts.map(
-              (post) => (
-                <Pressable
-                  key={post.id}
-                  style={
-                    styles.post
-                  }
-                  onPress={() =>
-                    openPost(post)
-                  }
-                >
-                  {post.image_url && (
-                    <>
-                      {post.media_type === "video" ? (
-                        <PostVideo
-                          uri={post.image_url}
-                        />
-                      ) : (
-                        <Image
-                          source={{
-                            uri: post.image_url,
-                          }}
-                          style={styles.postMedia}
-                          resizeMode="contain"
-                          onError={(event) => {
-                            console.log(
-                              "Image loading error:",
-                              event.nativeEvent.error
-                            );
-                          }}
-                        />
-                      )}
-                    </>
-                  )}
-                </Pressable>
-              )
-            )}
+            {posts.map(post => (
+              <Pressable
+                key={post.id}
+                style={styles.post}
+                onPress={() =>
+                  openPost(post)
+                }
+              >
+                {post.image_url ? (
+                  post.media_type ===
+                  "video" ? (
+                    <PostVideo
+                      uri={
+                        post.image_url
+                      }
+                    />
+                  ) : (
+                    <Image
+                      source={{
+                        uri:
+                          post.image_url,
+                      }}
+                      style={
+                        styles.postMedia
+                      }
+                      resizeMode="cover"
+                    />
+                  )
+                ) : (
+                  <View
+                    style={
+                      styles.textPostPreview
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.textPostPreviewText
+                      }
+                      numberOfLines={6}
+                    >
+                      {post.content ||
+                        "Post"}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+            ))}
           </View>
         )}
       </ScrollView>
 
       <Pressable
-        style={
-          styles.floatingButton
-        }
+        style={styles.floatingButton}
         onPress={createPost}
       >
         <Ionicons
@@ -904,33 +1181,23 @@ export default function ProfileScreen() {
         }
       >
         <View
-          style={
-            styles.menuOverlay
-          }
+          style={styles.menuOverlay}
         >
           <Pressable
-            style={
-              styles.blurArea
-            }
+            style={styles.blurArea}
             onPress={() =>
               setMenuVisible(false)
             }
           />
 
           <View
-            style={
-              styles.sideMenu
-            }
+            style={styles.sideMenu}
           >
             <View
-              style={
-                styles.menuHeader
-              }
+              style={styles.menuHeader}
             >
               <Text
-                style={
-                  styles.menuTitle
-                }
+                style={styles.menuTitle}
               >
                 Account
               </Text>
@@ -956,8 +1223,7 @@ export default function ProfileScreen() {
               {profile.avatar ? (
                 <Image
                   source={{
-                    uri:
-                      profile.avatar,
+                    uri: profile.avatar,
                   }}
                   style={
                     styles.menuAvatar
@@ -983,9 +1249,7 @@ export default function ProfileScreen() {
 
               <View style={{ flex: 1 }}>
                 <Text
-                  style={
-                    styles.menuName
-                  }
+                  style={styles.menuName}
                 >
                   {profile.fullName}
                 </Text>
@@ -998,6 +1262,16 @@ export default function ProfileScreen() {
                   {profile.username}
                 </Text>
 
+                <Text
+                  style={
+                    styles.menuRole
+                  }
+                >
+                  {isAlumni
+                    ? "Richfield Alumni"
+                    : "Richfield Student"}
+                </Text>
+
                 {profile.programme ? (
                   <Text
                     style={
@@ -1005,9 +1279,7 @@ export default function ProfileScreen() {
                     }
                     numberOfLines={1}
                   >
-                    {
-                      profile.programme
-                    }
+                    {profile.programme}
                   </Text>
                 ) : null}
               </View>
@@ -1022,33 +1294,31 @@ export default function ProfileScreen() {
             <MenuItem
               icon="settings-outline"
               title="Settings"
-              onPress={
-                openSettings
-              }
+              onPress={openSettings}
             />
 
             <MenuItem
               icon="time-outline"
               title="Activity"
-              onPress={
-                openActivity
-              }
+              onPress={openActivity}
             />
 
             <MenuItem
               icon="briefcase-outline"
               title="Portfolio"
-              onPress={
-                openPortfolio
-              }
+              onPress={openPortfolio}
+            />
+
+            <MenuItem
+              icon="analytics-outline"
+              title="Analytics"
+              onPress={openAnalytics}
             />
 
             <MenuItem
               icon="people-outline"
               title="Followers"
-              value={
-                stats.followers
-              }
+              value={stats.followers}
               onPress={() => {
                 setMenuVisible(false);
                 openFollowers();
@@ -1058,9 +1328,7 @@ export default function ProfileScreen() {
             <MenuItem
               icon="person-add-outline"
               title="Following"
-              value={
-                stats.following
-              }
+              value={stats.following}
               onPress={() => {
                 setMenuVisible(false);
                 openFollowing();
@@ -1068,9 +1336,7 @@ export default function ProfileScreen() {
             />
 
             <View
-              style={
-                styles.menuBottom
-              }
+              style={styles.menuBottom}
             >
               <Text
                 style={
@@ -1097,9 +1363,7 @@ function SocialButton({
 }) {
   return (
     <Pressable
-      style={
-        styles.socialButton
-      }
+      style={styles.socialButton}
       onPress={onPress}
     >
       <Ionicons
@@ -1135,18 +1399,14 @@ function MenuItem({
       />
 
       <Text
-        style={
-          styles.menuItemText
-        }
+        style={styles.menuItemText}
       >
         {title}
       </Text>
 
       {value !== undefined ? (
         <Text
-          style={
-            styles.menuCount
-          }
+          style={styles.menuCount}
         >
           {value}
         </Text>
@@ -1161,499 +1421,565 @@ function MenuItem({
   );
 }
 
-// Post Video
 function PostVideo({
   uri,
 }: {
   uri: string;
 }) {
   const player =
-    useVideoPlayer(uri, player => {
-      player.loop = false;
-    });
+    useVideoPlayer(
+      uri,
+      player => {
+        player.loop = false;
+      }
+    );
 
   return (
     <VideoView
       player={player}
       style={styles.postMedia}
       nativeControls
-      contentFit="contain"
+      contentFit="cover"
     />
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fff",
-  },
-
-  header: {
-    height: 62,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent:
-      "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-
-  headerButton: {
-    width: 42,
-    height: 42,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111",
-  },
-
-  profileSection: {
-    paddingHorizontal: 20,
-    paddingTop: 22,
-    paddingBottom: 20,
-  },
-
-  profileTop: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  avatarContainer: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
-    overflow: "hidden",
-    marginRight: 24,
-  },
-
-  avatar: {
-    width: "100%",
-    height: "100%",
-  },
-
-  avatarPlaceholder: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 46,
-    backgroundColor:
-      PRIMARY,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  avatarText: {
-    color: "#fff",
-    fontSize: 34,
-    fontWeight: "800",
-  },
-
-  statsContainer: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent:
-      "space-between",
-  },
-
-  stat: {
-    alignItems: "center",
-    minWidth: 60,
-  },
-
-  statNumber: {
-    fontSize: 19,
-    fontWeight: "800",
-    color: "#111",
-  },
-
-  statLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 4,
-  },
-
-  profileInfo: {
-    marginTop: 17,
-  },
-
-  name: {
-    fontSize: 19,
-    fontWeight: "800",
-    color: "#111",
-  },
-
-  username: {
-    color: PRIMARY,
-    fontSize: 14,
-    marginTop: 2,
-  },
-
-  bio: {
-    color: "#444",
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 9,
-  },
-
-  educationInfo: {
-    marginTop: 12,
-    gap: 7,
-  },
-
-  educationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  educationText: {
-    color: "#555",
-    fontSize: 13,
-    marginLeft: 7,
-    flex: 1,
-  },
-
-  socialRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginTop: 14,
-  },
-
-  socialButton: {
-    width: 37,
-    height: 37,
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: "#E5E5EA",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fff",
-  },
-
-  editButton: {
-    height: 40,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 16,
-  },
-
-  editButtonText: {
-    fontWeight: "700",
-    fontSize: 14,
-    color: "#222",
-  },
-
-  portfolioCard: {
-    marginHorizontal: 20,
-    marginBottom: 22,
-    padding: 16,
-    borderRadius: 14,
-    backgroundColor:
-      "#f6f6fb",
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#e7e7f3",
-  },
-
-  portfolioIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor:
-      PRIMARY,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 13,
-  },
-
-  portfolioContent: {
-    flex: 1,
-  },
-
-  portfolioTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#111",
-  },
-
-  portfolioSubtitle: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 3,
-    lineHeight: 17,
-  },
-
-  postsHeader: {
-    height: 50,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: "#eee",
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 8,
-  },
-
-  postsTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  postsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-
-  post: {
-    width: width / 3,
-    height: width / 3,
-    padding: 1,
-    backgroundColor: "#eee",
-  },
-
-  postImage: {
-    width: "100%",
-    height: "100%",
-  },
-
-  textPostPreview: {
-    flex: 1,
-    backgroundColor:
-      "#F5F5FA",
-    padding: 12,
-    justifyContent: "center",
-  },
-
-  textPostPreviewText: {
-    color: "#222",
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: "600",
-  },
-
-  emptyPosts: {
-    alignItems: "center",
-    paddingHorizontal: 35,
-    paddingVertical: 45,
-  },
-
-  emptyIcon: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 15,
-  },
-
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#111",
-  },
-
-  emptyText: {
-    textAlign: "center",
-    color: "#777",
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 7,
-  },
-
-  firstPostButton: {
-    backgroundColor:
-      PRIMARY,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 9,
-    marginTop: 18,
-  },
-
-  firstPostButtonText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 13,
-  },
-
-  floatingButton: {
-    position: "absolute",
-    right: 20,
-    bottom: 25,
-    width: 57,
-    height: 57,
-    borderRadius: 29,
-    backgroundColor:
-      PRIMARY,
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 7,
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: {
-      width: 0,
-      height: 4,
+const styles =
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: "#fff",
     },
-  },
 
-  menuOverlay: {
-    flex: 1,
-    flexDirection: "row",
-  },
+    loadingContainer: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#fff",
+    },
 
-  blurArea: {
-    flex: 1,
-    backgroundColor:
-      "rgba(0,0,0,0.55)",
-  },
+    header: {
+      height: 62,
+      paddingHorizontal: 16,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+      borderBottomWidth: 1,
+      borderBottomColor: "#eee",
+    },
 
-  sideMenu: {
-    width: DRAWER_WIDTH,
-    height: "100%",
-    backgroundColor: "#fff",
-    paddingTop:
-      Platform.OS === "ios"
-        ? 55
-        : 35,
-    paddingHorizontal: 20,
-    elevation: 20,
-  },
+    headerButton: {
+      width: 42,
+      height: 42,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  menuHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent:
-      "space-between",
-    marginBottom: 25,
-  },
+    headerTitle: {
+      fontSize: 18,
+      fontWeight: "700",
+      color: "#111",
+    },
 
-  menuTitle: {
-    fontSize: 25,
-    fontWeight: "800",
-    color: "#111",
-  },
+    profileSection: {
+      paddingHorizontal: 20,
+      paddingTop: 22,
+      paddingBottom: 20,
+    },
 
-  menuProfile: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 22,
-  },
+    profileTop: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
 
-  menuAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 12,
-  },
+    avatarContainer: {
+      width: 92,
+      height: 92,
+      borderRadius: 46,
+      overflow: "hidden",
+      marginRight: 24,
+    },
 
-  menuAvatarPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor:
-      PRIMARY,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
+    avatar: {
+      width: "100%",
+      height: "100%",
+    },
 
-  menuAvatarText: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "800",
-  },
+    avatarPlaceholder: {
+      width: "100%",
+      height: "100%",
+      borderRadius: 46,
+      backgroundColor: PRIMARY,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  menuName: {
-    fontSize: 15,
-    fontWeight: "800",
-  },
+    avatarText: {
+      color: "#fff",
+      fontSize: 34,
+      fontWeight: "800",
+    },
 
-  menuUsername: {
-    color: "#777",
-    fontSize: 12,
-    marginTop: 2,
-  },
+    statsContainer: {
+      flex: 1,
+      flexDirection: "row",
+      justifyContent:
+        "space-between",
+    },
 
-  menuProgramme: {
-    color: "#999",
-    fontSize: 11,
-    marginTop: 3,
-  },
+    stat: {
+      alignItems: "center",
+      minWidth: 60,
+    },
 
-  menuDivider: {
-    height: 1,
-    backgroundColor: "#eee",
-    marginBottom: 10,
-  },
+    statNumber: {
+      fontSize: 19,
+      fontWeight: "800",
+      color: "#111",
+    },
 
-  menuItem: {
-    height: 58,
-    flexDirection: "row",
-    alignItems: "center",
-  },
+    statLabel: {
+      fontSize: 12,
+      color: "#666",
+      marginTop: 4,
+    },
 
-  menuItemText: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: "600",
-    marginLeft: 15,
-    color: "#222",
-  },
+    profileInfo: {
+      marginTop: 17,
+    },
 
-  menuCount: {
-    color: "#888",
-    fontSize: 13,
-    fontWeight: "600",
-  },
+    nameRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
 
-  menuBottom: {
-    flex: 1,
-    justifyContent: "flex-end",
-    paddingBottom: 30,
-  },
+    name: {
+      fontSize: 19,
+      fontWeight: "800",
+      color: "#111",
+    },
 
-  menuVersion: {
-    color: "#aaa",
-    fontSize: 12,
-  },
-  videoThumbnail: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "#222",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    username: {
+      color: PRIMARY,
+      fontSize: 14,
+      marginTop: 2,
+    },
 
-  videoBadge: {
-    position: "absolute",
-    right: 7,
-    top: 7,
-    width: 27,
-    height: 27,
-    borderRadius: 14,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  postMedia: {
-    width: "100%",
-    aspectRatio: 1,
-    backgroundColor: "#000",
-  },
-});
+    roleRow: {
+      flexDirection: "row",
+      marginTop: 9,
+    },
+
+    roleBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 20,
+      backgroundColor: "#F1F1FF",
+      borderWidth: 1,
+      borderColor: "#DCDCFF",
+    },
+
+    alumniBadge: {
+      backgroundColor: PRIMARY,
+      borderColor: PRIMARY,
+    },
+
+    roleBadgeText: {
+      color: PRIMARY,
+      fontSize: 12,
+      fontWeight: "700",
+    },
+
+    alumniBadgeText: {
+      color: "#FFFFFF",
+    },
+
+    headline: {
+      color: "#222",
+      fontSize: 14,
+      fontWeight: "700",
+      marginTop: 10,
+    },
+
+    bio: {
+      color: "#444",
+      fontSize: 14,
+      lineHeight: 20,
+      marginTop: 8,
+    },
+
+    educationInfo: {
+      marginTop: 12,
+      gap: 7,
+    },
+
+    educationRow: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    educationText: {
+      color: "#555",
+      fontSize: 13,
+      marginLeft: 7,
+      flex: 1,
+    },
+
+    careerCard: {
+      marginTop: 15,
+      padding: 13,
+      borderRadius: 12,
+      backgroundColor: "#F7F7FC",
+      borderWidth: 1,
+      borderColor: "#E8E8F2",
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    careerIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: "#EEEEFF",
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 11,
+    },
+
+    careerLabel: {
+      color: "#888",
+      fontSize: 10,
+      fontWeight: "800",
+      letterSpacing: 0.7,
+    },
+
+    careerTitle: {
+      color: "#111",
+      fontSize: 14,
+      fontWeight: "800",
+      marginTop: 2,
+    },
+
+    careerCompany: {
+      color: "#666",
+      fontSize: 13,
+      marginTop: 2,
+    },
+
+    socialRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginTop: 14,
+    },
+
+    socialButton: {
+      width: 37,
+      height: 37,
+      borderRadius: 19,
+      borderWidth: 1,
+      borderColor: "#E5E5EA",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#fff",
+    },
+
+    editButton: {
+      height: 40,
+      borderWidth: 1,
+      borderColor: "#ddd",
+      borderRadius: 9,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 16,
+    },
+
+    editButtonText: {
+      fontWeight: "700",
+      fontSize: 14,
+      color: "#222",
+    },
+
+    portfolioCard: {
+      marginHorizontal: 20,
+      marginBottom: 22,
+      padding: 16,
+      borderRadius: 14,
+      backgroundColor: "#f6f6fb",
+      flexDirection: "row",
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: "#e7e7f3",
+    },
+
+    portfolioIcon: {
+      width: 46,
+      height: 46,
+      borderRadius: 12,
+      backgroundColor: PRIMARY,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 13,
+    },
+
+    portfolioContent: {
+      flex: 1,
+    },
+
+    portfolioTitle: {
+      fontSize: 16,
+      fontWeight: "800",
+      color: "#111",
+    },
+
+    portfolioSubtitle: {
+      fontSize: 12,
+      color: "#666",
+      marginTop: 3,
+      lineHeight: 17,
+    },
+
+    postsHeader: {
+      height: 50,
+      borderTopWidth: 1,
+      borderBottomWidth: 1,
+      borderColor: "#eee",
+      alignItems: "center",
+      justifyContent: "center",
+      flexDirection: "row",
+      gap: 8,
+    },
+
+    postsTitle: {
+      fontSize: 14,
+      fontWeight: "700",
+    },
+
+    postsGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+    },
+
+    post: {
+      width: width / 3,
+      height: width / 3,
+      padding: 1,
+      backgroundColor: "#eee",
+    },
+
+    textPostPreview: {
+      flex: 1,
+      backgroundColor: "#F5F5FA",
+      padding: 12,
+      justifyContent: "center",
+    },
+
+    textPostPreviewText: {
+      color: "#222",
+      fontSize: 12,
+      lineHeight: 17,
+      fontWeight: "600",
+    },
+
+    postMedia: {
+      width: "100%",
+      height: "100%",
+      backgroundColor: "#000",
+    },
+
+    emptyPosts: {
+      alignItems: "center",
+      paddingHorizontal: 35,
+      paddingVertical: 45,
+    },
+
+    emptyIcon: {
+      width: 62,
+      height: 62,
+      borderRadius: 31,
+      borderWidth: 1,
+      borderColor: "#ddd",
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 15,
+    },
+
+    emptyTitle: {
+      fontSize: 18,
+      fontWeight: "800",
+      color: "#111",
+    },
+
+    emptyText: {
+      textAlign: "center",
+      color: "#777",
+      fontSize: 13,
+      lineHeight: 19,
+      marginTop: 7,
+    },
+
+    firstPostButton: {
+      backgroundColor: PRIMARY,
+      paddingHorizontal: 18,
+      paddingVertical: 11,
+      borderRadius: 9,
+      marginTop: 18,
+    },
+
+    firstPostButtonText: {
+      color: "#fff",
+      fontWeight: "700",
+      fontSize: 13,
+    },
+
+    floatingButton: {
+      position: "absolute",
+      right: 20,
+      bottom: 25,
+      width: 57,
+      height: 57,
+      borderRadius: 29,
+      backgroundColor: PRIMARY,
+      alignItems: "center",
+      justifyContent: "center",
+      elevation: 7,
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      shadowOffset: {
+        width: 0,
+        height: 4,
+      },
+    },
+
+    menuOverlay: {
+      flex: 1,
+      flexDirection: "row",
+    },
+
+    blurArea: {
+      flex: 1,
+      backgroundColor:
+        "rgba(0,0,0,0.55)",
+    },
+
+    sideMenu: {
+      width: DRAWER_WIDTH,
+      height: "100%",
+      backgroundColor: "#fff",
+      paddingTop:
+        Platform.OS === "ios"
+          ? 55
+          : 35,
+      paddingHorizontal: 20,
+      elevation: 20,
+    },
+
+    menuHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+      marginBottom: 25,
+    },
+
+    menuTitle: {
+      fontSize: 25,
+      fontWeight: "800",
+      color: "#111",
+    },
+
+    menuProfile: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: 22,
+    },
+
+    menuAvatar: {
+      width: 50,
+      height: 50,
+      borderRadius: 25,
+      marginRight: 12,
+    },
+
+    menuAvatarPlaceholder: {
+      width: 50,
+      height: 50,
+      borderRadius: 25,
+      backgroundColor: PRIMARY,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 12,
+    },
+
+    menuAvatarText: {
+      color: "#fff",
+      fontSize: 20,
+      fontWeight: "800",
+    },
+
+    menuName: {
+      fontSize: 15,
+      fontWeight: "800",
+    },
+
+    menuUsername: {
+      color: "#777",
+      fontSize: 12,
+      marginTop: 2,
+    },
+
+    menuRole: {
+      color: PRIMARY,
+      fontSize: 11,
+      fontWeight: "700",
+      marginTop: 3,
+    },
+
+    menuProgramme: {
+      color: "#999",
+      fontSize: 11,
+      marginTop: 3,
+    },
+
+    menuDivider: {
+      height: 1,
+      backgroundColor: "#eee",
+      marginBottom: 10,
+    },
+
+    menuItem: {
+      height: 58,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    menuItemText: {
+      flex: 1,
+      fontSize: 15,
+      fontWeight: "600",
+      marginLeft: 15,
+      color: "#222",
+    },
+
+    menuCount: {
+      color: "#888",
+      fontSize: 13,
+      fontWeight: "600",
+    },
+
+    menuBottom: {
+      flex: 1,
+      justifyContent: "flex-end",
+      paddingBottom: 30,
+    },
+
+    menuVersion: {
+      color: "#aaa",
+      fontSize: 12,
+    },
+  });

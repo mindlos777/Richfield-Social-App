@@ -1,16 +1,34 @@
-import React, { useEffect, useState } from "react";
+import React, {
+  useEffect,
+  useState,
+} from "react";
+
 import {
+  ActivityIndicator,
   Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
-  ActivityIndicator,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
-import { useAuth } from "../../auth/AuthContext";
-import { routeUserByRole } from "../../services/routeByRole";
+
+import {
+  router,
+  useLocalSearchParams,
+} from "expo-router";
+
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
+
+import {
+  useAuth,
+} from "../../auth/AuthContext";
 
 const PRIMARY = "#0300cf";
 
@@ -18,38 +36,40 @@ export default function LoginScreen() {
   const {
     signIn,
     signInWithMicrosoft,
-    signOut,
     loading: authLoading,
   } = useAuth();
 
-  const params = useLocalSearchParams<{
-    error?: string;
-  }>();
+  const params =
+    useLocalSearchParams<{
+      error?: string;
+    }>();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [microsoftLoading, setMicrosoftLoading] =
-    useState(false);
+  const [
+    email,
+    setEmail,
+  ] = useState("");
+
+  const [
+    password,
+    setPassword,
+  ] = useState("");
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
+
+  const [
+    microsoftLoading,
+    setMicrosoftLoading,
+  ] = useState(false);
 
   useEffect(() => {
-    if (!params.error) return;
+    if (!params.error) {
+      return;
+    }
 
     switch (params.error) {
-      case "admin":
-        Alert.alert(
-          "Admin account",
-          "This is an administrator account. Please use the Richfield Connect Admin Portal to sign in."
-        );
-        break;
-
-      case "business":
-        Alert.alert(
-          "Business account",
-          "Business accounts use the separate Business Login / Sign Up area."
-        );
-        break;
-
       case "inactive":
         Alert.alert(
           "Account unavailable",
@@ -60,7 +80,14 @@ export default function LoginScreen() {
       case "profile":
         Alert.alert(
           "Account error",
-          "We could not load your Richfield Connect profile."
+          "We could not load your Richfield Social profile."
+        );
+        break;
+
+      case "business":
+        Alert.alert(
+          "Business account",
+          "Business accounts use the Business Login area."
         );
         break;
 
@@ -73,52 +100,105 @@ export default function LoginScreen() {
   }, [params.error]);
 
   const handleLogin = async () => {
+    const cleanEmail = email
+      .trim()
+      .toLowerCase();
+
+    if (!cleanEmail || !password) {
+      Alert.alert(
+        "Missing details",
+        "Please enter your email and password."
+      );
+
+      return;
+    }
+
     try {
       setLoading(true);
 
-      const userProfile = await signIn(
-        email.trim(),
-        password
-      );
+      const userProfile =
+        await signIn(
+          cleanEmail,
+          password
+        );
 
       console.log(
         "Logged in role:",
         userProfile.role
       );
 
-      if (userProfile.role === "student") {
-        router.replace("/(tabs)");
-        return;
+      console.log(
+        "Account status:",
+        userProfile.status
+      );
+
+      const role = String(
+        userProfile.role || ""
+      ).toLowerCase();
+
+      const status = String(
+        userProfile.status || ""
+      ).toLowerCase();
+
+      if (status !== "active") {
+        throw new Error(
+          "Your account is currently pending, suspended or rejected."
+        );
       }
 
-      if (userProfile.role === "alumni") {
-        router.replace("/(alumni)");
-        return;
-      }
-
-      if (userProfile.role === "business") {
-        router.replace("/(business-auth)/(tabs)/dashboard");
-        return;
-      }
-
-      if (userProfile.role === "admin") {
-        Alert.alert(
-          "Admin account",
-          "Please use the Richfield Social Admin Portal."
+      if (role === "admin") {
+        console.log(
+          "Routing to admin app"
         );
 
-        await signOut();
+        router.replace(
+          "/(admin)/(tabs)/feed"
+        );
+
+        return;
+      }
+
+      if (
+        role === "student" ||
+        role === "alumni"
+      ) {
+        console.log(
+          `Routing ${role} to community app`
+        );
+
+        router.replace(
+          "/(tabs)"
+        );
+
+        return;
+      }
+
+      if (role === "business") {
+        console.log(
+          "Routing to business app"
+        );
+
+        router.replace(
+          "/(business-auth)/(tabs)/dashboard"
+        );
 
         return;
       }
 
       throw new Error(
-        "Your account role is invalid."
+        `Unsupported account role: ${
+          role || "unknown"
+        }`
       );
     } catch (error: any) {
+      console.log(
+        "Login error:",
+        error
+      );
+
       Alert.alert(
         "Login failed",
-        error.message ||
+        error?.message ||
           "Unable to login."
       );
     } finally {
@@ -126,163 +206,312 @@ export default function LoginScreen() {
     }
   };
 
-  const handleMicrosoftLogin = async () => {
-    try {
-      setMicrosoftLoading(true);
+  const handleMicrosoftLogin =
+    async () => {
+      try {
+        setMicrosoftLoading(true);
 
-      await signInWithMicrosoft();
-    } catch (error: any) {
-      Alert.alert(
-        "Microsoft Login",
-        error.message ||
-          "Unable to start Microsoft login."
-      );
+        await signInWithMicrosoft();
+      } catch (error: any) {
+        console.log(
+          "Microsoft login error:",
+          error
+        );
 
-      setMicrosoftLoading(false);
-    }
-  };
+        Alert.alert(
+          "Microsoft Login",
+          error?.message ||
+            "Unable to start Microsoft login."
+        );
+
+        setMicrosoftLoading(false);
+      }
+    };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.logo}>
-        RICHFIELD
-        <Text style={styles.logoAccent}> SOCIAL</Text>
-      </Text>
-
-      <Text style={styles.title}>
-        Welcome back
-      </Text>
-
-      <Text style={styles.subtitle}>
-        Sign in to your professional community.
-      </Text>
-
-      <Pressable
-        style={[
-          styles.microsoftButton,
-          microsoftLoading &&
-            styles.buttonDisabled,
-        ]}
-        onPress={handleMicrosoftLogin}
-        disabled={
-          microsoftLoading || authLoading
+    <SafeAreaView
+      style={styles.safeArea}
+    >
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={
+          Platform.OS === "ios"
+            ? "padding"
+            : undefined
         }
       >
-        {microsoftLoading ? (
-          <ActivityIndicator
-            color="#111"
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={
+            styles.scrollContent
+          }
+          showsVerticalScrollIndicator={
+            false
+          }
+          keyboardShouldPersistTaps="handled"
+        >
+          <View
+            style={styles.logoSection}
+          >
+            <Image
+              source={require(
+                "../../../assets/images/rf_logo.jpg"
+              )}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+
+            <Text style={styles.logo}>
+              RICHFIELD
+              <Text
+                style={styles.logoAccent}
+              >
+                {" "}
+                SOCIAL
+              </Text>
+            </Text>
+          </View>
+
+          <Text style={styles.title}>
+            Welcome back
+          </Text>
+
+          <Text style={styles.subtitle}>
+            Sign in to your professional
+            community.
+          </Text>
+
+          <Pressable
+            style={[
+              styles.microsoftButton,
+              microsoftLoading &&
+                styles.buttonDisabled,
+            ]}
+            onPress={
+              handleMicrosoftLogin
+            }
+            disabled={
+              microsoftLoading ||
+              authLoading ||
+              loading
+            }
+          >
+            {microsoftLoading ? (
+              <ActivityIndicator
+                color="#111"
+              />
+            ) : (
+              <>
+                <View
+                  style={
+                    styles.microsoftLogo
+                  }
+                >
+                  <View
+                    style={styles.msRed}
+                  />
+
+                  <View
+                    style={styles.msGreen}
+                  />
+
+                  <View
+                    style={styles.msBlue}
+                  />
+
+                  <View
+                    style={styles.msYellow}
+                  />
+                </View>
+
+                <Text
+                  style={
+                    styles.microsoftText
+                  }
+                >
+                  Continue with Microsoft
+                </Text>
+              </>
+            )}
+          </Pressable>
+
+          <View style={styles.divider}>
+            <View style={styles.line} />
+
+            <Text style={styles.or}>
+              OR
+            </Text>
+
+            <View style={styles.line} />
+          </View>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            placeholderTextColor="#999"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            editable={!loading}
           />
-        ) : (
-          <>
-            <View style={styles.microsoftLogo}>
-              <View style={styles.msRed} />
-              <View style={styles.msGreen} />
-              <View style={styles.msBlue} />
-              <View style={styles.msYellow} />
+
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            placeholderTextColor="#999"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            editable={!loading}
+            onSubmitEditing={
+              handleLogin
+            }
+          />
+
+          <Pressable
+            style={[
+              styles.button,
+              (loading ||
+                authLoading) &&
+                styles.buttonDisabled,
+            ]}
+            onPress={handleLogin}
+            disabled={
+              loading ||
+              microsoftLoading ||
+              authLoading
+            }
+          >
+            {loading ? (
+              <ActivityIndicator
+                color="#FFFFFF"
+              />
+            ) : (
+              <Text
+                style={styles.buttonText}
+              >
+                Sign In
+              </Text>
+            )}
+          </Pressable>
+
+          <Pressable
+            onPress={() =>
+              router.push(
+                "/(auth)/signup"
+              )
+            }
+          >
+            <Text style={styles.signup}>
+              Don't have a student account?{" "}
+
+              <Text
+                style={styles.signupLink}
+              >
+                Sign up
+              </Text>
+            </Text>
+          </Pressable>
+
+          <View
+            style={styles.businessBox}
+          >
+            <View
+              style={styles.businessIcon}
+            >
+              <Text
+                style={
+                  styles.businessIconText
+                }
+              >
+                B
+              </Text>
             </View>
 
-            <Text style={styles.microsoftText}>
-              Continue with Microsoft
-            </Text>
-          </>
-        )}
-      </Pressable>
+            <View
+              style={
+                styles.businessContent
+              }
+            >
+              <Text
+                style={
+                  styles.businessTitle
+                }
+              >
+                Are you a business?
+              </Text>
 
-      <View style={styles.divider}>
-        <View style={styles.line} />
+              <Text
+                style={
+                  styles.businessText
+                }
+              >
+                Businesses have a separate
+                registration and verification
+                process.
+              </Text>
 
-        <Text style={styles.or}>
-          OR
-        </Text>
-
-        <View style={styles.line} />
-      </View>
-
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        placeholderTextColor="#999"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
-
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        placeholderTextColor="#999"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
-
-      <Pressable
-        style={[
-          styles.button,
-          loading && styles.buttonDisabled,
-        ]}
-        onPress={handleLogin}
-        disabled={loading || microsoftLoading}
-      >
-        <Text style={styles.buttonText}>
-          {loading
-            ? "Signing in..."
-            : "Sign In"}
-        </Text>
-      </Pressable>
-
-      <Pressable
-        onPress={() =>
-          router.push("/(auth)/signup")
-        }
-      >
-        <Text style={styles.signup}>
-          Don't have a student account?{" "}
-          <Text style={styles.signupLink}>
-            Sign up
-          </Text>
-        </Text>
-      </Pressable>
-
-      <View style={styles.businessBox}>
-        <Text style={styles.businessTitle}>
-          Are you a business?
-        </Text>
-
-        <Text style={styles.businessText}>
-          Businesses have a separate registration
-          and verification process.
-        </Text>
-
-        <Pressable
-          onPress={() =>
-            router.push(
-              "/(business-auth)/auth/login"
-            )
-          }
-        >
-          <Text style={styles.businessLink}>
-            Business Sign Up / Log In →
-          </Text>
-        </Pressable>
-      </View>
-    </View>
+              <Pressable
+                hitSlop={8}
+                onPress={() =>
+                  router.push(
+                    "/(business-auth)/auth/login"
+                  )
+                }
+              >
+                <Text
+                  style={
+                    styles.businessLink
+                  }
+                >
+                  Business Sign Up / Log In →
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    justifyContent: "center",
-    padding: 24,
     backgroundColor: "#FFFFFF",
   },
 
+  keyboardView: {
+    flex: 1,
+  },
+
+  scrollView: {
+    flex: 1,
+  },
+
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 35,
+    paddingBottom: 50,
+  },
+
+  logoSection: {
+    alignItems: "center",
+    marginBottom: 32,
+  },
+
+  logoImage: {
+    width: 105,
+    height: 105,
+  },
+
   logo: {
+    marginTop: 4,
     fontSize: 17,
     fontWeight: "800",
-    marginBottom: 38,
     color: "#111",
   },
 
@@ -299,6 +528,7 @@ const styles = StyleSheet.create({
 
   subtitle: {
     fontSize: 16,
+    lineHeight: 22,
     color: "#666",
     marginBottom: 28,
   },
@@ -307,8 +537,8 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#d4d4d4",
-    backgroundColor: "#fff",
+    borderColor: "#D4D4D4",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
@@ -326,7 +556,7 @@ const styles = StyleSheet.create({
   msRed: {
     width: 9,
     height: 9,
-    backgroundColor: "#f25022",
+    backgroundColor: "#F25022",
     marginRight: 2,
     marginBottom: 2,
   },
@@ -334,20 +564,20 @@ const styles = StyleSheet.create({
   msGreen: {
     width: 9,
     height: 9,
-    backgroundColor: "#7fba00",
+    backgroundColor: "#7FBA00",
   },
 
   msBlue: {
     width: 9,
     height: 9,
-    backgroundColor: "#00a4ef",
+    backgroundColor: "#00A4EF",
     marginRight: 2,
   },
 
   msYellow: {
     width: 9,
     height: 9,
-    backgroundColor: "#ffb900",
+    backgroundColor: "#FFB900",
   },
 
   microsoftText: {
@@ -365,7 +595,7 @@ const styles = StyleSheet.create({
   line: {
     flex: 1,
     height: 1,
-    backgroundColor: "#e5e5e5",
+    backgroundColor: "#E5E5E5",
   },
 
   or: {
@@ -383,6 +613,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     fontSize: 16,
     color: "#111",
+    backgroundColor: "#FFFFFF",
   },
 
   button: {
@@ -420,9 +651,31 @@ const styles = StyleSheet.create({
     marginTop: 28,
     padding: 18,
     borderRadius: 14,
-    backgroundColor: "#f5f6ff",
+    backgroundColor: "#F5F6FF",
     borderWidth: 1,
-    borderColor: "#e1e3ff",
+    borderColor: "#E1E3FF",
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+
+  businessIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: PRIMARY,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+
+  businessIconText: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "800",
+  },
+
+  businessContent: {
+    flex: 1,
   },
 
   businessTitle: {

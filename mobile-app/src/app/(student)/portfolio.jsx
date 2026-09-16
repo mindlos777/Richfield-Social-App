@@ -1,1 +1,3 @@
-export { PortfolioScreen as default } from "../../screens/StudentProfileScreen";
+import PortfolioScreen from "../../screens/PortfolioScreen";
+
+export default PortfolioScreen;

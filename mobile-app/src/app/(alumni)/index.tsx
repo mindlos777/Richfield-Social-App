@@ -1,1 +1,5 @@
-export { AlumniHomeScreen as default } from "../../screens/AlumniScreens";
+import RoleFeedScreen from "../../screens/feed/RoleFeedScreen";
+
+export default function AlumniHomeRoute() {
+  return <RoleFeedScreen mode="alumni" />;
+}

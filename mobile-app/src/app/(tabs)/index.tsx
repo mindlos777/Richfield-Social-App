@@ -1,469 +1,2256 @@
-import React, { useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import {
+  ActivityIndicator,
+  Alert,
   FlatList,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+} from "react-native";
 
-/* ==========================================================================
-   TYPES
-   ========================================================================== */
+import {
+  Ionicons,
+} from "@expo/vector-icons";
 
-type IconName = React.ComponentProps<typeof Ionicons>['name'];
+import {
+  router,
+  useFocusEffect,
+} from "expo-router";
 
-type FeedPost = {
-  id: string;
-  author: string;
-  initials: string;
-  headline: string;
-  time: string;
-  content: string;
-  likes: number;
-  comments: number;
-  shares: number;
-  liked: boolean;
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
+
+import FeedPostCard, {
+  FeedPostItem,
+} from "../../components/feed/FeedPostCard";
+
+import {
+  supabase,
+} from "../../lib/supabase";
+
+const PRIMARY = "#0300cf";
+
+const COLORS = {
+  background: "#F5F7F9",
+  white: "#FFFFFF",
+  textPrimary: "#111111",
+  textSecondary: "#626C76",
+  textMuted: "#939BA3",
+  border: "#E4E8EC",
+  brand: PRIMARY,
+  brandLight: "#EEEEFF",
+  success: "#287A52",
+  successLight: "#EAF6EF",
 };
 
-type Opportunity = {
-  title: string;
-  company: string;
-  companyInitials: string;
-  location: string;
-  type: string;
-  match: number;
-  closingDate: string;
-  skills: string[];
-};
+type UserRole =
+  | "student"
+  | "alumni"
+  | "business"
+  | "admin";
 
-type EventItem = {
+type HomeProfile = {
   id: string;
-  title: string;
-  date: string;
-  month: string;
-  time: string;
-  location: string;
-  category: string;
+  full_name: string | null;
+  username: string | null;
+  headline: string | null;
+  role: UserRole | null;
+  avatar_url: string | null;
+  bio: string | null;
+
+  linkedin_url?: string | null;
+  github_url?: string | null;
+  instagram_url?: string | null;
+  website_url?: string | null;
 };
 
 type SuggestedConnection = {
   id: string;
-  name: string;
-  initials: string;
-  role: string;
-  programme: string;
+  full_name: string | null;
+  username: string | null;
+  headline: string | null;
+  role: UserRole | null;
+  avatar_url: string | null;
+  bio: string | null;
 };
 
-/* ==========================================================================
-   TEMPORARY DEVELOPMENT DATA
-   ========================================================================== */
-
-/**
- * These are development-only values.
- *
- * Later these will come from:
- * - Firebase / backend API
- * - TanStack Query
- * - Authenticated user profile
- * - Recommendation / matching service
- */
-
-const initialPosts: FeedPost[] = [
-  {
-    id: 'post-1',
-    author: 'Thabo Mokoena',
-    initials: 'TM',
-    headline: 'Software Engineer · Richfield Alumni',
-    time: '2h',
-    content:
-      'Excited to share that I have started a new role as a Backend Software Engineer. One thing I learnt during my transition from university into industry is that consistently building projects matters just as much as completing coursework.',
-    likes: 42,
-    comments: 8,
-    shares: 3,
-    liked: false,
-  },
-  {
-    id: 'post-2',
-    author: 'Richfield Career Development',
-    initials: 'RC',
-    headline: 'Career Development',
-    time: '5h',
-    content:
-      'Applications are now open for the upcoming industry networking session. Students interested in software development, cloud computing and cybersecurity are encouraged to attend.',
-    likes: 76,
-    comments: 14,
-    shares: 11,
-    liked: false,
-  },
-  {
-    id: 'post-3',
-    author: 'Lerato Nkosi',
-    initials: 'LN',
-    headline: 'BSc IT · Final Year Student',
-    time: '1d',
-    content:
-      'Just completed my first full-stack project using React, Node.js and PostgreSQL. Looking forward to connecting with other students working on interesting software projects.',
-    likes: 31,
-    comments: 6,
-    shares: 2,
-    liked: false,
-  },
-];
-
-const recommendedOpportunity: Opportunity = {
-  title: 'Graduate Software Developer',
-  company: 'Tech Solutions Africa',
-  companyInitials: 'TS',
-  location: 'Johannesburg, Gauteng',
-  type: 'Graduate Programme',
-  match: 92,
-  closingDate: '18 Sep 2026',
-  skills: ['Java', 'Spring Boot', 'REST APIs'],
+type RawPost = {
+  id: string;
+  user_id: string;
+  content: string | null;
+  image_url: string | null;
+  media_type: string | null;
+  visibility: string | null;
+  created_at: string;
 };
 
-const upcomingEvents: EventItem[] = [
-  {
-    id: 'event-1',
-    title: 'Technology Career Fair',
-    date: '18',
-    month: 'SEP',
-    time: '10:00',
-    location: 'Richfield Centurion Campus',
-    category: 'Career Fair',
-  },
-  {
-    id: 'event-2',
-    title: 'Building Your Developer Portfolio',
-    date: '22',
-    month: 'SEP',
-    time: '14:00',
-    location: 'Online',
-    category: 'Workshop',
-  },
-  {
-    id: 'event-3',
-    title: 'Industry Networking Evening',
-    date: '26',
-    month: 'SEP',
-    time: '17:30',
-    location: 'Richfield Sandton Campus',
-    category: 'Networking',
-  },
-];
-
-const suggestedConnections: SuggestedConnection[] = [
-  {
-    id: 'person-1',
-    name: 'Sipho Dlamini',
-    initials: 'SD',
-    role: 'Software Developer',
-    programme: 'BSc IT',
-  },
-  {
-    id: 'person-2',
-    name: 'Nadia Williams',
-    initials: 'NW',
-    role: 'Cloud Engineer',
-    programme: 'BSc IT',
-  },
-  {
-    id: 'person-3',
-    name: 'Kabelo Molefe',
-    initials: 'KM',
-    role: 'Cybersecurity Analyst',
-    programme: 'BSc IT',
-  },
-];
-
-/* ==========================================================================
-   MAIN HOME SCREEN
-   ========================================================================== */
-
-export default function HomeScreen() {
-  const [posts, setPosts] = useState<FeedPost[]>(initialPosts);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-
-    /*
-     * Temporary refresh simulation.
-     *
-     * Later:
-     * queryClient.invalidateQueries({
-     *   queryKey: ['feed'],
-     * });
-     */
-
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    setRefreshing(false);
+type FeedPost =
+  FeedPostItem & {
+    rankingScore: number;
   };
 
-  const handleLike = (postId: string) => {
-    setPosts((currentPosts) =>
-      currentPosts.map((post) => {
-        if (post.id !== postId) {
-          return post;
-        }
+type Opportunity = {
+  id: string;
+  business_id: string;
 
-        return {
-          ...post,
-          liked: !post.liked,
-          likes: post.liked ? post.likes - 1 : post.likes + 1,
-        };
-      }),
-    );
-  };
+  title: string;
+  description: string;
+
+  opportunity_type: string;
+
+  location: string | null;
+  work_mode: string | null;
+
+  required_skills: string[];
+  programme_keywords: string[];
+
+  application_url: string | null;
+  closing_date: string | null;
+
+  status: string;
+  created_at: string;
+
+  company_name: string;
+};
+
+type EventItem = {
+  id: string;
+  created_by: string;
+
+  title: string;
+  description: string | null;
+
+  event_type: string | null;
+
+  location: string | null;
+
+  starts_at: string;
+  ends_at: string | null;
+
+  registration_url: string | null;
+
+  relevant_programmes: string[];
+  relevant_roles: string[];
+
+  image_url: string | null;
+
+  status: string;
+
+  created_at: string;
+};
+
+function getInitials(
+  name: string | null
+) {
+  if (!name) {
+    return "U";
+  }
+
+  const pieces =
+    name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+
+  if (pieces.length === 0) {
+    return "U";
+  }
+
+  if (pieces.length === 1) {
+    return pieces[0]
+      .charAt(0)
+      .toUpperCase();
+  }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    pieces[0]
+      .charAt(0)
+      .toUpperCase() +
+    pieces[
+      pieces.length - 1
+    ]
+      .charAt(0)
+      .toUpperCase()
+  );
+}
+
+function getRoleLabel(
+  role: UserRole | null
+) {
+  switch (role) {
+    case "student":
+      return "Student";
+
+    case "alumni":
+      return "Alumni";
+
+    case "business":
+      return "Business";
+
+    case "admin":
+      return "Richfield";
+
+    default:
+      return "Member";
+  }
+}
+
+function getGreeting() {
+  const hour =
+    new Date().getHours();
+
+  if (hour < 12) {
+    return "Good morning";
+  }
+
+  if (hour < 17) {
+    return "Good afternoon";
+  }
+
+  return "Good evening";
+}
+
+function formatOpportunityType(
+  value: string
+) {
+  switch (value) {
+    case "internship":
+      return "Internship";
+
+    case "learnership":
+      return "Learnership";
+
+    case "part_time":
+      return "Part-time";
+
+    case "graduate":
+      return "Graduate Programme";
+
+    case "job":
+      return "Job";
+
+    default:
+      return value;
+  }
+}
+
+function formatDate(
+  value?: string | null
+) {
+  if (!value) {
+    return "No closing date";
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return value;
+  }
+
+  return date.toLocaleDateString(
+    "en-ZA",
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }
+  );
+}
+
+function getEventMonth(
+  startsAt: string
+) {
+  return new Date(
+    startsAt
+  )
+    .toLocaleDateString(
+      "en-ZA",
+      {
+        month: "short",
+      }
+    )
+    .toUpperCase();
+}
+
+function getEventDay(
+  startsAt: string
+) {
+  return new Date(
+    startsAt
+  ).getDate();
+}
+
+function getEventTime(
+  startsAt: string
+) {
+  return new Date(
+    startsAt
+  ).toLocaleTimeString(
+    "en-ZA",
+    {
+      hour: "2-digit",
+      minute: "2-digit",
+    }
+  );
+}
+
+/* =========================================================
+   HOME
+   ========================================================= */
+
+export default function HomeScreen() {
+  const [
+    profile,
+    setProfile,
+  ] =
+    useState<HomeProfile | null>(
+      null
+    );
+
+  const [
+    posts,
+    setPosts,
+  ] =
+    useState<FeedPost[]>([]);
+
+  const [
+    opportunities,
+    setOpportunities,
+  ] =
+    useState<Opportunity[]>([]);
+
+  const [
+    events,
+    setEvents,
+  ] =
+    useState<EventItem[]>([]);
+
+  const [
+    suggestions,
+    setSuggestions,
+  ] =
+    useState<
+      SuggestedConnection[]
+    >([]);
+
+  const [
+    following,
+    setFollowing,
+  ] =
+    useState<string[]>([]);
+
+  const [
+    loading,
+    setLoading,
+  ] =
+    useState(true);
+
+  const [
+    refreshing,
+    setRefreshing,
+  ] =
+    useState(false);
+
+  const [
+    followLoading,
+    setFollowLoading,
+  ] =
+    useState<string[]>([]);
+
+  const [
+    likeLoading,
+    setLikeLoading,
+  ] =
+    useState<string[]>([]);
+
+  /* =========================================================
+     PROFILE
+     ========================================================= */
+
+  const loadProfile =
+    useCallback(
+      async (
+        userId: string
+      ) => {
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .from(
+              "profiles"
+            )
+            .select(
+              `
+              id,
+              full_name,
+              username,
+              headline,
+              role,
+              avatar_url,
+              bio,
+              linkedin_url,
+              github_url,
+              instagram_url,
+              website_url
+              `
+            )
+            .eq(
+              "id",
+              userId
+            )
+            .single();
+
+        if (error) {
+          throw error;
+        }
+
+        const result =
+          data as HomeProfile;
+
+        setProfile(
+          result
+        );
+
+        return result;
+      },
+      []
+    );
+
+  /* =========================================================
+     FOLLOWING
+     ========================================================= */
+
+  const loadFollowing =
+    useCallback(
+      async (
+        userId: string
+      ) => {
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .from(
+              "follows"
+            )
+            .select(
+              "following_id"
+            )
+            .eq(
+              "follower_id",
+              userId
+            );
+
+        if (error) {
+          throw error;
+        }
+
+        const ids =
+          (
+            data || []
+          ).map(
+            item =>
+              item.following_id
+          );
+
+        setFollowing(
+          ids
+        );
+
+        return ids;
+      },
+      []
+    );
+
+  /* =========================================================
+     PEOPLE
+     ========================================================= */
+
+  const loadSuggestions =
+    useCallback(
+      async (
+        userId: string,
+        followedIds:
+          string[]
+      ) => {
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .from(
+              "profiles"
+            )
+            .select(
+              `
+              id,
+              full_name,
+              username,
+              headline,
+              role,
+              avatar_url,
+              bio
+              `
+            )
+            .neq(
+              "id",
+              userId
+            )
+            .eq(
+              "status",
+              "active"
+            )
+            .in(
+              "role",
+              [
+                "student",
+                "alumni",
+                "business",
+              ]
+            )
+            .limit(30);
+
+        if (error) {
+          throw error;
+        }
+
+        const result =
+          (
+            data || []
+          )
+            .filter(
+              item =>
+                !followedIds.includes(
+                  item.id
+                )
+            )
+            .sort(
+              () =>
+                Math.random() -
+                0.5
+            )
+            .slice(
+              0,
+              8
+            ) as SuggestedConnection[];
+
+        setSuggestions(
+          result
+        );
+      },
+      []
+    );
+
+  /* =========================================================
+     FYP FEED
+     ========================================================= */
+
+  const loadFeed =
+    useCallback(
+      async (
+        userId: string,
+        followedIds:
+          string[]
+      ) => {
+        const {
+          data:
+            postData,
+          error:
+            postError,
+        } =
+          await supabase
+            .from(
+              "posts"
+            )
+            .select(
+              `
+              id,
+              user_id,
+              content,
+              image_url,
+              media_type,
+              visibility,
+              created_at
+              `
+            )
+            .order(
+              "created_at",
+              {
+                ascending:
+                  false,
+              }
+            )
+            .limit(100);
+
+        if (postError) {
+          throw postError;
+        }
+
+        const rawPosts =
+          (postData ||
+            []) as RawPost[];
+
+        if (
+          rawPosts.length ===
+          0
+        ) {
+          setPosts([]);
+          return;
+        }
+
+        const authorIds =
+          [
+            ...new Set(
+              rawPosts.map(
+                post =>
+                  post.user_id
+              )
+            ),
+          ];
+
+        const postIds =
+          rawPosts.map(
+            post =>
+              post.id
+          );
+
+        const [
+          profilesResult,
+          likesResult,
+          commentsResult,
+          sharesResult,
+        ] =
+          await Promise.all([
+            supabase
+              .from(
+                "profiles"
+              )
+              .select(
+                `
+                id,
+                full_name,
+                username,
+                headline,
+                role,
+                avatar_url,
+                bio
+                `
+              )
+              .in(
+                "id",
+                authorIds
+              ),
+
+            supabase
+              .from(
+                "post_likes"
+              )
+              .select(
+                "post_id,user_id"
+              )
+              .in(
+                "post_id",
+                postIds
+              ),
+
+            supabase
+              .from(
+                "post_comments"
+              )
+              .select(
+                "post_id"
+              )
+              .in(
+                "post_id",
+                postIds
+              ),
+
+            supabase
+              .from(
+                "post_shares"
+              )
+              .select(
+                "post_id"
+              )
+              .in(
+                "post_id",
+                postIds
+              ),
+          ]);
+
+        if (
+          profilesResult.error
+        ) {
+          throw profilesResult.error;
+        }
+
+        if (
+          likesResult.error
+        ) {
+          throw likesResult.error;
+        }
+
+        if (
+          commentsResult.error
+        ) {
+          throw commentsResult.error;
+        }
+
+        if (
+          sharesResult.error
+        ) {
+          throw sharesResult.error;
+        }
+
+        const authorMap =
+          new Map<
+            string,
+            HomeProfile
+          >();
+
+        (
+          profilesResult.data ||
+          []
+        ).forEach(
+          item => {
+            authorMap.set(
+              item.id,
+              item as HomeProfile
+            );
+          }
+        );
+
+        const likes =
+          likesResult.data ||
+          [];
+
+        const comments =
+          commentsResult.data ||
+          [];
+
+        const shares =
+          sharesResult.data ||
+          [];
+
+        const currentTime =
+          Date.now();
+
+        const feed =
+          rawPosts.map(
+            post => {
+              const postLikes =
+                likes.filter(
+                  item =>
+                    item.post_id ===
+                    post.id
+                );
+
+              const likeCount =
+                postLikes.length;
+
+              const commentCount =
+                comments.filter(
+                  item =>
+                    item.post_id ===
+                    post.id
+                ).length;
+
+              const shareCount =
+                shares.filter(
+                  item =>
+                    item.post_id ===
+                    post.id
+                ).length;
+
+              const liked =
+                postLikes.some(
+                  item =>
+                    item.user_id ===
+                    userId
+                );
+
+              const ageHours =
+                Math.max(
+                  0,
+                  (
+                    currentTime -
+                    new Date(
+                      post.created_at
+                    ).getTime()
+                  ) /
+                    3600000
+                );
+
+              /*
+               * Simple FYP ranking.
+               *
+               * Following:
+               * +50
+               *
+               * Like:
+               * +2
+               *
+               * Comment:
+               * +4
+               *
+               * Share:
+               * +5
+               *
+               * Newer posts:
+               * ranked higher
+               */
+
+              let rankingScore =
+                0;
+
+              if (
+                followedIds.includes(
+                  post.user_id
+                )
+              ) {
+                rankingScore +=
+                  50;
+              }
+
+              if (
+                post.user_id ===
+                userId
+              ) {
+                rankingScore +=
+                  8;
+              }
+
+              rankingScore +=
+                likeCount * 2;
+
+              rankingScore +=
+                commentCount *
+                4;
+
+              rankingScore +=
+                shareCount * 5;
+
+              rankingScore +=
+                Math.max(
+                  0,
+                  48 -
+                    ageHours
+                );
+
+              const author =
+                authorMap.get(
+                  post.user_id
+                ) || null;
+
+              return {
+                id:
+                  post.id,
+
+                user_id:
+                  post.user_id,
+
+                content:
+                  post.content,
+
+                image_url:
+                  post.image_url,
+
+                media_type:
+                  post.media_type,
+
+                visibility:
+                  post.visibility,
+
+                created_at:
+                  post.created_at,
+
+                full_name:
+                  author?.full_name ||
+                  "Richfield Member",
+
+                username:
+                  author?.username ||
+                  null,
+
+                avatar_url:
+                  author?.avatar_url ||
+                  null,
+
+                role:
+                  author?.role ||
+                  null,
+
+                headline:
+                  author?.headline ||
+                  null,
+
+                likes:
+                  likeCount,
+
+                comments:
+                  commentCount,
+
+                shares:
+                  shareCount,
+
+                liked,
+
+                rankingScore,
+              };
+            }
+          );
+
+        feed.sort(
+          (a, b) =>
+            b.rankingScore -
+            a.rankingScore
+        );
+
+        setPosts(
+          feed
+        );
+      },
+      []
+    );
+
+  /* =========================================================
+     OPPORTUNITIES
+     ========================================================= */
+
+  const loadOpportunities =
+    useCallback(
+      async () => {
+        const today =
+          new Date()
+            .toISOString()
+            .slice(
+              0,
+              10
+            );
+
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .from(
+              "opportunities"
+            )
+            .select(
+              `
+              id,
+              business_id,
+              title,
+              description,
+              opportunity_type,
+              location,
+              work_mode,
+              required_skills,
+              programme_keywords,
+              application_url,
+              closing_date,
+              status,
+              created_at
+              `
+            )
+            .eq(
+              "status",
+              "approved"
+            )
+            .or(
+              `closing_date.is.null,closing_date.gte.${today}`
+            )
+            .order(
+              "created_at",
+              {
+                ascending:
+                  false,
+              }
+            )
+            .limit(10);
+
+        if (error) {
+          throw error;
+        }
+
+        const rows =
+          data || [];
+
+        if (
+          rows.length ===
+          0
+        ) {
+          setOpportunities(
+            []
+          );
+
+          return;
+        }
+
+        const businessIds =
+          [
+            ...new Set(
+              rows.map(
+                item =>
+                  item.business_id
+              )
+            ),
+          ];
+
+        const {
+          data:
+            businesses,
+        } =
+          await supabase
+            .from(
+              "business_profiles"
+            )
+            .select(
+              `
+              user_id,
+              organisation_name
+              `
+            )
+            .in(
+              "user_id",
+              businessIds
+            );
+
+        const businessMap =
+          new Map<
+            string,
+            string
+          >();
+
+        (
+          businesses || []
+        ).forEach(
+          business => {
+            businessMap.set(
+              business.user_id,
+              business.organisation_name ||
+                "Business"
+            );
+          }
+        );
+
+        setOpportunities(
+          rows.map(
+            item => ({
+              ...item,
+
+              required_skills:
+                item.required_skills ||
+                [],
+
+              programme_keywords:
+                item.programme_keywords ||
+                [],
+
+              company_name:
+                businessMap.get(
+                  item.business_id
+                ) ||
+                "Richfield Partner",
+            })
+          ) as Opportunity[]
+        );
+      },
+      []
+    );
+
+  /* =========================================================
+     EVENTS
+     ========================================================= */
+
+  const loadEvents =
+    useCallback(
+      async (
+        currentProfile?:
+          HomeProfile | null
+      ) => {
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .from(
+              "events"
+            )
+            .select(
+              `
+              id,
+              created_by,
+              title,
+              description,
+              event_type,
+              location,
+              starts_at,
+              ends_at,
+              registration_url,
+              relevant_programmes,
+              relevant_roles,
+              image_url,
+              status,
+              created_at
+              `
+            )
+            .eq(
+              "status",
+              "published"
+            )
+            .gte(
+              "starts_at",
+              new Date()
+                .toISOString()
+            )
+            .order(
+              "starts_at",
+              {
+                ascending:
+                  true,
+              }
+            )
+            .limit(12);
+
+        if (error) {
+          throw error;
+        }
+
+        let result =
+          (
+            data || []
+          ) as EventItem[];
+
+        if (
+          currentProfile
+            ?.role
+        ) {
+          result =
+            result.filter(
+              event => {
+                const roles =
+                  event.relevant_roles ||
+                  [];
+
+                return (
+                  roles.length ===
+                    0 ||
+                  roles.includes(
+                    currentProfile.role!
+                  )
+                );
+              }
+            );
+        }
+
+        setEvents(
+          result
+        );
+      },
+      []
+    );
+
+  /* =========================================================
+     LOAD EVERYTHING
+     ========================================================= */
+
+  const loadHome =
+    useCallback(
+      async (
+        showLoader =
+          false
+      ) => {
+        try {
+          if (
+            showLoader
+          ) {
+            setLoading(
+              true
+            );
+          }
+
+          const {
+            data: {
+              user,
+            },
+            error:
+              userError,
+          } =
+            await supabase.auth.getUser();
+
+          if (
+            userError
+          ) {
+            throw userError;
+          }
+
+          if (!user) {
+            return;
+          }
+
+          const currentProfile =
+            await loadProfile(
+              user.id
+            );
+
+          const followedIds =
+            await loadFollowing(
+              user.id
+            );
+
+          await Promise.all([
+            loadFeed(
+              user.id,
+              followedIds
+            ),
+
+            loadSuggestions(
+              user.id,
+              followedIds
+            ),
+
+            loadOpportunities(),
+
+            loadEvents(
+              currentProfile
+            ),
+          ]);
+        } catch (
+          error: any
+        ) {
+          console.log(
+            "Home loading error:",
+            error
+          );
+
+          Alert.alert(
+            "Home",
+            error?.message ||
+              "Could not load your feed."
+          );
+        } finally {
+          setLoading(
+            false
+          );
+
+          setRefreshing(
+            false
+          );
+        }
+      },
+      [
+        loadProfile,
+        loadFollowing,
+        loadFeed,
+        loadSuggestions,
+        loadOpportunities,
+        loadEvents,
+      ]
+    );
+
+  useFocusEffect(
+    useCallback(
+      () => {
+        loadHome(
+          true
+        );
+      },
+      [
+        loadHome,
+      ]
+    )
+  );
+
+  /* =========================================================
+     REALTIME
+     ========================================================= */
+
+  useEffect(() => {
+    if (
+      !profile?.id
+    ) {
+      return;
+    }
+
+    const userId =
+      profile.id;
+
+    const channel =
+      supabase
+        .channel(
+          `home-realtime-${userId}`
+        )
+
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "posts",
+          },
+          () => {
+            loadHome(
+              false
+            );
+          }
+        )
+
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "post_likes",
+          },
+          () => {
+            loadHome(
+              false
+            );
+          }
+        )
+
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "post_comments",
+          },
+          () => {
+            loadHome(
+              false
+            );
+          }
+        )
+
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "post_shares",
+          },
+          () => {
+            loadHome(
+              false
+            );
+          }
+        )
+
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "follows",
+          },
+          () => {
+            loadHome(
+              false
+            );
+          }
+        )
+
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "opportunities",
+          },
+          () => {
+            loadHome(
+              false
+            );
+          }
+        )
+
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema:
+              "public",
+            table:
+              "events",
+          },
+          () => {
+            loadHome(
+              false
+            );
+          }
+        )
+
+        .subscribe(
+          status => {
+            console.log(
+              "Home realtime:",
+              status
+            );
+          }
+        );
+
+    return () => {
+      supabase.removeChannel(
+        channel
+      );
+    };
+  }, [
+    profile?.id,
+    loadHome,
+  ]);
+
+  /* =========================================================
+     FOLLOW
+     ========================================================= */
+
+  async function toggleFollow(
+    profileId: string
+  ) {
+    if (
+      !profile?.id
+    ) {
+      return;
+    }
+
+    if (
+      followLoading.includes(
+        profileId
+      )
+    ) {
+      return;
+    }
+
+    const isFollowing =
+      following.includes(
+        profileId
+      );
+
+    setFollowLoading(
+      current => [
+        ...current,
+        profileId,
+      ]
+    );
+
+    try {
+      if (
+        isFollowing
+      ) {
+        const {
+          error,
+        } =
+          await supabase
+            .from(
+              "follows"
+            )
+            .delete()
+            .eq(
+              "follower_id",
+              profile.id
+            )
+            .eq(
+              "following_id",
+              profileId
+            );
+
+        if (error) {
+          throw error;
+        }
+
+        setFollowing(
+          current =>
+            current.filter(
+              id =>
+                id !==
+                profileId
+            )
+        );
+      } else {
+        const {
+          error,
+        } =
+          await supabase
+            .from(
+              "follows"
+            )
+            .insert({
+              follower_id:
+                profile.id,
+
+              following_id:
+                profileId,
+            });
+
+        if (
+          error &&
+          error.code !==
+            "23505"
+        ) {
+          throw error;
+        }
+
+        setFollowing(
+          current =>
+            current.includes(
+              profileId
+            )
+              ? current
+              : [
+                  ...current,
+                  profileId,
+                ]
+        );
+
+        setSuggestions(
+          current =>
+            current.filter(
+              item =>
+                item.id !==
+                profileId
+            )
+        );
+      }
+    } catch (
+      error: any
+    ) {
+      Alert.alert(
+        "Connection",
+        error?.message ||
+          "Could not update this connection."
+      );
+
+      loadHome(
+        false
+      );
+    } finally {
+      setFollowLoading(
+        current =>
+          current.filter(
+            id =>
+              id !==
+              profileId
+          )
+      );
+    }
+  }
+
+  /* =========================================================
+     LIKE
+     ========================================================= */
+
+  async function toggleLike(
+    post: FeedPost
+  ) {
+    if (
+      !profile?.id
+    ) {
+      return;
+    }
+
+    if (
+      likeLoading.includes(
+        post.id
+      )
+    ) {
+      return;
+    }
+
+    setLikeLoading(
+      current => [
+        ...current,
+        post.id,
+      ]
+    );
+
+    const nextLiked =
+      !post.liked;
+
+    setPosts(
+      current =>
+        current.map(
+          item =>
+            item.id ===
+            post.id
+              ? {
+                  ...item,
+
+                  liked:
+                    nextLiked,
+
+                  likes:
+                    nextLiked
+                      ? item.likes +
+                        1
+                      : Math.max(
+                          0,
+                          item.likes -
+                            1
+                        ),
+                }
+              : item
+        )
+    );
+
+    try {
+      if (
+        post.liked
+      ) {
+        const {
+          error,
+        } =
+          await supabase
+            .from(
+              "post_likes"
+            )
+            .delete()
+            .eq(
+              "post_id",
+              post.id
+            )
+            .eq(
+              "user_id",
+              profile.id
+            );
+
+        if (error) {
+          throw error;
+        }
+      } else {
+        const {
+          error,
+        } =
+          await supabase
+            .from(
+              "post_likes"
+            )
+            .insert({
+              post_id:
+                post.id,
+
+              user_id:
+                profile.id,
+            });
+
+        if (
+          error &&
+          error.code !==
+            "23505"
+        ) {
+          throw error;
+        }
+      }
+    } catch (
+      error: any
+    ) {
+      console.log(
+        "Like error:",
+        error
+      );
+
+      loadHome(
+        false
+      );
+    } finally {
+      setLikeLoading(
+        current =>
+          current.filter(
+            id =>
+              id !==
+              post.id
+          )
+      );
+    }
+  }
+
+  /* =========================================================
+     SHARE
+     ========================================================= */
+
+  async function sharePost(
+    post: FeedPost
+  ) {
+    if (
+      !profile?.id
+    ) {
+      return;
+    }
+
+    try {
+      const author =
+        post.full_name ||
+        "a Richfield member";
+
+      await Share.share({
+        message:
+          post.content
+            ? `${author}: ${post.content}`
+            : `View this post from ${author} on Richfield Connect.`,
+      });
+
+      await supabase
+        .from(
+          "post_shares"
+        )
+        .insert({
+          post_id:
+            post.id,
+
+          user_id:
+            profile.id,
+        });
+    } catch (
+      error
+    ) {
+      console.log(
+        "Share error:",
+        error
+      );
+    }
+  }
+
+  const handleRefresh =
+    async () => {
+      setRefreshing(
+        true
+      );
+
+      await loadHome(
+        false
+      );
+    };
+
+  const recommendedOpportunity =
+    useMemo(
+      () =>
+        opportunities[0] ||
+        null,
+      [
+        opportunities,
+      ]
+    );
+
+  if (loading) {
+    return (
+      <SafeAreaView
+        style={
+          styles.loadingScreen
+        }
+      >
+        <ActivityIndicator
+          size="large"
+          color={
+            PRIMARY
+          }
+        />
+
+        <Text
+          style={
+            styles.loadingText
+          }
+        >
+          Loading your feed...
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView
+      style={
+        styles.safeArea
+      }
+      edges={[
+        "bottom",
+      ]}
+    >
       <FlatList
-        data={posts}
-        keyExtractor={(item) => item.id}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
+        data={
+          posts
+        }
+        keyExtractor={
+          item =>
+            item.id
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
+            refreshing={
+              refreshing
+            }
+            onRefresh={
+              handleRefresh
+            }
           />
+        }
+        contentContainerStyle={
+          styles.listContent
         }
         ListHeaderComponent={
-          <HomeContentHeader />
+          <HomeHeader
+            profile={
+              profile
+            }
+            opportunity={
+              recommendedOpportunity
+            }
+            events={
+              events
+            }
+            suggestions={
+              suggestions
+            }
+            following={
+              following
+            }
+            followLoading={
+              followLoading
+            }
+            onFollow={
+              toggleFollow
+            }
+          />
         }
-        renderItem={({ item }) => (
+        renderItem={({
+          item,
+        }) => (
           <FeedPostCard
-            post={item}
-            onLike={() => handleLike(item.id)}
+            post={
+              item
+            }
+            variant="social"
+            onProfilePress={() => {
+              if (
+                item.user_id ===
+                profile?.id
+              ) {
+                router.push(
+                  "/(tabs)/profile"
+                );
+
+                return;
+              }
+
+              router.push({
+                pathname:
+                  "/member-profile",
+
+                params: {
+                  userId:
+                    item.user_id,
+
+                  id:
+                    item.user_id,
+
+                  name:
+                    item.full_name,
+
+                  username:
+                    item.username ||
+                    "",
+
+                  image:
+                    item.avatar_url ||
+                    "",
+
+                  role:
+                    item.role ||
+                    "student",
+                },
+              });
+            }}
+            onLikePress={
+              likeLoading.includes(
+                item.id
+              )
+                ? undefined
+                : () =>
+                    toggleLike(
+                      item
+                    )
+            }
+            onCommentPress={() =>
+              router.push({
+                pathname:
+                  "/(student)/post/[id]" as never,
+
+                params: {
+                  id:
+                    item.id,
+                },
+              })
+            }
+            onSharePress={() =>
+              sharePost(
+                item
+              )
+            }
           />
         )}
-        ListFooterComponent={<View style={styles.bottomSpacing} />}
+        ListEmptyComponent={
+          <View
+            style={
+              styles.emptyFeed
+            }
+          >
+            <Ionicons
+              name="newspaper-outline"
+              size={40}
+              color="#AAA"
+            />
+
+            <Text
+              style={
+                styles.emptyFeedTitle
+              }
+            >
+              Your feed is quiet
+            </Text>
+
+            <Text
+              style={
+                styles.emptyFeedText
+              }
+            >
+              Follow people or create a
+              post to get your FYP
+              started.
+            </Text>
+          </View>
+        }
+        ListFooterComponent={
+          <View
+            style={{
+              height: 80,
+            }}
+          />
+        }
       />
     </SafeAreaView>
   );
 }
 
-/* ==========================================================================
-   HOME CONTENT HEADER
-   ========================================================================== */
+/* =========================================================
+   HOME HEADER
+   ========================================================= */
 
-function HomeContentHeader() {
+function HomeHeader({
+  profile,
+  opportunity,
+  events,
+  suggestions,
+  following,
+  followLoading,
+  onFollow,
+}: {
+  profile: HomeProfile | null;
+
+  opportunity:
+    | Opportunity
+    | null;
+
+  events: EventItem[];
+
+  suggestions:
+    SuggestedConnection[];
+
+  following: string[];
+
+  followLoading: string[];
+
+  onFollow: (
+    userId: string
+  ) => void;
+}) {
+  const firstName =
+    profile?.full_name
+      ?.trim()
+      .split(/\s+/)[0] ||
+    "there";
+
   return (
     <View>
-      {/* Welcome */}
-
-      <View style={styles.welcomeSection}>
-        <Text style={styles.greeting}>Good afternoon, User</Text>
-
-        <Text style={styles.welcomeTitle}>
-          Build your professional future.
+      <View
+        style={
+          styles.welcomeSection
+        }
+      >
+        <Text
+          style={
+            styles.greeting
+          }
+        >
+          {getGreeting()},{" "}
+          {firstName}
         </Text>
 
-        <Text style={styles.welcomeDescription}>
-          Connect with students, alumni and industry professionals while
-          discovering opportunities that match your career goals.
+        <Text
+          style={
+            styles.welcomeTitle
+          }
+        >
+          Build your professional
+          future.
+        </Text>
+
+        <Text
+          style={
+            styles.welcomeDescription
+          }
+        >
+          Connect, learn, share and
+          discover opportunities across
+          the Richfield community.
         </Text>
       </View>
-
-      {/* Profile Strength */}
-
-      <ProfileStrengthCard />
-
-      {/* Quick Actions */}
 
       <QuickActions />
 
-      {/* Recommended Opportunity */}
+      {opportunity ? (
+        <>
+          <SectionHeader
+            title="Recommended for you"
+            action="View all"
+            onPress={() =>
+              router.push(
+                "/opportunities"
+              )
+            }
+          />
 
-      <SectionHeader
-        title="Recommended for you"
-        action="View all"
-        onPress={() => router.push('/opportunities')}
-      />
+          <OpportunityCard
+            opportunity={
+              opportunity
+            }
+          />
+        </>
+      ) : null}
 
-      <OpportunityCard opportunity={recommendedOpportunity} />
+      {events.length >
+      0 ? (
+        <>
+          <SectionHeader
+            title="Upcoming events"
+          />
 
-      {/* Events */}
+          <EventsSection
+            events={
+              events
+            }
+          />
+        </>
+      ) : null}
 
-      <SectionHeader
-        title="Upcoming events"
-      />
+      {suggestions.length >
+      0 ? (
+        <>
+          <SectionHeader
+            title="People you may know"
+            action="View network"
+            onPress={() =>
+              router.push(
+                "/network"
+              )
+            }
+          />
 
-      <EventsSection />
+          <SuggestedConnections
+            suggestions={
+              suggestions
+            }
+            following={
+              following
+            }
+            followLoading={
+              followLoading
+            }
+            onFollow={
+              onFollow
+            }
+          />
+        </>
+      ) : null}
 
-      {/* People */}
-
-      <SectionHeader
-        title="People you may know"
-      />
-
-      <SuggestedConnections />
-
-      {/* Feed */}
-
-      <View style={styles.feedHeading}>
+      <View
+        style={
+          styles.feedHeader
+        }
+      >
         <View>
-          <Text style={styles.sectionTitle}>Professional feed</Text>
+          <Text
+            style={
+              styles.feedTitle
+            }
+          >
+            For you
+          </Text>
 
-          <Text style={styles.sectionSubtitle}>
-            Updates from your Richfield community
+          <Text
+            style={
+              styles.feedSubtitle
+            }
+          >
+            Posts selected from your
+            Richfield community
           </Text>
         </View>
-
       </View>
 
-      <CreatePostCard />
+      <CreatePostCard
+        profile={
+          profile
+        }
+      />
     </View>
   );
 }
 
-/* ==========================================================================
-   PROFILE STRENGTH
-   ========================================================================== */
-
-function ProfileStrengthCard() {
-  const profileStrength = 72;
-
-  return (
-    <Pressable
-      style={styles.profileStrengthCard}
-      onPress={() => router.push('/profile')}
-    >
-      <View style={styles.profileStrengthHeader}>
-        <View style={styles.profileStrengthIcon}>
-          <Ionicons
-            name="person-outline"
-            size={20}
-            color={COLORS.white}
-          />
-        </View>
-
-        <View style={styles.profileStrengthContent}>
-          <View style={styles.profileStrengthTitleRow}>
-            <Text style={styles.profileStrengthTitle}>
-              Profile strength
-            </Text>
-
-            <Text style={styles.profileStrengthPercentage}>
-              {profileStrength}%
-            </Text>
-          </View>
-
-          <Text style={styles.profileStrengthDescription}>
-            Your profile is looking good. Add a few more details to stand out
-            to recruiters and alumni.
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.progressTrack}>
-        <View
-          style={[
-            styles.progressFill,
-            {
-              width: `${profileStrength}%`,
-            },
-          ]}
-        />
-      </View>
-
-      <View style={styles.profileStrengthFooter}>
-        <View style={styles.suggestionContainer}>
-          <Ionicons
-            name="sparkles-outline"
-            size={15}
-            color={COLORS.textSecondary}
-          />
-
-          <Text style={styles.profileSuggestion}>
-            Add GitHub and 2 more skills
-          </Text>
-        </View>
-
-        <Ionicons
-          name="chevron-forward"
-          size={17}
-          color={COLORS.textSecondary}
-        />
-      </View>
-    </Pressable>
-  );
-}
-
-/* ==========================================================================
+/* =========================================================
    QUICK ACTIONS
-   ========================================================================== */
+   ========================================================= */
 
 function QuickActions() {
-  const actions: {
-    title: string;
-    icon: IconName;
-    route?: '/opportunities' | '/profile';
-  }[] = [
+  const actions = [
     {
-      title: 'Opportunities',
-      icon: 'briefcase-outline',
-      route: '/opportunities',
+      label:
+        "Opportunities",
+      icon:
+        "briefcase-outline" as const,
+      route:
+        "/opportunities",
     },
+
     {
-      title: 'Explore Alumni',
-      icon: 'people-outline',
-      route: '/profile',
+      label:
+        "Network",
+      icon:
+        "people-outline" as const,
+      route:
+        "/network",
     },
+
     {
-      title: 'Portfolio',
-      icon: 'folder-open-outline',
-      route: '/profile',
+      label:
+        "AI Assistant",
+      icon:
+        "sparkles-outline" as const,
+      route:
+        "../ai-assistant",
     },
+
     {
-      title: 'AI Assistant',
-      icon: 'sparkles-outline',
+      label:
+        "Portfolio",
+      icon:
+        "folder-open-outline" as const,
+      route:
+        "../(student)/portfolio",
     },
   ];
 
   return (
-    <View style={styles.quickActionsSection}>
-      <Text style={styles.sectionTitle}>Quick actions</Text>
+    <View
+      style={
+        styles.quickSection
+      }
+    >
+      <Text
+        style={
+          styles.sectionTitle
+        }
+      >
+        Quick actions
+      </Text>
 
-      <View style={styles.quickActionsGrid}>
-        {actions.map((action) => (
-          <Pressable
-            key={action.title}
-            style={styles.quickAction}
-            onPress={() => {
-              if (action.route) {
-                router.push(action.route);
+      <View
+        style={
+          styles.quickGrid
+        }
+      >
+        {actions.map(
+          action => (
+            <Pressable
+              key={
+                action.label
               }
-            }}
-          >
-            <View style={styles.quickActionIcon}>
-              <Ionicons
-                name={action.icon}
-                size={21}
-                color={COLORS.textPrimary}
-              />
-            </View>
+              style={
+                styles.quickItem
+              }
+              onPress={() =>
+                router.push(
+                  action.route as never
+                )
+              }
+            >
+              <View
+                style={
+                  styles.quickIcon
+                }
+              >
+                <Ionicons
+                  name={
+                    action.icon
+                  }
+                  size={21}
+                  color={
+                    PRIMARY
+                  }
+                />
+              </View>
 
-            <Text style={styles.quickActionText}>
-              {action.title}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={
+                  styles.quickLabel
+                }
+              >
+                {
+                  action.label
+                }
+              </Text>
+            </Pressable>
+          )
+        )}
       </View>
     </View>
   );
 }
 
-/* ==========================================================================
-   SECTION HEADER
-   ========================================================================== */
+/* =========================================================
+   HEADINGS
+   ========================================================= */
 
 function SectionHeader({
   title,
@@ -475,113 +2262,222 @@ function SectionHeader({
   onPress?: () => void;
 }) {
   return (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <View
+      style={
+        styles.sectionHeader
+      }
+    >
+      <Text
+        style={
+          styles.sectionTitle
+        }
+      >
+        {title}
+      </Text>
 
-      {action && onPress ? (
-        <Pressable onPress={onPress} hitSlop={8}>
-          <Text style={styles.sectionAction}>{action}</Text>
+      {action &&
+      onPress ? (
+        <Pressable
+          onPress={
+            onPress
+          }
+        >
+          <Text
+            style={
+              styles.sectionAction
+            }
+          >
+            {action}
+          </Text>
         </Pressable>
       ) : null}
     </View>
   );
 }
 
-/* ==========================================================================
-   OPPORTUNITY CARD
-   ========================================================================== */
+/* =========================================================
+   OPPORTUNITY
+   ========================================================= */
 
 function OpportunityCard({
   opportunity,
 }: {
   opportunity: Opportunity;
 }) {
+  const companyInitials =
+    getInitials(
+      opportunity.company_name
+    );
+
   return (
     <Pressable
-      style={styles.opportunityCard}
-      onPress={() => router.push('/opportunities')}
+      style={
+        styles.opportunityCard
+      }
+      onPress={() =>
+        router.push(
+          "/opportunities"
+        )
+      }
     >
-      <View style={styles.opportunityHeader}>
-        <View style={styles.companyLogo}>
-          <Text style={styles.companyLogoText}>
-            {opportunity.companyInitials}
+      <View
+        style={
+          styles.opportunityTop
+        }
+      >
+        <View
+          style={
+            styles.companyLogo
+          }
+        >
+          <Text
+            style={
+              styles.companyLogoText
+            }
+          >
+            {
+              companyInitials
+            }
           </Text>
         </View>
 
-        <View style={styles.opportunityMain}>
+        <View
+          style={{
+            flex: 1,
+          }}
+        >
           <Text
-            style={styles.opportunityTitle}
-            numberOfLines={2}
+            style={
+              styles.opportunityTitle
+            }
+            numberOfLines={
+              2
+            }
           >
-            {opportunity.title}
+            {
+              opportunity.title
+            }
           </Text>
 
-          <Text style={styles.companyName}>
-            {opportunity.company}
+          <Text
+            style={
+              styles.companyName
+            }
+          >
+            {
+              opportunity.company_name
+            }
           </Text>
 
-          <View style={styles.opportunityLocation}>
+          <View
+            style={
+              styles.metaRow
+            }
+          >
             <Ionicons
               name="location-outline"
               size={14}
-              color={COLORS.textMuted}
+              color={
+                COLORS.textMuted
+              }
             />
 
-            <Text style={styles.locationText}>
-              {opportunity.location}
+            <Text
+              style={
+                styles.metaText
+              }
+            >
+              {opportunity.location ||
+                "Location not specified"}
             </Text>
           </View>
         </View>
+      </View>
 
-        <View style={styles.matchBadge}>
-          <Text style={styles.matchNumber}>
-            {opportunity.match}%
-          </Text>
-
-          <Text style={styles.matchText}>MATCH</Text>
+      {opportunity
+        .required_skills
+        .length >
+      0 ? (
+        <View
+          style={
+            styles.skillRow
+          }
+        >
+          {opportunity.required_skills
+            .slice(
+              0,
+              4
+            )
+            .map(
+              skill => (
+                <View
+                  key={
+                    skill
+                  }
+                  style={
+                    styles.skill
+                  }
+                >
+                  <Text
+                    style={
+                      styles.skillText
+                    }
+                  >
+                    {
+                      skill
+                    }
+                  </Text>
+                </View>
+              )
+            )}
         </View>
-      </View>
+      ) : null}
 
-      <View style={styles.matchExplanation}>
-        <Ionicons
-          name="sparkles-outline"
-          size={15}
-          color={COLORS.textSecondary}
-        />
-
-        <Text style={styles.matchExplanationText}>
-          Strong match based on your skills, programme and career interests.
-        </Text>
-      </View>
-
-      <View style={styles.skillsContainer}>
-        {opportunity.skills.map((skill) => (
-          <View key={skill} style={styles.skillTag}>
-            <Text style={styles.skillTagText}>{skill}</Text>
-          </View>
-        ))}
-      </View>
-
-      <View style={styles.opportunityDivider} />
-
-      <View style={styles.opportunityFooter}>
+      <View
+        style={
+          styles.opportunityBottom
+        }
+      >
         <View>
-          <Text style={styles.opportunityType}>
-            {opportunity.type}
+          <Text
+            style={
+              styles.opportunityType
+            }
+          >
+            {formatOpportunityType(
+              opportunity.opportunity_type
+            )}
           </Text>
 
-          <Text style={styles.closingText}>
-            Closes {opportunity.closingDate}
+          <Text
+            style={
+              styles.closingText
+            }
+          >
+            Closes{" "}
+            {formatDate(
+              opportunity.closing_date
+            )}
           </Text>
         </View>
 
-        <View style={styles.viewButton}>
-          <Text style={styles.viewButtonText}>View opportunity</Text>
+        <View
+          style={
+            styles.viewOpportunity
+          }
+        >
+          <Text
+            style={
+              styles.viewOpportunityText
+            }
+          >
+            View
+          </Text>
 
           <Ionicons
             name="arrow-forward"
             size={15}
-            color={COLORS.white}
+            color="#FFF"
           />
         </View>
       </View>
@@ -589,1094 +2485,972 @@ function OpportunityCard({
   );
 }
 
-/* ==========================================================================
+/* =========================================================
    EVENTS
-   ========================================================================== */
+   No onPress intentionally.
+   ========================================================= */
 
-function EventsSection() {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.horizontalContainer}
-    >
-      {upcomingEvents.map((event) => (
-        <View
-          key={event.id}
-          style={styles.eventCard}
-        >
-          <View style={styles.eventDateContainer}>
-            <Text style={styles.eventMonth}>
-              {event.month}
-            </Text>
-
-            <Text style={styles.eventDay}>{event.date}</Text>
-          </View>
-
-          <View style={styles.eventContent}>
-            <Text style={styles.eventCategory}>
-              {event.category}
-            </Text>
-
-            <Text
-              style={styles.eventTitle}
-              numberOfLines={2}
-            >
-              {event.title}
-            </Text>
-
-            <View style={styles.eventMeta}>
-              <Ionicons
-                name="time-outline"
-                size={13}
-                color={COLORS.textMuted}
-              />
-
-              <Text style={styles.eventMetaText}>
-                {event.time}
-              </Text>
-            </View>
-
-            <View style={styles.eventMeta}>
-              <Ionicons
-                name="location-outline"
-                size={13}
-                color={COLORS.textMuted}
-              />
-
-              <Text
-                style={styles.eventMetaText}
-                numberOfLines={1}
-              >
-                {event.location}
-              </Text>
-            </View>
-          </View>
-        </View>
-      ))}
-    </ScrollView>
-  );
-}
-
-/* ==========================================================================
-   CONNECTION SUGGESTIONS
-   ========================================================================== */
-
-function SuggestedConnections() {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.horizontalContainer}
-    >
-      {suggestedConnections.map((person) => (
-        <View
-          key={person.id}
-          style={styles.connectionCard}
-        >
-          <View style={styles.connectionAvatar}>
-            <Text style={styles.connectionAvatarText}>
-              {person.initials}
-            </Text>
-          </View>
-
-          <Text
-            style={styles.connectionName}
-            numberOfLines={1}
-          >
-            {person.name}
-          </Text>
-
-          <Text
-            style={styles.connectionRole}
-            numberOfLines={1}
-          >
-            {person.role}
-          </Text>
-
-          <Text style={styles.connectionProgramme}>
-            {person.programme} · Alumni
-          </Text>
-
-          <Pressable
-            style={styles.connectButton}
-            onPress={() => {
-              // Connection API will be implemented later.
-            }}
-          >
-            <Ionicons
-              name="person-add-outline"
-              size={15}
-              color={COLORS.textPrimary}
-            />
-
-            <Text style={styles.connectButtonText}>
-              Connect
-            </Text>
-          </Pressable>
-        </View>
-      ))}
-    </ScrollView>
-  );
-}
-
-/* ==========================================================================
-   CREATE POST
-   ========================================================================== */
-
-function CreatePostCard() {
-  return (
-    <Pressable
-      style={styles.createPostCard}
-      onPress={() => router.push('/network')}
-    >
-      <View style={styles.currentUserAvatar}>
-        <Text style={styles.currentUserInitials}>AT</Text>
-      </View>
-
-      <View style={styles.postInput}>
-        <Text style={styles.postPlaceholder}>
-          Share a professional update...
-        </Text>
-      </View>
-
-      <View style={styles.postCreateIcon}>
-        <Ionicons
-          name="create-outline"
-          size={19}
-          color={COLORS.textPrimary}
-        />
-      </View>
-    </Pressable>
-  );
-}
-
-/* ==========================================================================
-   FEED POST
-   ========================================================================== */
-
-function FeedPostCard({
-  post,
-  onLike,
+function EventsSection({
+  events,
 }: {
-  post: FeedPost;
-  onLike: () => void;
+  events: EventItem[];
 }) {
   return (
-    <View style={styles.postCard}>
-      {/* Author */}
-
-      <View style={styles.postHeader}>
-        <View style={styles.postAvatar}>
-          <Text style={styles.postAvatarText}>
-            {post.initials}
-          </Text>
-        </View>
-
-        <View style={styles.postAuthorContainer}>
-          <Text style={styles.postAuthor}>
-            {post.author}
-          </Text>
-
-          <Text style={styles.postHeadline}>
-            {post.headline}
-          </Text>
-
-          <View style={styles.postTimeRow}>
-            <Text style={styles.postTime}>
-              {post.time}
-            </Text>
-
-            <Text style={styles.postVisibility}>
-              ·
-            </Text>
-
-            <Ionicons
-              name="globe-outline"
-              size={12}
-              color={COLORS.textMuted}
-            />
-          </View>
-        </View>
-
-        <Pressable
-          style={styles.moreButton}
-          hitSlop={8}
-        >
-          <Ionicons
-            name="ellipsis-horizontal"
-            size={20}
-            color={COLORS.textMuted}
-          />
-        </Pressable>
-      </View>
-
-      {/* Content */}
-
-      <Text style={styles.postContent}>
-        {post.content}
-      </Text>
-
-      {/* Engagement */}
-
-      <View style={styles.engagementSummary}>
-        <View style={styles.likeSummary}>
-          <View style={styles.likeIcon}>
-            <Ionicons
-              name="thumbs-up"
-              size={10}
-              color={COLORS.white}
-            />
-          </View>
-
-          <Text style={styles.engagementText}>
-            {post.likes}
-          </Text>
-        </View>
-
-        <Text style={styles.engagementText}>
-          {post.comments} comments · {post.shares} shares
-        </Text>
-      </View>
-
-      <View style={styles.postDivider} />
-
-      {/* Actions */}
-
-      <View style={styles.postActions}>
-        <Pressable
-          style={styles.postAction}
-          onPress={onLike}
-        >
-          <Ionicons
-            name={
-              post.liked
-                ? 'thumbs-up'
-                : 'thumbs-up-outline'
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={
+        false
+      }
+      contentContainerStyle={
+        styles.horizontalContent
+      }
+    >
+      {events.map(
+        event => (
+          <View
+            key={
+              event.id
             }
-            size={19}
-            color={
-              post.liked
-                ? COLORS.textPrimary
-                : COLORS.textSecondary
+            style={
+              styles.eventCard
             }
-          />
-
-          <Text
-            style={[
-              styles.postActionText,
-              post.liked && styles.postActionTextActive,
-            ]}
           >
-            Like
-          </Text>
-        </Pressable>
+            {event.image_url ? (
+              <Image
+                source={{
+                  uri:
+                    event.image_url,
+                }}
+                style={
+                  styles.eventImage
+                }
+              />
+            ) : (
+              <View
+                style={
+                  styles.eventImageFallback
+                }
+              >
+                <Ionicons
+                  name="calendar-outline"
+                  size={30}
+                  color={
+                    PRIMARY
+                  }
+                />
+              </View>
+            )}
 
-        <Pressable style={styles.postAction}>
-          <Ionicons
-            name="chatbubble-outline"
-            size={18}
-            color={COLORS.textSecondary}
-          />
+            <View
+              style={
+                styles.eventBody
+              }
+            >
+              <View
+                style={
+                  styles.eventDate
+                }
+              >
+                <Text
+                  style={
+                    styles.eventMonth
+                  }
+                >
+                  {getEventMonth(
+                    event.starts_at
+                  )}
+                </Text>
 
-          <Text style={styles.postActionText}>
-            Comment
-          </Text>
-        </Pressable>
+                <Text
+                  style={
+                    styles.eventDay
+                  }
+                >
+                  {getEventDay(
+                    event.starts_at
+                  )}
+                </Text>
+              </View>
 
-        <Pressable style={styles.postAction}>
-          <Ionicons
-            name="share-social-outline"
-            size={19}
-            color={COLORS.textSecondary}
-          />
+              <View
+                style={{
+                  flex: 1,
+                }}
+              >
+                <Text
+                  style={
+                    styles.eventCategory
+                  }
+                >
+                  {event.event_type ||
+                    "Richfield Event"}
+                </Text>
 
-          <Text style={styles.postActionText}>
-            Share
-          </Text>
-        </Pressable>
+                <Text
+                  style={
+                    styles.eventTitle
+                  }
+                  numberOfLines={
+                    2
+                  }
+                >
+                  {
+                    event.title
+                  }
+                </Text>
 
-        <Pressable style={styles.bookmarkButton}>
-          <Ionicons
-            name="bookmark-outline"
-            size={19}
-            color={COLORS.textSecondary}
-          />
-        </Pressable>
-      </View>
-    </View>
+                <View
+                  style={
+                    styles.eventMeta
+                  }
+                >
+                  <Ionicons
+                    name="time-outline"
+                    size={13}
+                    color={
+                      COLORS.textMuted
+                    }
+                  />
+
+                  <Text
+                    style={
+                      styles.eventMetaText
+                    }
+                  >
+                    {getEventTime(
+                      event.starts_at
+                    )}
+                  </Text>
+                </View>
+
+                <View
+                  style={
+                    styles.eventMeta
+                  }
+                >
+                  <Ionicons
+                    name="location-outline"
+                    size={13}
+                    color={
+                      COLORS.textMuted
+                    }
+                  />
+
+                  <Text
+                    style={
+                      styles.eventMetaText
+                    }
+                    numberOfLines={
+                      1
+                    }
+                  >
+                    {event.location ||
+                      "Location TBA"}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        )
+      )}
+    </ScrollView>
   );
 }
 
-/* ==========================================================================
-   DESIGN TOKENS
-   ========================================================================== */
+/* =========================================================
+   PEOPLE
+   ========================================================= */
 
-const COLORS = {
-  background: '#F5F7F9',
-  white: '#FFFFFF',
+function SuggestedConnections({
+  suggestions,
+  following,
+  followLoading,
+  onFollow,
+}: {
+  suggestions:
+    SuggestedConnection[];
 
-  textPrimary: '#17212B',
-  textSecondary: '#5F6B76',
-  textMuted: '#8A949E',
+  following: string[];
 
-  border: '#E4E8EC',
+  followLoading:
+    string[];
 
-  brand: '#243447',
-  brandLight: '#EEF2F5',
+  onFollow: (
+    userId: string
+  ) => void;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={
+        false
+      }
+      contentContainerStyle={
+        styles.horizontalContent
+      }
+    >
+      {suggestions.map(
+        person => {
+          const isFollowing =
+            following.includes(
+              person.id
+            );
 
-  success: '#287A52',
-  successLight: '#EAF6EF',
+          const updating =
+            followLoading.includes(
+              person.id
+            );
 
-};
+          return (
+            <Pressable
+              key={
+                person.id
+              }
+              style={
+                styles.personCard
+              }
+              onPress={() =>
+                router.push({
+                  pathname:
+                    "/(tabs)/profile",
 
-/* ==========================================================================
+                  params: {
+                    userId:
+                      person.id,
+                  },
+                })
+              }
+            >
+              {person.avatar_url ? (
+                <Image
+                  source={{
+                    uri:
+                      person.avatar_url,
+                  }}
+                  style={
+                    styles.personAvatar
+                  }
+                />
+              ) : (
+                <View
+                  style={
+                    styles.personFallback
+                  }
+                >
+                  <Text
+                    style={
+                      styles.personInitials
+                    }
+                  >
+                    {getInitials(
+                      person.full_name
+                    )}
+                  </Text>
+                </View>
+              )}
+
+              <Text
+                numberOfLines={
+                  1
+                }
+                style={
+                  styles.personName
+                }
+              >
+                {person.full_name ||
+                  "Richfield Member"}
+              </Text>
+
+              <Text
+                numberOfLines={
+                  1
+                }
+                style={
+                  styles.personRole
+                }
+              >
+                {person.headline ||
+                  getRoleLabel(
+                    person.role
+                  )}
+              </Text>
+
+              <Pressable
+                disabled={
+                  updating
+                }
+                style={[
+                  styles.followButton,
+
+                  isFollowing &&
+                    styles.followingButton,
+                ]}
+                onPress={
+                  event => {
+                    event.stopPropagation();
+
+                    onFollow(
+                      person.id
+                    );
+                  }
+                }
+              >
+                {updating ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={
+                      PRIMARY
+                    }
+                  />
+                ) : (
+                  <Text
+                    style={
+                      styles.followButtonText
+                    }
+                  >
+                    {isFollowing
+                      ? "Following"
+                      : "Follow"}
+                  </Text>
+                )}
+              </Pressable>
+            </Pressable>
+          );
+        }
+      )}
+    </ScrollView>
+  );
+}
+
+/* =========================================================
+   CREATE POST
+   ========================================================= */
+
+function CreatePostCard({
+  profile,
+}: {
+  profile:
+    HomeProfile | null;
+}) {
+  return (
+    <Pressable
+      style={
+        styles.createPost
+      }
+      onPress={() =>
+        router.push(
+          "/(student)/create-post"
+        )
+      }
+    >
+      {profile?.avatar_url ? (
+        <Image
+          source={{
+            uri:
+              profile.avatar_url,
+          }}
+          style={
+            styles.createAvatar
+          }
+        />
+      ) : (
+        <View
+          style={
+            styles.createFallback
+          }
+        >
+          <Text
+            style={
+              styles.createFallbackText
+            }
+          >
+            {getInitials(
+              profile?.full_name ||
+                null
+            )}
+          </Text>
+        </View>
+      )}
+
+      <View
+        style={
+          styles.createInput
+        }
+      >
+        <Text
+          style={
+            styles.createPlaceholder
+          }
+        >
+          Share something with your
+          community...
+        </Text>
+      </View>
+
+      <Ionicons
+        name="images-outline"
+        size={21}
+        color={
+          PRIMARY
+        }
+      />
+    </Pressable>
+  );
+}
+
+/* =========================================================
    STYLES
-   ========================================================================== */
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-
-  listContent: {
-    paddingTop: 0,
-  },
-
-  /* ------------------------------------------------------------------------
-     Welcome
-     ------------------------------------------------------------------------ */
-
-  welcomeSection: {
-    paddingHorizontal: 20,
-    paddingTop: 22,
-    paddingBottom: 18,
-  },
-
-  greeting: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginBottom: 7,
-  },
-
-  welcomeTitle: {
-    fontSize: 26,
-    lineHeight: 32,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    letterSpacing: -0.4,
-    marginBottom: 8,
-  },
-
-  welcomeDescription: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: COLORS.textSecondary,
-    maxWidth: 390,
-  },
-
-  /* ------------------------------------------------------------------------
-     Profile Strength
-     ------------------------------------------------------------------------ */
-
-  profileStrengthCard: {
-    marginHorizontal: 20,
-    marginBottom: 22,
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-
-  profileStrengthHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-
-  profileStrengthIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: COLORS.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-
-  profileStrengthContent: {
-    flex: 1,
-  },
-
-  profileStrengthTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 5,
-  },
-
-  profileStrengthTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-
-  profileStrengthPercentage: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-
-  profileStrengthDescription: {
-    fontSize: 12.5,
-    lineHeight: 18,
-    color: COLORS.textSecondary,
-  },
-
-  progressTrack: {
-    height: 7,
-    borderRadius: 10,
-    backgroundColor: '#E9EDF0',
-    overflow: 'hidden',
-    marginTop: 15,
-  },
-
-  progressFill: {
-    height: '100%',
-    borderRadius: 10,
-    backgroundColor: COLORS.brand,
-  },
-
-  profileStrengthFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-
-  suggestionContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  profileSuggestion: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginLeft: 6,
-  },
-
-  /* ------------------------------------------------------------------------
-     Quick Actions
-     ------------------------------------------------------------------------ */
-
-  quickActionsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-
-  sectionSubtitle: {
-    fontSize: 12.5,
-    color: COLORS.textSecondary,
-    marginTop: 4,
-  },
-
-  quickActionsGrid: {
-    flexDirection: 'row',
-    marginTop: 12,
-    gap: 9,
-  },
-
-  quickAction: {
-    flex: 1,
-    minHeight: 90,
-    borderRadius: 14,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  quickActionIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
-    backgroundColor: COLORS.brandLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-
-  quickActionText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    textAlign: 'center',
-  },
-
-  /* ------------------------------------------------------------------------
-     Section Header
-     ------------------------------------------------------------------------ */
-
-  sectionHeader: {
-    paddingHorizontal: 20,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  sectionAction: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-  },
-
-  /* ------------------------------------------------------------------------
-     Opportunity
-     ------------------------------------------------------------------------ */
-
-  opportunityCard: {
-    marginHorizontal: 20,
-    marginBottom: 25,
-    padding: 16,
-    borderRadius: 17,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-
-  opportunityHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-
-  companyLogo: {
-    width: 46,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: COLORS.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 11,
-  },
-
-  companyLogoText: {
-    color: COLORS.white,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-
-  opportunityMain: {
-    flex: 1,
-    paddingRight: 8,
-  },
-
-  opportunityTitle: {
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-
-  companyName: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-
-  opportunityLocation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 5,
-  },
-
-  locationText: {
-    fontSize: 11.5,
-    color: COLORS.textMuted,
-    marginLeft: 3,
-  },
-
-  matchBadge: {
-    minWidth: 54,
-    paddingVertical: 7,
-    paddingHorizontal: 6,
-    borderRadius: 10,
-    backgroundColor: COLORS.successLight,
-    alignItems: 'center',
-  },
-
-  matchNumber: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: COLORS.success,
-  },
-
-  matchText: {
-    fontSize: 7.5,
-    fontWeight: '800',
-    color: COLORS.success,
-    marginTop: 1,
-  },
-
-  matchExplanation: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginTop: 14,
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: '#F5F7F9',
-  },
-
-  matchExplanationText: {
-    flex: 1,
-    fontSize: 11,
-    lineHeight: 16,
-    color: COLORS.textSecondary,
-    marginLeft: 7,
-  },
-
-  skillsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-    marginTop: 13,
-  },
-
-  skillTag: {
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: COLORS.brandLight,
-  },
-
-  skillTagText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-
-  opportunityDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: 14,
-  },
-
-  opportunityFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  opportunityType: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-
-  closingText: {
-    fontSize: 10.5,
-    color: COLORS.textMuted,
-    marginTop: 3,
-  },
-
-  viewButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.brand,
-    borderRadius: 9,
-    paddingHorizontal: 11,
-    paddingVertical: 9,
-  },
-
-  viewButtonText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: COLORS.white,
-    marginRight: 5,
-  },
-
-  /* ------------------------------------------------------------------------
-     Events
-     ------------------------------------------------------------------------ */
-
-  horizontalContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 25,
-    gap: 10,
-  },
-
-  eventCard: {
-    width: 270,
-    minHeight: 128,
-    padding: 13,
-    borderRadius: 15,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    flexDirection: 'row',
-  },
-
-  eventDateContainer: {
-    width: 52,
-    height: 59,
-    borderRadius: 11,
-    backgroundColor: COLORS.brandLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 11,
-  },
-
-  eventMonth: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: COLORS.textSecondary,
-  },
-
-  eventDay: {
-    fontSize: 23,
-    lineHeight: 26,
-    fontWeight: '900',
-    color: COLORS.textPrimary,
-  },
-
-  eventContent: {
-    flex: 1,
-  },
-
-  eventCategory: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: COLORS.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-
-  eventTitle: {
-    fontSize: 13,
-    lineHeight: 17,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    marginBottom: 7,
-  },
-
-  eventMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
-  },
-
-  eventMetaText: {
-    flex: 1,
-    fontSize: 10,
-    color: COLORS.textMuted,
-    marginLeft: 4,
-  },
-
-  /* ------------------------------------------------------------------------
-     Connections
-     ------------------------------------------------------------------------ */
-
-  connectionCard: {
-    width: 165,
-    padding: 14,
-    borderRadius: 15,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-  },
-
-  connectionAvatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: COLORS.brandLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 9,
-  },
-
-  connectionAvatarText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-
-  connectionName: {
-    width: '100%',
-    fontSize: 13,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    textAlign: 'center',
-  },
-
-  connectionRole: {
-    width: '100%',
-    fontSize: 10.5,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginTop: 3,
-  },
-
-  connectionProgramme: {
-    width: '100%',
-    fontSize: 9.5,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-    marginTop: 3,
-  },
-
-  connectButton: {
-    marginTop: 11,
-    minWidth: 108,
-    paddingVertical: 8,
-    paddingHorizontal: 9,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  connectButtonText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginLeft: 5,
-  },
-
-  /* ------------------------------------------------------------------------
-     Feed Heading
-     ------------------------------------------------------------------------ */
-
-  feedHeading: {
-    paddingHorizontal: 20,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  /* ------------------------------------------------------------------------
-     Create Post
-     ------------------------------------------------------------------------ */
-
-  createPostCard: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    padding: 12,
-    borderRadius: 14,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  currentUserAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  currentUserInitials: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: COLORS.white,
-  },
-
-  postInput: {
-    flex: 1,
-    height: 38,
-    justifyContent: 'center',
-    paddingHorizontal: 11,
-  },
-
-  postPlaceholder: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-  },
-
-  postCreateIcon: {
-    width: 35,
-    height: 35,
-    borderRadius: 9,
-    backgroundColor: COLORS.brandLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  /* ------------------------------------------------------------------------
-     Feed Post
-     ------------------------------------------------------------------------ */
-
-  postCard: {
-    marginHorizontal: 20,
-    marginTop: 10,
-    borderRadius: 15,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    overflow: 'hidden',
-  },
-
-  postHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 15,
-  },
-
-  postAvatar: {
-    width: 43,
-    height: 43,
-    borderRadius: 22,
-    backgroundColor: COLORS.brandLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-
-  postAvatarText: {
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-
-  postAuthorContainer: {
-    flex: 1,
-  },
-
-  postAuthor: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-
-  postHeadline: {
-    fontSize: 10.5,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-
-  postTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
-  },
-
-  postTime: {
-    fontSize: 9.5,
-    color: COLORS.textMuted,
-  },
-
-  postVisibility: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-    marginHorizontal: 4,
-  },
-
-  moreButton: {
-    padding: 2,
-  },
-
-  postContent: {
-    paddingHorizontal: 15,
-    paddingBottom: 14,
-    fontSize: 13,
-    lineHeight: 20,
-    color: COLORS.textPrimary,
-  },
-
-  engagementSummary: {
-    paddingHorizontal: 15,
-    paddingBottom: 11,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  likeSummary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  likeIcon: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: COLORS.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 5,
-  },
-
-  engagementText: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-  },
-
-  postDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
-
-  postActions: {
-    minHeight: 48,
-    paddingHorizontal: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  postAction: {
-    flex: 1,
-    height: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-  },
-
-  postActionText: {
-    fontSize: 10.5,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-
-  postActionTextActive: {
-    color: COLORS.textPrimary,
-    fontWeight: '800',
-  },
-
-  bookmarkButton: {
-    width: 38,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  /* ------------------------------------------------------------------------
-     Bottom
-     ------------------------------------------------------------------------ */
-
-  bottomSpacing: {
-    height: 30,
-  },
-});
+   ========================================================= */
+
+const styles =
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor:
+        COLORS.background,
+    },
+
+    loadingScreen: {
+      flex: 1,
+      backgroundColor:
+        COLORS.background,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    loadingText: {
+      marginTop: 10,
+      color:
+        COLORS.textSecondary,
+      fontSize: 13,
+    },
+
+    listContent: {
+      paddingBottom: 20,
+    },
+
+    welcomeSection: {
+      paddingHorizontal: 20,
+      paddingTop: 22,
+      paddingBottom: 20,
+    },
+
+    greeting: {
+      fontSize: 14,
+      color:
+        COLORS.textSecondary,
+      fontWeight: "600",
+      marginBottom: 7,
+    },
+
+    welcomeTitle: {
+      fontSize: 27,
+      lineHeight: 33,
+      fontWeight: "800",
+      color:
+        COLORS.textPrimary,
+    },
+
+    welcomeDescription: {
+      color:
+        COLORS.textSecondary,
+      fontSize: 14,
+      lineHeight: 20,
+      marginTop: 8,
+    },
+
+    quickSection: {
+      paddingHorizontal: 20,
+      marginBottom: 25,
+    },
+
+    quickGrid: {
+      flexDirection:
+        "row",
+      gap: 8,
+      marginTop: 12,
+    },
+
+    quickItem: {
+      flex: 1,
+      minHeight: 86,
+      backgroundColor:
+        "#FFF",
+      borderRadius: 15,
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      padding: 7,
+    },
+
+    quickIcon: {
+      width: 37,
+      height: 37,
+      borderRadius: 11,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    quickLabel: {
+      fontSize: 10.5,
+      fontWeight: "700",
+      textAlign:
+        "center",
+      marginTop: 7,
+      color:
+        COLORS.textPrimary,
+    },
+
+    sectionHeader: {
+      paddingHorizontal: 20,
+      marginBottom: 11,
+      flexDirection:
+        "row",
+      justifyContent:
+        "space-between",
+      alignItems:
+        "center",
+    },
+
+    sectionTitle: {
+      fontSize: 17,
+      fontWeight: "800",
+      color:
+        COLORS.textPrimary,
+    },
+
+    sectionAction: {
+      color: PRIMARY,
+      fontSize: 12,
+      fontWeight: "700",
+    },
+
+    opportunityCard: {
+      marginHorizontal: 20,
+      marginBottom: 26,
+      borderRadius: 18,
+      backgroundColor:
+        "#FFF",
+      padding: 16,
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+    },
+
+    opportunityTop: {
+      flexDirection:
+        "row",
+    },
+
+    companyLogo: {
+      width: 47,
+      height: 47,
+      borderRadius: 14,
+      backgroundColor:
+        PRIMARY,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginRight: 12,
+    },
+
+    companyLogoText: {
+      color: "#FFF",
+      fontWeight: "900",
+      fontSize: 14,
+    },
+
+    opportunityTitle: {
+      fontSize: 16,
+      lineHeight: 21,
+      fontWeight: "800",
+      color:
+        COLORS.textPrimary,
+    },
+
+    companyName: {
+      fontSize: 12.5,
+      color:
+        COLORS.textSecondary,
+      marginTop: 3,
+    },
+
+    metaRow: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      marginTop: 6,
+      gap: 4,
+    },
+
+    metaText: {
+      fontSize: 11,
+      color:
+        COLORS.textMuted,
+    },
+
+    skillRow: {
+      flexDirection:
+        "row",
+      flexWrap: "wrap",
+      gap: 6,
+      marginTop: 15,
+    },
+
+    skill: {
+      paddingHorizontal: 9,
+      paddingVertical: 6,
+      borderRadius: 9,
+      backgroundColor:
+        COLORS.brandLight,
+    },
+
+    skillText: {
+      color: PRIMARY,
+      fontWeight: "700",
+      fontSize: 10.5,
+    },
+
+    opportunityBottom: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "space-between",
+      marginTop: 15,
+      paddingTop: 14,
+      borderTopWidth: 1,
+      borderTopColor:
+        COLORS.border,
+    },
+
+    opportunityType: {
+      fontSize: 12,
+      fontWeight: "700",
+      color:
+        COLORS.textPrimary,
+    },
+
+    closingText: {
+      fontSize: 10.5,
+      color:
+        COLORS.textMuted,
+      marginTop: 3,
+    },
+
+    viewOpportunity: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      gap: 5,
+      backgroundColor:
+        PRIMARY,
+      borderRadius: 11,
+      paddingVertical: 9,
+      paddingHorizontal: 13,
+    },
+
+    viewOpportunityText: {
+      color: "#FFF",
+      fontSize: 11,
+      fontWeight: "700",
+    },
+
+    horizontalContent: {
+      paddingHorizontal: 20,
+      paddingBottom: 25,
+      gap: 11,
+    },
+
+    eventCard: {
+      width: 285,
+      borderRadius: 18,
+      overflow: "hidden",
+      backgroundColor:
+        "#FFF",
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+    },
+
+    eventImage: {
+      width: "100%",
+      height: 128,
+      backgroundColor:
+        "#EEE",
+    },
+
+    eventImageFallback: {
+      width: "100%",
+      height: 108,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    eventBody: {
+      flexDirection:
+        "row",
+      padding: 14,
+      gap: 12,
+    },
+
+    eventDate: {
+      width: 45,
+      height: 54,
+      borderRadius: 12,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    eventMonth: {
+      color: PRIMARY,
+      fontSize: 9,
+      fontWeight: "800",
+    },
+
+    eventDay: {
+      fontSize: 18,
+      fontWeight: "900",
+      color:
+        COLORS.textPrimary,
+    },
+
+    eventCategory: {
+      color: PRIMARY,
+      fontSize: 9,
+      fontWeight: "800",
+      textTransform:
+        "uppercase",
+    },
+
+    eventTitle: {
+      color:
+        COLORS.textPrimary,
+      fontSize: 14,
+      fontWeight: "800",
+      lineHeight: 18,
+      marginTop: 3,
+    },
+
+    eventMeta: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      gap: 4,
+      marginTop: 6,
+    },
+
+    eventMetaText: {
+      flex: 1,
+      fontSize: 10.5,
+      color:
+        COLORS.textMuted,
+    },
+
+    personCard: {
+      width: 150,
+      borderRadius: 17,
+      padding: 13,
+      backgroundColor:
+        "#FFF",
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+      alignItems:
+        "center",
+    },
+
+    personAvatar: {
+      width: 57,
+      height: 57,
+      borderRadius: 29,
+    },
+
+    personFallback: {
+      width: 57,
+      height: 57,
+      borderRadius: 29,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    personInitials: {
+      color: PRIMARY,
+      fontWeight: "900",
+      fontSize: 17,
+    },
+
+    personName: {
+      width: "100%",
+      textAlign:
+        "center",
+      fontWeight: "800",
+      color:
+        COLORS.textPrimary,
+      fontSize: 12,
+      marginTop: 9,
+    },
+
+    personRole: {
+      width: "100%",
+      textAlign:
+        "center",
+      fontSize: 10,
+      color:
+        COLORS.textMuted,
+      marginTop: 3,
+    },
+
+    followButton: {
+      marginTop: 10,
+      minWidth: 95,
+      height: 32,
+      borderRadius: 10,
+      backgroundColor:
+        COLORS.brandLight,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
+
+    followingButton: {
+      backgroundColor:
+        "#F2F2F2",
+    },
+
+    followButtonText: {
+      color: PRIMARY,
+      fontSize: 10.5,
+      fontWeight: "800",
+    },
+
+    feedHeader: {
+      paddingHorizontal: 20,
+      paddingTop: 4,
+      paddingBottom: 12,
+    },
+
+    feedTitle: {
+      fontSize: 21,
+      fontWeight: "900",
+      color:
+        COLORS.textPrimary,
+    },
+
+    feedSubtitle: {
+      fontSize: 12,
+      color:
+        COLORS.textSecondary,
+      marginTop: 3,
+    },
+
+    createPost: {
+      marginHorizontal: 15,
+      marginBottom: 11,
+      padding: 12,
+      borderRadius: 16,
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      gap: 10,
+      backgroundColor:
+        "#FFF",
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+    },
+
+    createAvatar: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+    },
+
+    createFallback: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      backgroundColor:
+        COLORS.brandLight,
+    },
+
+    createFallbackText: {
+      color: PRIMARY,
+      fontWeight: "800",
+    },
+
+    createInput: {
+      flex: 1,
+      minHeight: 40,
+      borderRadius: 21,
+      borderWidth: 1,
+      borderColor:
+        COLORS.border,
+      paddingHorizontal: 14,
+      justifyContent:
+        "center",
+    },
+
+    createPlaceholder: {
+      color:
+        COLORS.textMuted,
+      fontSize: 12,
+    },
+
+    emptyFeed: {
+      paddingHorizontal: 30,
+      paddingVertical: 60,
+      alignItems:
+        "center",
+    },
+
+    emptyFeedTitle: {
+      marginTop: 12,
+      fontWeight: "800",
+      color:
+        COLORS.textPrimary,
+      fontSize: 17,
+    },
+
+    emptyFeedText: {
+      textAlign:
+        "center",
+      marginTop: 5,
+      color:
+        COLORS.textMuted,
+      lineHeight: 19,
+    },
+  });
