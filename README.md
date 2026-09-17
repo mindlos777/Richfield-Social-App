@@ -266,6 +266,17 @@ personal information is collected. Production deployment should include
 appropriate consent, correction, retention and deletion procedures
 aligned with POPIA.
 
+## Copyright and License
+
+Copyright © 2026 Richfield Social Development Team. All Rights Reserved.
+
+Richfield Social is proprietary software. The source code and associated
+materials may not be copied, modified, distributed, published, sublicensed,
+or used for commercial purposes without prior written permission from the
+copyright owner.
+
+See the [LICENSE](LICENSE) file for more information.
+
 ## Project Status
 
 Hackathon prototype. The main submitted product is the mobile
