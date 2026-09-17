@@ -26,9 +26,9 @@ export default function SignupTypeScreen() {
     );
   }
 
-  function chooseBusiness() {
+  function chooseStaff() {
     router.push(
-      "/(business-auth)/auth/signup"
+      "/(auth)/staff-signup"
     );
   }
 
@@ -63,6 +63,8 @@ export default function SignupTypeScreen() {
           describes you.
         </Text>
       </View>
+
+      {/* STUDENT */}
 
       <Pressable
         style={styles.roleCard}
@@ -108,6 +110,8 @@ export default function SignupTypeScreen() {
         </View>
       </Pressable>
 
+      {/* ALUMNI */}
+
       <Pressable
         style={styles.roleCard}
         onPress={chooseAlumni}
@@ -129,14 +133,20 @@ export default function SignupTypeScreen() {
             </Text>
 
             <View
-              style={styles.alumniBadge}
+              style={styles.verificationBadge}
             >
+              <Ionicons
+                name="shield-checkmark"
+                size={11}
+                color={PRIMARY}
+              />
+
               <Text
                 style={
-                  styles.alumniBadgeText
+                  styles.verificationBadgeText
                 }
               >
-                GRADUATE
+                VERIFIED
               </Text>
             </View>
           </View>
@@ -149,6 +159,28 @@ export default function SignupTypeScreen() {
             professional network and discover
             career opportunities.
           </Text>
+
+          <View
+            style={
+              styles.verificationNotice
+            }
+          >
+            <Ionicons
+              name="information-circle-outline"
+              size={15}
+              color="#666"
+            />
+
+            <Text
+              style={
+                styles.verificationNoticeText
+              }
+            >
+              Proof of your Richfield
+              qualification will be required
+              for verification.
+            </Text>
+          </View>
 
           <View style={styles.cardLink}>
             <Text
@@ -166,48 +198,86 @@ export default function SignupTypeScreen() {
         </View>
       </Pressable>
 
+      {/* STAFF */}
+
       <View style={styles.dividerRow}>
         <View style={styles.line} />
 
         <Text style={styles.dividerText}>
-          ORGANISATIONS
+          RICHFIELD STAFF
         </Text>
 
         <View style={styles.line} />
       </View>
 
       <Pressable
-        style={styles.businessCard}
-        onPress={chooseBusiness}
+        style={styles.staffCard}
+        onPress={chooseStaff}
       >
         <View
-          style={styles.businessIcon}
+          style={styles.staffIcon}
         >
           <Ionicons
-            name="business"
-            size={26}
+            name="id-card"
+            size={27}
             color="#FFFFFF"
           />
         </View>
 
         <View style={styles.cardContent}>
-          <Text style={styles.cardTitle}>
-            Business
-          </Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.cardTitle}>
+              Staff
+            </Text>
+
+            <View
+              style={styles.staffBadge}
+            >
+              <Text
+                style={
+                  styles.staffBadgeText
+                }
+              >
+                RICHFIELD
+              </Text>
+            </View>
+          </View>
 
           <Text
             style={styles.cardDescription}
           >
-            I'm representing a company that
-            wants to discover Richfield talent
-            and publish career opportunities.
+            I'm a Richfield staff member and
+            want to connect with the campus
+            community, students and alumni.
           </Text>
+
+          <View
+            style={
+              styles.verificationNotice
+            }
+          >
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={15}
+              color="#666"
+            />
+
+            <Text
+              style={
+                styles.verificationNoticeText
+              }
+            >
+              Staff identity and employment
+              information must be verified
+              before access is granted.
+            </Text>
+          </View>
 
           <View style={styles.cardLink}>
             <Text
               style={styles.cardLinkText}
             >
-              Business registration
+              Create staff account
             </Text>
 
             <Ionicons
@@ -218,6 +288,8 @@ export default function SignupTypeScreen() {
           </View>
         </View>
       </Pressable>
+
+      {/* LOGIN */}
 
       <View style={styles.loginSection}>
         <Text style={styles.loginText}>
@@ -291,7 +363,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
 
-  businessCard: {
+  staffCard: {
     borderWidth: 1,
     borderColor: "#DEDEFF",
     borderRadius: 17,
@@ -320,7 +392,7 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
 
-  businessIcon: {
+  staffIcon: {
     width: 52,
     height: 52,
     borderRadius: 15,
@@ -346,7 +418,9 @@ const styles = StyleSheet.create({
     color: "#111111",
   },
 
-  alumniBadge: {
+  verificationBadge: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#EEEEFF",
     paddingHorizontal: 7,
     paddingVertical: 3,
@@ -354,7 +428,22 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
-  alumniBadgeText: {
+  verificationBadgeText: {
+    color: PRIMARY,
+    fontSize: 9,
+    fontWeight: "800",
+    marginLeft: 3,
+  },
+
+  staffBadge: {
+    backgroundColor: "#EEEEFF",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 5,
+    marginLeft: 8,
+  },
+
+  staffBadgeText: {
     color: PRIMARY,
     fontSize: 9,
     fontWeight: "800",
@@ -365,6 +454,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     marginTop: 5,
+  },
+
+  verificationNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#F7F7F8",
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+
+  verificationNoticeText: {
+    flex: 1,
+    color: "#777777",
+    fontSize: 11,
+    lineHeight: 16,
+    marginLeft: 5,
   },
 
   cardLink: {

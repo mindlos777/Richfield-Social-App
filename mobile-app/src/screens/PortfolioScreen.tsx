@@ -33,7 +33,7 @@ type PortfolioProject = {
   id: string;
   title: string;
   description: string;
-  project_url: string | null;
+  url: string | null;
   skills: string[] | null;
   created_at?: string | null;
 };
@@ -143,7 +143,7 @@ export default function PortfolioScreen() {
               id,
               title,
               description,
-              project_url,
+              url,
               skills,
               created_at
             `)
@@ -220,102 +220,113 @@ export default function PortfolioScreen() {
 
   async function addProject() {
     try {
+      if (!title.trim()) {
+        Alert.alert(
+          "Project title",
+          "Please enter a project title."
+        );
+        return;
+      }
+
+      if (!description.trim()) {
+        Alert.alert(
+          "Project description",
+          "Please enter a project description."
+        );
+        return;
+      }
+
+      setSaving(true);
+
       const {
         data: { user },
-        error: authError,
-      } =
-        await supabase.auth.getUser();
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      if (authError) {
-        throw authError;
+      if (userError) {
+        throw userError;
       }
 
       if (!user) {
         throw new Error(
-          "You must be signed in."
+          "You must be logged in to add a project."
         );
       }
 
-      if (!title.trim()) {
-        Alert.alert(
-          "Project",
-          "Please enter a project title."
-        );
+      const parsedSkills = skills
+        .split(",")
+        .map((skill) => skill.trim())
+        .filter(Boolean);
 
-        return;
+      const insertData: any = {
+        user_id: user.id,
+        title: title.trim(),
+        description: description.trim(),
+        item_type: "project",
+        skills: parsedSkills,
+      };
+
+      if (projectUrl.trim()) {
+        insertData.url =
+          projectUrl.trim();
       }
+
+      console.log(
+        "INSERTING PORTFOLIO PROJECT:",
+        insertData
+      );
 
       const {
         data,
         error,
-      } =
-        await supabase
-          .from(
-            "portfolio_items"
-          )
-          .insert({
-            user_id:
-              user.id,
-
-            title:
-              title.trim(),
-
-            description:
-              description.trim() ||
-              null,
-
-            item_type:
-              "project",
-
-            url:
-              projectUrl.trim() ||
-              null,
-
-            image_url:
-              imageUrl?.trim() ||
-              null,
-
-            skills:
-              skills,
-
-            updated_at:
-              new Date().toISOString(),
-          })
-          .select()
-          .single();
+      } = await supabase
+        .from("portfolio_items")
+        .insert(insertData)
+        .select()
+        .single();
 
       if (error) {
+        console.log(
+          "SUPABASE PORTFOLIO ERROR:",
+          error
+        );
+
         throw error;
       }
 
       console.log(
-        "Project added:",
+        "PROJECT CREATED:",
         data
       );
 
       Alert.alert(
-        "Success",
-        "Project added to your portfolio."
+        "Project added",
+        "Your portfolio project has been added successfully."
       );
 
       setTitle("");
       setDescription("");
       setProjectUrl("");
-      setImageUrl("");
       setSkills("");
+      setShowForm(false);
 
       await loadPortfolio();
+
     } catch (error: any) {
       console.log(
-        "Add project error:",
+        "ADD PORTFOLIO PROJECT ERROR:",
         error
       );
 
       Alert.alert(
-        "Project",
+        "Could not add project",
         error?.message ||
-          "Could not add project."
+          error?.details ||
+          error?.hint ||
+          "Something went wrong."
       );
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -541,6 +552,7 @@ export default function PortfolioScreen() {
             placeholderTextColor="#999"
             value={title}
             onChangeText={setTitle}
+            maxLength={120}
             style={styles.input}
           />
 
@@ -552,6 +564,7 @@ export default function PortfolioScreen() {
               setDescription
             }
             multiline
+            maxLength={1200}
             textAlignVertical="top"
             style={[
               styles.input,
@@ -567,7 +580,9 @@ export default function PortfolioScreen() {
               setProjectUrl
             }
             autoCapitalize="none"
+            autoCorrect={false}
             keyboardType="url"
+            maxLength={500}
             style={styles.input}
           />
 
@@ -576,6 +591,7 @@ export default function PortfolioScreen() {
             placeholderTextColor="#999"
             value={skills}
             onChangeText={setSkills}
+            maxLength={500}
             style={styles.input}
           />
 
@@ -776,14 +792,14 @@ export default function PortfolioScreen() {
                   </View>
                 )}
 
-                {project.project_url && (
+                {project.url && (
                   <Pressable
                     style={
                       styles.projectLink
                     }
                     onPress={() =>
                       openProject(
-                        project.project_url!
+                        project.url!
                       )
                     }
                   >

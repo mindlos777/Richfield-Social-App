@@ -35,7 +35,6 @@ const PRIMARY = "#0300cf";
 export default function LoginScreen() {
   const {
     signIn,
-    signInWithMicrosoft,
     loading: authLoading,
   } = useAuth();
 
@@ -44,25 +43,17 @@ export default function LoginScreen() {
       error?: string;
     }>();
 
-  const [
-    email,
-    setEmail,
-  ] = useState("");
+  const [email, setEmail] =
+    useState("");
 
-  const [
-    password,
-    setPassword,
-  ] = useState("");
+  const [password, setPassword] =
+    useState("");
 
-  const [
-    loading,
-    setLoading,
-  ] = useState(false);
+  const [loading, setLoading] =
+    useState(false);
 
-  const [
-    microsoftLoading,
-    setMicrosoftLoading,
-  ] = useState(false);
+  const [showPassword, setShowPassword] =
+    useState(false);
 
   useEffect(() => {
     if (!params.error) {
@@ -73,7 +64,7 @@ export default function LoginScreen() {
       case "inactive":
         Alert.alert(
           "Account unavailable",
-          "Your account is currently pending, suspended or rejected."
+          "Your account is not currently active."
         );
         break;
 
@@ -91,6 +82,27 @@ export default function LoginScreen() {
         );
         break;
 
+      case "staff-pending":
+        Alert.alert(
+          "Staff verification pending",
+          "Your Richfield Staff account is waiting for Administrator verification."
+        );
+        break;
+
+      case "staff":
+        Alert.alert(
+          "Staff account",
+          "We could not verify your Richfield Staff account."
+        );
+        break;
+
+      case "suspended":
+        Alert.alert(
+          "Account suspended",
+          "Your account has been suspended. Please contact Richfield support."
+        );
+        break;
+
       default:
         Alert.alert(
           "Login error",
@@ -99,12 +111,34 @@ export default function LoginScreen() {
     }
   }, [params.error]);
 
-  const handleLogin = async () => {
-    const cleanEmail = email
-      .trim()
-      .toLowerCase();
+  function handleEmailChange(
+    value: string
+  ) {
+    setEmail(
+      value
+        .replace(/\s/g, "")
+        .toLowerCase()
+        .slice(0, 254)
+    );
+  }
 
-    if (!cleanEmail || !password) {
+  const handleLogin = async () => {
+    if (
+      loading ||
+      authLoading
+    ) {
+      return;
+    }
+
+    const cleanEmail =
+      email
+        .trim()
+        .toLowerCase();
+
+    if (
+      !cleanEmail ||
+      !password
+    ) {
       Alert.alert(
         "Missing details",
         "Please enter your email and password."
@@ -122,35 +156,89 @@ export default function LoginScreen() {
           password
         );
 
+      const role =
+        String(
+          userProfile.role || ""
+        ).toLowerCase();
+
+      const status =
+        String(
+          userProfile.status || ""
+        ).toLowerCase();
+
       console.log(
         "Logged in role:",
-        userProfile.role
+        role
       );
 
       console.log(
         "Account status:",
-        userProfile.status
+        status
       );
 
-      const role = String(
-        userProfile.role || ""
-      ).toLowerCase();
+      /*
+       * STAFF
+       *
+       * Staff must be handled BEFORE the
+       * normal active-account check.
+       *
+       * Pending/rejected Staff need to remain
+       * authenticated so they can access their
+       * verification screen.
+       */
 
-      const status = String(
-        userProfile.status || ""
-      ).toLowerCase();
+      if (role === "staff") {
+        if (
+          status === "pending" ||
+          status === "rejected"
+        ) {
+          router.replace(
+            "/(staff)/pending"
+          );
 
-      if (status !== "active") {
+          return;
+        }
+
+        if (status === "active") {
+          router.replace(
+            "/(staff)/(tabs)/feed"
+          );
+
+          return;
+        }
+
+        if (status === "suspended") {
+          throw new Error(
+            "Your Staff account has been suspended."
+          );
+        }
+
         throw new Error(
-          "Your account is currently pending, suspended or rejected."
+          "Your Staff account cannot currently be accessed."
         );
       }
 
-      if (role === "admin") {
-        console.log(
-          "Routing to admin app"
-        );
+      /*
+       * ALL OTHER ROLES
+       */
 
+      if (status !== "active") {
+        if (status === "suspended") {
+          throw new Error(
+            "Your account has been suspended. Please contact Richfield support."
+          );
+        }
+
+        throw new Error(
+          `Your account is currently ${status}.`
+        );
+      }
+
+      /*
+       * ADMIN
+       */
+
+      if (role === "admin") {
         router.replace(
           "/(admin)/(tabs)/feed"
         );
@@ -158,14 +246,14 @@ export default function LoginScreen() {
         return;
       }
 
+      /*
+       * STUDENT / ALUMNI
+       */
+
       if (
         role === "student" ||
         role === "alumni"
       ) {
-        console.log(
-          `Routing ${role} to community app`
-        );
-
         router.replace(
           "/(tabs)"
         );
@@ -173,11 +261,11 @@ export default function LoginScreen() {
         return;
       }
 
-      if (role === "business") {
-        console.log(
-          "Routing to business app"
-        );
+      /*
+       * BUSINESS
+       */
 
+      if (role === "business") {
         router.replace(
           "/(business-auth)/(tabs)/dashboard"
         );
@@ -206,27 +294,9 @@ export default function LoginScreen() {
     }
   };
 
-  const handleMicrosoftLogin =
-    async () => {
-      try {
-        setMicrosoftLoading(true);
-
-        await signInWithMicrosoft();
-      } catch (error: any) {
-        console.log(
-          "Microsoft login error:",
-          error
-        );
-
-        Alert.alert(
-          "Microsoft Login",
-          error?.message ||
-            "Unable to start Microsoft login."
-        );
-
-        setMicrosoftLoading(false);
-      }
-    };
+  const disabled =
+    loading ||
+    authLoading;
 
   return (
     <SafeAreaView
@@ -250,6 +320,8 @@ export default function LoginScreen() {
           }
           keyboardShouldPersistTaps="handled"
         >
+          {/* LOGO */}
+
           <View
             style={styles.logoSection}
           >
@@ -263,8 +335,11 @@ export default function LoginScreen() {
 
             <Text style={styles.logo}>
               RICHFIELD
+
               <Text
-                style={styles.logoAccent}
+                style={
+                  styles.logoAccent
+                }
               >
                 {" "}
                 SOCIAL
@@ -272,117 +347,107 @@ export default function LoginScreen() {
             </Text>
           </View>
 
+          {/* HEADER */}
+
           <Text style={styles.title}>
             Welcome back
           </Text>
 
-          <Text style={styles.subtitle}>
+          <Text
+            style={styles.subtitle}
+          >
             Sign in to your professional
             community.
           </Text>
 
-          <Pressable
-            style={[
-              styles.microsoftButton,
-              microsoftLoading &&
-                styles.buttonDisabled,
-            ]}
-            onPress={
-              handleMicrosoftLogin
-            }
-            disabled={
-              microsoftLoading ||
-              authLoading ||
-              loading
-            }
-          >
-            {microsoftLoading ? (
-              <ActivityIndicator
-                color="#111"
-              />
-            ) : (
-              <>
-                <View
-                  style={
-                    styles.microsoftLogo
-                  }
-                >
-                  <View
-                    style={styles.msRed}
-                  />
+          {/* EMAIL */}
 
-                  <View
-                    style={styles.msGreen}
-                  />
-
-                  <View
-                    style={styles.msBlue}
-                  />
-
-                  <View
-                    style={styles.msYellow}
-                  />
-                </View>
-
-                <Text
-                  style={
-                    styles.microsoftText
-                  }
-                >
-                  Continue with Microsoft
-                </Text>
-              </>
-            )}
-          </Pressable>
-
-          <View style={styles.divider}>
-            <View style={styles.line} />
-
-            <Text style={styles.or}>
-              OR
-            </Text>
-
-            <View style={styles.line} />
-          </View>
+          <Text style={styles.label}>
+            Email
+          </Text>
 
           <TextInput
             style={styles.input}
             placeholder="Email"
             placeholderTextColor="#999"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={
+              handleEmailChange
+            }
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
-            editable={!loading}
+            maxLength={254}
+            editable={!disabled}
+            returnKeyType="next"
           />
 
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#999"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            editable={!loading}
-            onSubmitEditing={
-              handleLogin
+          {/* PASSWORD */}
+
+          <Text style={styles.label}>
+            Password
+          </Text>
+
+          <View
+            style={
+              styles.passwordContainer
             }
-          />
+          >
+            <TextInput
+              style={
+                styles.passwordInput
+              }
+              placeholder="Password"
+              placeholderTextColor="#999"
+              value={password}
+              onChangeText={
+                setPassword
+              }
+              secureTextEntry={
+                !showPassword
+              }
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={128}
+              editable={!disabled}
+              onSubmitEditing={
+                handleLogin
+              }
+              returnKeyType="done"
+            />
+
+            <Pressable
+              hitSlop={10}
+              disabled={disabled}
+              onPress={() =>
+                setShowPassword(
+                  (current) =>
+                    !current
+                )
+              }
+            >
+              <Text
+                style={
+                  styles.passwordToggle
+                }
+              >
+                {showPassword
+                  ? "Hide"
+                  : "Show"}
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* SIGN IN */}
 
           <Pressable
             style={[
               styles.button,
-              (loading ||
-                authLoading) &&
+              disabled &&
                 styles.buttonDisabled,
             ]}
             onPress={handleLogin}
-            disabled={
-              loading ||
-              microsoftLoading ||
-              authLoading
-            }
+            disabled={disabled}
           >
             {loading ? (
               <ActivityIndicator
@@ -390,12 +455,16 @@ export default function LoginScreen() {
               />
             ) : (
               <Text
-                style={styles.buttonText}
+                style={
+                  styles.buttonText
+                }
               >
                 Sign In
               </Text>
             )}
           </Pressable>
+
+          {/* COMMUNITY SIGNUP */}
 
           <Pressable
             onPress={() =>
@@ -403,23 +472,34 @@ export default function LoginScreen() {
                 "/(auth)/signup"
               )
             }
+            disabled={disabled}
           >
-            <Text style={styles.signup}>
-              Don't have a student account?{" "}
+            <Text
+              style={styles.signup}
+            >
+              New to Richfield Social?{" "}
 
               <Text
-                style={styles.signupLink}
+                style={
+                  styles.signupLink
+                }
               >
                 Sign up
               </Text>
             </Text>
           </Pressable>
 
+          {/* BUSINESS */}
+
           <View
-            style={styles.businessBox}
+            style={
+              styles.businessBox
+            }
           >
             <View
-              style={styles.businessIcon}
+              style={
+                styles.businessIcon
+              }
             >
               <Text
                 style={
@@ -455,6 +535,7 @@ export default function LoginScreen() {
 
               <Pressable
                 hitSlop={8}
+                disabled={disabled}
                 onPress={() =>
                   router.push(
                     "/(business-auth)/auth/login"
@@ -471,230 +552,216 @@ export default function LoginScreen() {
               </Pressable>
             </View>
           </View>
+
+          <Text style={styles.footer}>
+            Students, alumni and Staff use
+            their Richfield account to access
+            the community.
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
+const styles =
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
+    },
 
-  keyboardView: {
-    flex: 1,
-  },
+    keyboardView: {
+      flex: 1,
+    },
 
-  scrollView: {
-    flex: 1,
-  },
+    scrollView: {
+      flex: 1,
+    },
 
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 35,
-    paddingBottom: 50,
-  },
+    scrollContent: {
+      flexGrow: 1,
+      paddingHorizontal: 24,
+      paddingTop: 35,
+      paddingBottom: 50,
+    },
 
-  logoSection: {
-    alignItems: "center",
-    marginBottom: 32,
-  },
+    logoSection: {
+      alignItems: "center",
+      marginBottom: 32,
+    },
 
-  logoImage: {
-    width: 105,
-    height: 105,
-  },
+    logoImage: {
+      width: 105,
+      height: 105,
+    },
 
-  logo: {
-    marginTop: 4,
-    fontSize: 17,
-    fontWeight: "800",
-    color: "#111",
-  },
+    logo: {
+      marginTop: 4,
+      fontSize: 17,
+      fontWeight: "800",
+      color: "#111",
+    },
 
-  logoAccent: {
-    color: PRIMARY,
-  },
+    logoAccent: {
+      color: PRIMARY,
+    },
 
-  title: {
-    fontSize: 32,
-    fontWeight: "800",
-    marginBottom: 8,
-    color: "#111",
-  },
+    title: {
+      fontSize: 32,
+      fontWeight: "800",
+      marginBottom: 8,
+      color: "#111",
+    },
 
-  subtitle: {
-    fontSize: 16,
-    lineHeight: 22,
-    color: "#666",
-    marginBottom: 28,
-  },
+    subtitle: {
+      fontSize: 16,
+      lineHeight: 22,
+      color: "#666",
+      marginBottom: 28,
+    },
 
-  microsoftButton: {
-    height: 52,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#D4D4D4",
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    marginBottom: 20,
-  },
+    label: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: "#374151",
+      marginBottom: 7,
+    },
 
-  microsoftLogo: {
-    width: 20,
-    height: 20,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginRight: 10,
-  },
+    input: {
+      height: 52,
+      borderWidth: 1,
+      borderColor: "#DDD",
+      borderRadius: 10,
+      paddingHorizontal: 16,
+      marginBottom: 16,
+      fontSize: 16,
+      color: "#111",
+      backgroundColor:
+        "#FFFFFF",
+    },
 
-  msRed: {
-    width: 9,
-    height: 9,
-    backgroundColor: "#F25022",
-    marginRight: 2,
-    marginBottom: 2,
-  },
+    passwordContainer: {
+      height: 52,
+      borderWidth: 1,
+      borderColor: "#DDD",
+      borderRadius: 10,
+      paddingLeft: 16,
+      paddingRight: 14,
+      marginBottom: 16,
+      backgroundColor:
+        "#FFFFFF",
+      flexDirection: "row",
+      alignItems: "center",
+    },
 
-  msGreen: {
-    width: 9,
-    height: 9,
-    backgroundColor: "#7FBA00",
-  },
+    passwordInput: {
+      flex: 1,
+      height: "100%",
+      fontSize: 16,
+      color: "#111",
+      paddingRight: 10,
+    },
 
-  msBlue: {
-    width: 9,
-    height: 9,
-    backgroundColor: "#00A4EF",
-    marginRight: 2,
-  },
+    passwordToggle: {
+      color: PRIMARY,
+      fontSize: 13,
+      fontWeight: "700",
+    },
 
-  msYellow: {
-    width: 9,
-    height: 9,
-    backgroundColor: "#FFB900",
-  },
+    button: {
+      height: 52,
+      borderRadius: 10,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor:
+        PRIMARY,
+      marginTop: 4,
+    },
 
-  microsoftText: {
-    color: "#111",
-    fontSize: 15,
-    fontWeight: "600",
-  },
+    buttonDisabled: {
+      opacity: 0.5,
+    },
 
-  divider: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 20,
-  },
+    buttonText: {
+      color: "#FFF",
+      fontSize: 16,
+      fontWeight: "700",
+    },
 
-  line: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#E5E5E5",
-  },
+    signup: {
+      textAlign: "center",
+      marginTop: 22,
+      fontSize: 14,
+      color: "#444",
+    },
 
-  or: {
-    color: "#999",
-    fontSize: 12,
-    marginHorizontal: 12,
-  },
+    signupLink: {
+      color: PRIMARY,
+      fontWeight: "700",
+    },
 
-  input: {
-    height: 52,
-    borderWidth: 1,
-    borderColor: "#DDD",
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    fontSize: 16,
-    color: "#111",
-    backgroundColor: "#FFFFFF",
-  },
+    businessBox: {
+      marginTop: 28,
+      padding: 18,
+      borderRadius: 14,
+      backgroundColor:
+        "#F5F6FF",
+      borderWidth: 1,
+      borderColor:
+        "#E1E3FF",
+      flexDirection: "row",
+      alignItems: "flex-start",
+    },
 
-  button: {
-    height: 52,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: PRIMARY,
-    marginTop: 4,
-  },
+    businessIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor:
+        PRIMARY,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 12,
+    },
 
-  buttonDisabled: {
-    opacity: 0.5,
-  },
+    businessIconText: {
+      color: "#FFFFFF",
+      fontSize: 17,
+      fontWeight: "800",
+    },
 
-  buttonText: {
-    color: "#FFF",
-    fontSize: 16,
-    fontWeight: "700",
-  },
+    businessContent: {
+      flex: 1,
+    },
 
-  signup: {
-    textAlign: "center",
-    marginTop: 22,
-    fontSize: 14,
-    color: "#444",
-  },
+    businessTitle: {
+      fontSize: 15,
+      fontWeight: "800",
+      color: "#111",
+    },
 
-  signupLink: {
-    color: PRIMARY,
-    fontWeight: "700",
-  },
+    businessText: {
+      fontSize: 13,
+      color: "#666",
+      lineHeight: 19,
+      marginTop: 5,
+    },
 
-  businessBox: {
-    marginTop: 28,
-    padding: 18,
-    borderRadius: 14,
-    backgroundColor: "#F5F6FF",
-    borderWidth: 1,
-    borderColor: "#E1E3FF",
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
+    businessLink: {
+      marginTop: 10,
+      color: PRIMARY,
+      fontWeight: "800",
+      fontSize: 14,
+    },
 
-  businessIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: PRIMARY,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-
-  businessIconText: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "800",
-  },
-
-  businessContent: {
-    flex: 1,
-  },
-
-  businessTitle: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#111",
-  },
-
-  businessText: {
-    fontSize: 13,
-    color: "#666",
-    lineHeight: 19,
-    marginTop: 5,
-  },
-
-  businessLink: {
-    marginTop: 10,
-    color: PRIMARY,
-    fontWeight: "800",
-    fontSize: 14,
-  },
-});
+    footer: {
+      textAlign: "center",
+      color: "#9CA3AF",
+      fontSize: 11,
+      lineHeight: 17,
+      marginTop: 28,
+      paddingHorizontal: 15,
+    },
+  });

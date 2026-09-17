@@ -519,52 +519,42 @@ export default function OpportunitiesScreen() {
     loadOpportunities();
     loadMyApplications();
 
-    const channel =
-      supabase
-        .channel(
-          "student-opportunities"
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema:
-              "public",
-            table:
-              "opportunities",
-          },
-          () => {
-            loadOpportunities(
-              false
-            );
-          }
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema:
-              "public",
-            table:
-              "opportunity_applications",
-          },
-          () => {
-            loadMyApplications();
-          }
-        )
-        .subscribe(
-          status => {
-            console.log(
-              "Student career realtime:",
-              status
-            );
-          }
+    const channelName =
+      `student-opportunities-${Date.now()}`;
+
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "opportunities",
+        },
+        () => {
+          loadOpportunities(false);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "opportunity_applications",
+        },
+        () => {
+          loadMyApplications();
+        }
+      )
+      .subscribe(status => {
+        console.log(
+          "Student career realtime:",
+          status
         );
+      });
 
     return () => {
-      supabase.removeChannel(
-        channel
-      );
+      supabase.removeChannel(channel);
     };
   }, [
     loadOpportunities,

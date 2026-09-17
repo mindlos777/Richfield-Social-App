@@ -1,8 +1,4 @@
-import React, {
-  useMemo,
-  useState,
-} from "react";
-
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,17 +14,30 @@ import {
 
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
 
-import * as DocumentPicker
-  from "expo-document-picker";
+import { supabase } from "../../../lib/supabase";
 
-import { supabase }
-  from "../../../lib/supabase";
+import {
+  cleanEmail,
+  cleanPersonName,
+  isValidPersonName,
+  validatePassword,
+} from "../../../utils/validation";
 
 const PRIMARY = "#0300cf";
 
-const MAX_DOCUMENT_SIZE =
-  5 * 1024 * 1024;
+const MAX_DOCUMENT_SIZE = 5 * 1024 * 1024;
+
+const MAX_COMPANY_NAME = 120;
+const MAX_REGISTRATION_NUMBER = 40;
+const MAX_LOCATION = 120;
+const MAX_DESCRIPTION = 1000;
+const MAX_CONTACT_NAME = 100;
+const MAX_JOB_TITLE = 100;
+const MAX_EMAIL = 254;
+const MAX_PHONE = 25;
+const MAX_WEBSITE = 250;
 
 const industries = [
   "Technology",
@@ -46,33 +55,661 @@ const industries = [
   "Other",
 ];
 
-function isValidEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-    value.trim()
+/* =========================================================
+   GENERAL CLEANING
+========================================================= */
+
+function normalizeSpaces(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function cleanSingleLine(value: string) {
+  return value
+    .replace(/[\r\n\t]/g, " ")
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .replace(/\s+/g, " ")
+    .trimStart();
+}
+
+function cleanMultiline(value: string) {
+  return value
+    .replace(
+      /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,
+      ""
+    )
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trimStart();
+}
+
+/* =========================================================
+   FAKE / REPEATED VALUES
+========================================================= */
+
+function isRepeatedValue(value: string) {
+  const compact = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+  if (compact.length < 4) {
+    return false;
+  }
+
+  return /^([a-z0-9])\1+$/.test(compact);
+}
+
+function isObviousFakeText(value: string) {
+  const compact = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+  if (!compact) {
+    return true;
+  }
+
+  if (isRepeatedValue(compact)) {
+    return true;
+  }
+
+  const blockedValues = [
+    "test",
+    "testing",
+    "fake",
+    "unknown",
+    "none",
+    "null",
+    "undefined",
+    "asdf",
+    "qwerty",
+    "company",
+    "business",
+    "example",
+    "sample",
+    "dummy",
+    "demo",
+  ];
+
+  return blockedValues.includes(compact);
+}
+
+/* =========================================================
+   COMPANY NAME
+========================================================= */
+
+function cleanCompanyName(value: string) {
+  return cleanSingleLine(value)
+    .replace(
+      /[^\p{L}\p{M}\p{N}&'().,+\- ]/gu,
+      ""
+    )
+    .slice(0, MAX_COMPANY_NAME);
+}
+
+function isValidCompanyName(value: string) {
+  const cleaned = normalizeSpaces(
+    cleanCompanyName(value)
   );
+
+  if (
+    cleaned.length < 2 ||
+    cleaned.length > MAX_COMPANY_NAME
+  ) {
+    return false;
+  }
+
+  if (!/[\p{L}]/u.test(cleaned)) {
+    return false;
+  }
+
+  if (isObviousFakeText(cleaned)) {
+    return false;
+  }
+
+  return true;
+}
+
+/* =========================================================
+   COMPANY REGISTRATION NUMBER
+========================================================= */
+
+function cleanRegistrationNumber(value: string) {
+  return value
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9/.-]/g, "")
+    .slice(0, MAX_REGISTRATION_NUMBER);
+}
+
+function isValidRegistrationNumber(value: string) {
+  const cleaned =
+    cleanRegistrationNumber(value);
+
+  if (
+    cleaned.length < 4 ||
+    cleaned.length > MAX_REGISTRATION_NUMBER
+  ) {
+    return false;
+  }
+
+  const compact = cleaned.replace(
+    /[^A-Z0-9]/g,
+    ""
+  );
+
+  if (compact.length < 4) {
+    return false;
+  }
+
+  if (
+    /^0+$/.test(compact) ||
+    /^1+$/.test(compact) ||
+    /^([A-Z0-9])\1+$/.test(compact)
+  ) {
+    return false;
+  }
+
+  const blocked = [
+    "00000000",
+    "000000000",
+    "11111111",
+    "111111111",
+    "12345678",
+    "123456789",
+  ];
+
+  if (blocked.includes(compact)) {
+    return false;
+  }
+
+  return true;
+}
+
+/* =========================================================
+   WEBSITE
+========================================================= */
+
+function cleanWebsite(value: string) {
+  return value
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .slice(0, MAX_WEBSITE);
 }
 
 function isValidWebsite(value: string) {
-  const website = value.trim();
+  const website = cleanWebsite(value);
 
   if (!website) {
     return false;
   }
 
-  return (
-    website.startsWith("https://") ||
-    website.startsWith("http://")
+  try {
+    const parsed = new URL(website);
+
+    if (
+      parsed.protocol !== "https:" &&
+      parsed.protocol !== "http:"
+    ) {
+      return false;
+    }
+
+    if (
+      !parsed.hostname ||
+      !parsed.hostname.includes(".")
+    ) {
+      return false;
+    }
+
+    if (
+      parsed.username ||
+      parsed.password
+    ) {
+      return false;
+    }
+
+    const hostname =
+      parsed.hostname.toLowerCase();
+
+    const blockedHosts = [
+      "example.com",
+      "test.com",
+      "fake.com",
+      "localhost",
+    ];
+
+    if (blockedHosts.includes(hostname)) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/* =========================================================
+   LOCATION
+========================================================= */
+
+function cleanLocation(value: string) {
+  return cleanSingleLine(value)
+    .replace(
+      /[^\p{L}\p{M}\p{N}'().,\- /]/gu,
+      ""
+    )
+    .slice(0, MAX_LOCATION);
+}
+
+function isValidLocation(value: string) {
+  const cleaned = normalizeSpaces(
+    cleanLocation(value)
+  );
+
+  if (
+    cleaned.length < 2 ||
+    cleaned.length > MAX_LOCATION
+  ) {
+    return false;
+  }
+
+  if (!/[\p{L}]/u.test(cleaned)) {
+    return false;
+  }
+
+  if (isObviousFakeText(cleaned)) {
+    return false;
+  }
+
+  return true;
+}
+
+/* =========================================================
+   COMPANY DESCRIPTION
+========================================================= */
+
+function cleanCompanyDescription(value: string) {
+  return cleanMultiline(value).slice(
+    0,
+    MAX_DESCRIPTION
   );
 }
+
+function isValidDescription(value: string) {
+  const cleaned =
+    cleanCompanyDescription(value).trim();
+
+  if (cleaned.length < 20) {
+    return false;
+  }
+
+  if (!/[\p{L}]/u.test(cleaned)) {
+    return false;
+  }
+
+  if (isRepeatedValue(cleaned)) {
+    return false;
+  }
+
+  const words = cleaned
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (words.length < 4) {
+    return false;
+  }
+
+  return true;
+}
+
+/* =========================================================
+   PERSON NAME
+========================================================= */
+
+function sanitizePersonName(value: string) {
+  return cleanPersonName(value).slice(
+    0,
+    MAX_CONTACT_NAME
+  );
+}
+
+function isValidContactName(value: string) {
+  const cleaned = normalizeSpaces(
+    sanitizePersonName(value)
+  );
+
+  if (
+    cleaned.length < 2 ||
+    cleaned.length > MAX_CONTACT_NAME
+  ) {
+    return false;
+  }
+
+  if (!isValidPersonName(cleaned)) {
+    return false;
+  }
+
+  if (/\d/.test(cleaned)) {
+    return false;
+  }
+
+  if (isObviousFakeText(cleaned)) {
+    return false;
+  }
+
+  return true;
+}
+
+/* =========================================================
+   JOB TITLE
+========================================================= */
+
+function cleanJobTitle(value: string) {
+  return cleanSingleLine(value)
+    .replace(
+      /[^\p{L}\p{M}&'().,\-/ ]/gu,
+      ""
+    )
+    .slice(0, MAX_JOB_TITLE);
+}
+
+function isValidJobTitle(value: string) {
+  const cleaned = normalizeSpaces(
+    cleanJobTitle(value)
+  );
+
+  if (
+    cleaned.length < 2 ||
+    cleaned.length > MAX_JOB_TITLE
+  ) {
+    return false;
+  }
+
+  if (/\d/.test(cleaned)) {
+    return false;
+  }
+
+  if (!/[\p{L}]/u.test(cleaned)) {
+    return false;
+  }
+
+  if (isObviousFakeText(cleaned)) {
+    return false;
+  }
+
+  return true;
+}
+
+/* =========================================================
+   BUSINESS EMAIL
+========================================================= */
+
+function sanitizeBusinessEmail(value: string) {
+  return cleanEmail(value)
+    .replace(/\s+/g, "")
+    .slice(0, MAX_EMAIL);
+}
+
+function isValidBusinessEmail(value: string) {
+  const email =
+    sanitizeBusinessEmail(value);
+
+  if (
+    email.length < 6 ||
+    email.length > MAX_EMAIL
+  ) {
+    return false;
+  }
+
+  if (
+    !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(
+      email
+    )
+  ) {
+    return false;
+  }
+
+  const parts = email.split("@");
+
+  if (parts.length !== 2) {
+    return false;
+  }
+
+  const [localPart, domain] = parts;
+
+  if (!localPart || !domain) {
+    return false;
+  }
+
+  if (
+    localPart.startsWith(".") ||
+    localPart.endsWith(".") ||
+    localPart.includes("..")
+  ) {
+    return false;
+  }
+
+  if (
+    domain.startsWith(".") ||
+    domain.endsWith(".") ||
+    domain.includes("..")
+  ) {
+    return false;
+  }
+
+  const compactLocal = localPart
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+  /*
+   * Reject:
+   *
+   * 00000@gmail.com
+   * 000000@gmail.com
+   * 11111@gmail.com
+   * aaaaa@gmail.com
+   */
+  if (
+    compactLocal.length >= 4 &&
+    /^([a-z0-9])\1+$/.test(compactLocal)
+  ) {
+    return false;
+  }
+
+  if (/^0+$/.test(compactLocal)) {
+    return false;
+  }
+
+  if (/^1+$/.test(compactLocal)) {
+    return false;
+  }
+
+  const fakeLocalParts = [
+    "test",
+    "testing",
+    "fake",
+    "example",
+    "sample",
+    "dummy",
+    "demo",
+    "asdf",
+    "qwerty",
+    "12345678",
+    "123456789",
+    "00000",
+    "000000",
+    "00000000",
+  ];
+
+  if (
+    fakeLocalParts.includes(
+      compactLocal
+    )
+  ) {
+    return false;
+  }
+
+  const lowerDomain =
+    domain.toLowerCase();
+
+  const fakeDomains = [
+    "example.com",
+    "test.com",
+    "fake.com",
+  ];
+
+  if (
+    fakeDomains.includes(
+      lowerDomain
+    )
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/* =========================================================
+   PHONE NUMBER
+========================================================= */
+
+function cleanPhone(value: string) {
+  let cleaned = value.replace(
+    /[^\d+\-() ]/g,
+    ""
+  );
+
+  /*
+   * + may only appear at beginning.
+   */
+  cleaned = cleaned.replace(
+    /(?!^)\+/g,
+    ""
+  );
+
+  return cleaned.slice(
+    0,
+    MAX_PHONE
+  );
+}
+
+function isValidPhone(value: string) {
+  const cleaned = cleanPhone(value);
+
+  const digits = cleaned.replace(
+    /\D/g,
+    ""
+  );
+
+  if (
+    digits.length < 9 ||
+    digits.length > 15
+  ) {
+    return false;
+  }
+
+  /*
+   * Reject:
+   * 0000000000
+   * 1111111111
+   * 9999999999
+   */
+  if (
+    /^(\d)\1+$/.test(digits)
+  ) {
+    return false;
+  }
+
+  /*
+   * Specifically handle South African
+   * international numbers.
+   *
+   * +270000000000 -> digits = 270000000000
+   *
+   * Remove 27 and check the national
+   * portion.
+   */
+  if (digits.startsWith("27")) {
+    const nationalNumber =
+      digits.slice(2);
+
+    if (
+      !nationalNumber ||
+      /^0+$/.test(nationalNumber) ||
+      /^(\d)\1+$/.test(
+        nationalNumber
+      )
+    ) {
+      return false;
+    }
+  }
+
+  /*
+   * South African local number:
+   * 0000000000 should never pass.
+   */
+  if (
+    digits.startsWith("0") &&
+    /^0+$/.test(digits)
+  ) {
+    return false;
+  }
+
+  const blockedNumbers = [
+    "000000000",
+    "0000000000",
+    "111111111",
+    "1111111111",
+    "123456789",
+    "1234567890",
+    "0123456789",
+    "27000000000",
+    "270000000000",
+  ];
+
+  if (blockedNumbers.includes(digits)) {
+    return false;
+  }
+
+  return true;
+}
+
+/* =========================================================
+   FILE NAME
+========================================================= */
 
 function sanitizeFileName(
   fileName: string
 ) {
-  return fileName.replace(
-    /[^a-zA-Z0-9._-]/g,
-    "_"
-  );
+  const cleaned = fileName
+    .normalize("NFKD")
+    .replace(
+      /[^a-zA-Z0-9._-]/g,
+      "_"
+    )
+    .replace(/_+/g, "_")
+    .replace(/^\.+/, "")
+    .slice(0, 120);
+
+  if (!cleaned) {
+    return "registration-document.pdf";
+  }
+
+  if (
+    !cleaned
+      .toLowerCase()
+      .endsWith(".pdf")
+  ) {
+    return `${cleaned}.pdf`;
+  }
+
+  return cleaned;
 }
+
+/* =========================================================
+   SCREEN
+========================================================= */
 
 export default function BusinessSignupScreen() {
   const [
@@ -163,51 +800,400 @@ export default function BusinessSignupScreen() {
     setUploadProgress,
   ] = useState("");
 
+  /* =======================================================
+     LIVE VALIDATION
+  ======================================================= */
+
+  const passwordValidation =
+    validatePassword(password);
+
   const passwordIsStrong =
     password.length >= 8 &&
     /[A-Z]/.test(password) &&
     /[a-z]/.test(password) &&
     /[0-9]/.test(password) &&
-    /[^A-Za-z0-9]/.test(password);
+    /[^A-Za-z0-9]/.test(
+      password
+    ) &&
+    passwordValidation.valid;
 
   const passwordsMatch =
     password.length > 0 &&
     confirmPassword.length > 0 &&
     password === confirmPassword;
 
-  const formIsValid = useMemo(() => {
-    return (
-      companyName.trim().length >= 2 &&
-      registrationNumber.trim().length >= 4 &&
-      industry.length > 0 &&
-      isValidWebsite(website) &&
-      location.trim().length >= 2 &&
-      companyDescription.trim().length >= 20 &&
-      contactPersonName.trim().length >= 2 &&
-      contactPersonJobTitle.trim().length >= 2 &&
-      isValidEmail(contactEmail) &&
-      contactPhone.trim().length >= 9 &&
-      registrationDocument !== null &&
-      passwordIsStrong &&
-      passwordsMatch &&
-      declarationAccepted
+  const companyNameIsValid =
+    companyName.length === 0 ||
+    isValidCompanyName(
+      companyName
     );
-  }, [
-    companyName,
-    registrationNumber,
-    industry,
-    website,
-    location,
-    companyDescription,
-    contactPersonName,
-    contactPersonJobTitle,
-    contactEmail,
-    contactPhone,
-    registrationDocument,
-    passwordIsStrong,
-    passwordsMatch,
-    declarationAccepted,
-  ]);
+
+  const registrationIsValid =
+    registrationNumber.length === 0 ||
+    isValidRegistrationNumber(
+      registrationNumber
+    );
+
+  const websiteIsValid =
+    website.length === 0 ||
+    isValidWebsite(website);
+
+  const locationIsValid =
+    location.length === 0 ||
+    isValidLocation(location);
+
+  const descriptionIsValid =
+    companyDescription.length === 0 ||
+    isValidDescription(
+      companyDescription
+    );
+
+  const contactNameIsValid =
+    contactPersonName.length === 0 ||
+    isValidContactName(
+      contactPersonName
+    );
+
+  const jobTitleIsValid =
+    contactPersonJobTitle.length === 0 ||
+    isValidJobTitle(
+      contactPersonJobTitle
+    );
+
+  const emailIsValid =
+    contactEmail.length === 0 ||
+    isValidBusinessEmail(
+      contactEmail
+    );
+
+  const phoneIsValid =
+    contactPhone.length === 0 ||
+    isValidPhone(
+      contactPhone
+    );
+
+  /* =======================================================
+     INPUT HANDLERS
+  ======================================================= */
+
+  function handleCompanyNameChange(
+    value: string
+  ) {
+    setCompanyName(
+      cleanCompanyName(value)
+    );
+  }
+
+  function handleRegistrationNumberChange(
+    value: string
+  ) {
+    setRegistrationNumber(
+      cleanRegistrationNumber(value)
+    );
+  }
+
+  function handleWebsiteChange(
+    value: string
+  ) {
+    setWebsite(
+      cleanWebsite(value)
+    );
+  }
+
+  function handleLocationChange(
+    value: string
+  ) {
+    setLocation(
+      cleanLocation(value)
+    );
+  }
+
+  function handleDescriptionChange(
+    value: string
+  ) {
+    setCompanyDescription(
+      cleanCompanyDescription(
+        value
+      )
+    );
+  }
+
+  function handleContactNameChange(
+    value: string
+  ) {
+    setContactPersonName(
+      sanitizePersonName(value)
+    );
+  }
+
+  function handleJobTitleChange(
+    value: string
+  ) {
+    setContactPersonJobTitle(
+      cleanJobTitle(value)
+    );
+  }
+
+  function handleEmailChange(
+    value: string
+  ) {
+    setContactEmail(
+      sanitizeBusinessEmail(
+        value
+      )
+    );
+  }
+
+  function handlePhoneChange(
+    value: string
+  ) {
+    setContactPhone(
+      cleanPhone(value)
+    );
+  }
+
+  /* =======================================================
+     FINAL FORM VALIDATION
+  ======================================================= */
+
+  function validateForm() {
+    const finalCompanyName =
+      normalizeSpaces(
+        cleanCompanyName(
+          companyName
+        )
+      );
+
+    const finalRegistrationNumber =
+      cleanRegistrationNumber(
+        registrationNumber
+      );
+
+    const finalWebsite =
+      cleanWebsite(website);
+
+    const finalLocation =
+      normalizeSpaces(
+        cleanLocation(location)
+      );
+
+    const finalDescription =
+      cleanCompanyDescription(
+        companyDescription
+      ).trim();
+
+    const finalContactName =
+      normalizeSpaces(
+        sanitizePersonName(
+          contactPersonName
+        )
+      );
+
+    const finalJobTitle =
+      normalizeSpaces(
+        cleanJobTitle(
+          contactPersonJobTitle
+        )
+      );
+
+    const finalEmail =
+      sanitizeBusinessEmail(
+        contactEmail
+      );
+
+    const finalPhone =
+      cleanPhone(
+        contactPhone
+      ).trim();
+
+    if (
+      !isValidCompanyName(
+        finalCompanyName
+      )
+    ) {
+      Alert.alert(
+        "Invalid company name",
+        "Please enter the organisation's real company name."
+      );
+
+      return false;
+    }
+
+    if (
+      !isValidRegistrationNumber(
+        finalRegistrationNumber
+      )
+    ) {
+      Alert.alert(
+        "Invalid registration number",
+        "Please enter a valid official company registration number."
+      );
+
+      return false;
+    }
+
+    if (
+      !industries.includes(
+        industry
+      )
+    ) {
+      Alert.alert(
+        "Industry required",
+        "Please select your company's industry."
+      );
+
+      return false;
+    }
+
+    if (
+      !isValidWebsite(
+        finalWebsite
+      )
+    ) {
+      Alert.alert(
+        "Invalid website",
+        "Enter a complete company website starting with https:// or http://."
+      );
+
+      return false;
+    }
+
+    if (
+      !isValidLocation(
+        finalLocation
+      )
+    ) {
+      Alert.alert(
+        "Invalid location",
+        "Please enter a valid company location."
+      );
+
+      return false;
+    }
+
+    if (
+      !isValidDescription(
+        finalDescription
+      )
+    ) {
+      Alert.alert(
+        "Invalid description",
+        "Please enter at least 20 meaningful characters describing your organisation."
+      );
+
+      return false;
+    }
+
+    if (
+      !isValidContactName(
+        finalContactName
+      )
+    ) {
+      Alert.alert(
+        "Invalid contact name",
+        "Please enter the contact person's real full name. Numbers are not allowed."
+      );
+
+      return false;
+    }
+
+    if (
+      !isValidJobTitle(
+        finalJobTitle
+      )
+    ) {
+      Alert.alert(
+        "Invalid job title",
+        "Please enter a valid job title. Numbers are not allowed."
+      );
+
+      return false;
+    }
+
+    if (
+      !isValidBusinessEmail(
+        finalEmail
+      )
+    ) {
+      Alert.alert(
+        "Invalid email",
+        "Please enter a valid business email. Fake values such as 00000@gmail.com are not accepted."
+      );
+
+      return false;
+    }
+
+    if (
+      !isValidPhone(
+        finalPhone
+      )
+    ) {
+      Alert.alert(
+        "Invalid contact number",
+        "Please enter a real contact number. Numbers made up of repeated zeros or repeated digits are not accepted."
+      );
+
+      return false;
+    }
+
+    if (!registrationDocument) {
+      Alert.alert(
+        "Verification document required",
+        "Please upload your company registration PDF."
+      );
+
+      return false;
+    }
+
+    const finalPasswordCheck =
+      validatePassword(
+        password
+      );
+
+    if (
+      !finalPasswordCheck.valid
+    ) {
+      Alert.alert(
+        "Weak password",
+        finalPasswordCheck.message
+      );
+
+      return false;
+    }
+
+    if (!passwordIsStrong) {
+      Alert.alert(
+        "Password not strong enough",
+        "Your password must contain at least 8 characters, an uppercase letter, lowercase letter, number and special character."
+      );
+
+      return false;
+    }
+
+    if (!passwordsMatch) {
+      Alert.alert(
+        "Passwords do not match",
+        "Please make sure both passwords are exactly the same."
+      );
+
+      return false;
+    }
+
+    if (!declarationAccepted) {
+      Alert.alert(
+        "Declaration required",
+        "Please confirm that you are authorised to represent the organisation."
+      );
+
+      return false;
+    }
+
+    return true;
+  }
+
+  /* =======================================================
+     DOCUMENT PICKER
+  ======================================================= */
 
   async function pickRegistrationDocument() {
     try {
@@ -222,7 +1208,8 @@ export default function BusinessSignupScreen() {
         return;
       }
 
-      const file = result.assets[0];
+      const file =
+        result.assets[0];
 
       if (!file) {
         return;
@@ -230,7 +1217,8 @@ export default function BusinessSignupScreen() {
 
       if (
         file.size &&
-        file.size > MAX_DOCUMENT_SIZE
+        file.size >
+          MAX_DOCUMENT_SIZE
       ) {
         Alert.alert(
           "File too large",
@@ -241,9 +1229,19 @@ export default function BusinessSignupScreen() {
       }
 
       const fileName =
-        file.name.toLowerCase();
+        file.name
+          .toLowerCase()
+          .trim();
 
-      if (!fileName.endsWith(".pdf")) {
+      const mimeType =
+        file.mimeType
+          ?.toLowerCase();
+
+      if (
+        !fileName.endsWith(
+          ".pdf"
+        )
+      ) {
         Alert.alert(
           "Invalid document",
           "Please select a PDF document."
@@ -252,7 +1250,22 @@ export default function BusinessSignupScreen() {
         return;
       }
 
-      setRegistrationDocument(file);
+      if (
+        mimeType &&
+        mimeType !==
+          "application/pdf"
+      ) {
+        Alert.alert(
+          "Invalid document",
+          "The selected file must be a PDF document."
+        );
+
+        return;
+      }
+
+      setRegistrationDocument(
+        file
+      );
     } catch (error: any) {
       Alert.alert(
         "Document error",
@@ -267,8 +1280,14 @@ export default function BusinessSignupScreen() {
       return;
     }
 
-    setRegistrationDocument(null);
+    setRegistrationDocument(
+      null
+    );
   }
+
+  /* =======================================================
+     DOCUMENT UPLOAD
+  ======================================================= */
 
   async function uploadBusinessDocument(
     userId: string
@@ -279,13 +1298,38 @@ export default function BusinessSignupScreen() {
       );
     }
 
+    if (
+      registrationDocument.size &&
+      registrationDocument.size >
+        MAX_DOCUMENT_SIZE
+    ) {
+      throw new Error(
+        "The registration document must be 5 MB or smaller."
+      );
+    }
+
+    const originalName =
+      registrationDocument.name
+        .toLowerCase();
+
+    if (
+      !originalName.endsWith(
+        ".pdf"
+      )
+    ) {
+      throw new Error(
+        "The registration document must be a PDF."
+      );
+    }
+
     setUploadProgress(
       "Uploading verification document..."
     );
 
-    const response = await fetch(
-      registrationDocument.uri
-    );
+    const response =
+      await fetch(
+        registrationDocument.uri
+      );
 
     if (!response.ok) {
       throw new Error(
@@ -295,6 +1339,15 @@ export default function BusinessSignupScreen() {
 
     const arrayBuffer =
       await response.arrayBuffer();
+
+    if (
+      arrayBuffer.byteLength >
+      MAX_DOCUMENT_SIZE
+    ) {
+      throw new Error(
+        "The registration document must be 5 MB or smaller."
+      );
+    }
 
     const safeFileName =
       sanitizeFileName(
@@ -307,19 +1360,20 @@ export default function BusinessSignupScreen() {
 
     const {
       error: uploadError,
-    } = await supabase.storage
-      .from("business-verification")
-      .upload(
-        filePath,
-        arrayBuffer,
-        {
-          contentType:
-            registrationDocument.mimeType ||
-            "application/pdf",
-
-          upsert: false,
-        }
-      );
+    } =
+      await supabase.storage
+        .from(
+          "business-verification"
+        )
+        .upload(
+          filePath,
+          arrayBuffer,
+          {
+            contentType:
+              "application/pdf",
+            upsert: false,
+          }
+        );
 
     if (uploadError) {
       throw new Error(
@@ -329,6 +1383,10 @@ export default function BusinessSignupScreen() {
 
     return filePath;
   }
+
+  /* =======================================================
+     SAVE DOCUMENT PATH
+  ======================================================= */
 
   async function saveDocumentPath(
     userId: string,
@@ -340,16 +1398,23 @@ export default function BusinessSignupScreen() {
 
     const {
       error: updateError,
-    } = await supabase
-      .from("business_profiles")
-      .update({
-        registration_document_url:
-          filePath,
+    } =
+      await supabase
+        .from(
+          "business_profiles"
+        )
+        .update({
+          registration_document_url:
+            filePath,
 
-        updated_at:
-          new Date().toISOString(),
-      })
-      .eq("user_id", userId);
+          updated_at:
+            new Date()
+              .toISOString(),
+        })
+        .eq(
+          "user_id",
+          userId
+        );
 
     if (updateError) {
       throw new Error(
@@ -358,80 +1423,116 @@ export default function BusinessSignupScreen() {
     }
   }
 
+  /* =======================================================
+     SIGN UP
+  ======================================================= */
+
   async function handleSignup() {
-    if (!registrationDocument) {
-      Alert.alert(
-        "Verification document required",
-        "Please upload your company registration document."
-      );
-
+    if (!validateForm()) {
       return;
     }
 
-    if (!formIsValid) {
-      Alert.alert(
-        "Check your details",
-        "Please complete all required fields correctly."
+    const finalCompanyName =
+      normalizeSpaces(
+        cleanCompanyName(
+          companyName
+        )
       );
 
-      return;
-    }
+    const finalRegistrationNumber =
+      cleanRegistrationNumber(
+        registrationNumber
+      );
+
+    const finalWebsite =
+      cleanWebsite(website);
+
+    const finalLocation =
+      normalizeSpaces(
+        cleanLocation(location)
+      );
+
+    const finalDescription =
+      cleanCompanyDescription(
+        companyDescription
+      ).trim();
+
+    const finalContactName =
+      normalizeSpaces(
+        sanitizePersonName(
+          contactPersonName
+        )
+      );
+
+    const finalJobTitle =
+      normalizeSpaces(
+        cleanJobTitle(
+          contactPersonJobTitle
+        )
+      );
+
+    const finalEmail =
+      sanitizeBusinessEmail(
+        contactEmail
+      );
+
+    const finalPhone =
+      cleanPhone(
+        contactPhone
+      ).trim();
 
     try {
       setLoading(true);
+      setIndustryOpen(false);
 
       setUploadProgress(
         "Creating business account..."
       );
-
-      const email =
-        contactEmail
-          .trim()
-          .toLowerCase();
 
       const {
         data,
         error,
       } =
         await supabase.auth.signUp({
-          email,
+          email: finalEmail,
           password,
 
           options: {
             data: {
-              signup_role: "business",
+              signup_role:
+                "business",
 
               full_name:
-                contactPersonName.trim(),
+                finalContactName,
 
               company_name:
-                companyName.trim(),
+                finalCompanyName,
 
               company_registration_number:
-                registrationNumber.trim(),
+                finalRegistrationNumber,
 
               industry,
 
               website:
-                website.trim(),
+                finalWebsite,
 
               company_description:
-                companyDescription.trim(),
+                finalDescription,
 
               location:
-                location.trim(),
+                finalLocation,
 
               contact_email:
-                email,
+                finalEmail,
 
               contact_phone:
-                contactPhone.trim(),
+                finalPhone,
 
               contact_person_name:
-                contactPersonName.trim(),
+                finalContactName,
 
               contact_person_job_title:
-                contactPersonJobTitle.trim(),
+                finalJobTitle,
             },
           },
         });
@@ -447,12 +1548,15 @@ export default function BusinessSignupScreen() {
       }
 
       if (!data.session) {
+        setUploadProgress("");
+
         Alert.alert(
           "Account created",
           "Your account was created, but you must verify your email before the registration document can be securely uploaded. Sign in after verification to complete your business application.",
           [
             {
               text: "Continue",
+
               onPress: () =>
                 router.replace(
                   "/login"
@@ -483,18 +1587,24 @@ export default function BusinessSignupScreen() {
           {
             text: "Continue",
 
-            onPress: async () => {
-              await supabase.auth.signOut();
+            onPress:
+              async () => {
+                await supabase.auth.signOut();
 
-              router.replace(
-                "/login"
-              );
-            },
+                router.replace(
+                  "/login"
+                );
+              },
           },
         ]
       );
     } catch (error: any) {
       setUploadProgress("");
+
+      console.log(
+        "Business signup error:",
+        error
+      );
 
       Alert.alert(
         "Registration failed",
@@ -505,6 +1615,10 @@ export default function BusinessSignupScreen() {
       setLoading(false);
     }
   }
+
+  /* =======================================================
+     UI
+  ======================================================= */
 
   return (
     <KeyboardAvoidingView
@@ -520,7 +1634,9 @@ export default function BusinessSignupScreen() {
           styles.container
         }
         keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={
+          false
+        }
       >
         <Pressable
           style={styles.backButton}
@@ -536,7 +1652,9 @@ export default function BusinessSignupScreen() {
           />
         </Pressable>
 
-        <View style={styles.iconBox}>
+        <View
+          style={styles.iconBox}
+        >
           <Ionicons
             name="business"
             size={28}
@@ -544,31 +1662,45 @@ export default function BusinessSignupScreen() {
           />
         </View>
 
-        <Text style={styles.title}>
+        <Text
+          style={styles.title}
+        >
           Business registration
         </Text>
 
-        <Text style={styles.subtitle}>
+        <Text
+          style={styles.subtitle}
+        >
           Register your organisation to
           connect with Richfield talent and
           publish career opportunities.
         </Text>
 
-        <View style={styles.notice}>
+        <View
+          style={styles.notice}
+        >
           <Ionicons
             name="shield-checkmark-outline"
             size={22}
             color={PRIMARY}
           />
 
-          <Text style={styles.noticeText}>
+          <Text
+            style={
+              styles.noticeText
+            }
+          >
             Business accounts are reviewed by
             Richfield before they can access
             the platform.
           </Text>
         </View>
 
-        <Text style={styles.sectionTitle}>
+        {/* COMPANY INFORMATION */}
+
+        <Text
+          style={styles.sectionTitle}
+        >
           Company information
         </Text>
 
@@ -578,28 +1710,68 @@ export default function BusinessSignupScreen() {
 
         <TextInput
           value={companyName}
-          onChangeText={setCompanyName}
+          onChangeText={
+            handleCompanyNameChange
+          }
           placeholder="e.g. TechNova Solutions"
-          style={styles.input}
+          autoCapitalize="words"
+          autoCorrect={false}
+          maxLength={
+            MAX_COMPANY_NAME
+          }
+          style={[
+            styles.input,
+            !companyNameIsValid &&
+              styles.errorInput,
+          ]}
           editable={!loading}
         />
+
+        {!companyNameIsValid && (
+          <Text
+            style={styles.errorText}
+          >
+            Enter a valid company name.
+          </Text>
+        )}
 
         <FieldLabel
           text="Company registration number"
         />
 
         <TextInput
-          value={registrationNumber}
+          value={
+            registrationNumber
+          }
           onChangeText={
-            setRegistrationNumber
+            handleRegistrationNumberChange
           }
           placeholder="e.g. 2024/123456/07"
           autoCapitalize="characters"
-          style={styles.input}
+          autoCorrect={false}
+          maxLength={
+            MAX_REGISTRATION_NUMBER
+          }
+          style={[
+            styles.input,
+            !registrationIsValid &&
+              styles.errorInput,
+          ]}
           editable={!loading}
         />
 
-        <Text style={styles.helper}>
+        {!registrationIsValid && (
+          <Text
+            style={styles.errorText}
+          >
+            Enter a valid company registration
+            number.
+          </Text>
+        )}
+
+        <Text
+          style={styles.helper}
+        >
           Enter the official registration
           number used to identify your
           organisation.
@@ -639,7 +1811,9 @@ export default function BusinessSignupScreen() {
         </Pressable>
 
         {industryOpen && (
-          <View style={styles.dropdown}>
+          <View
+            style={styles.dropdown}
+          >
             {industries.map(
               item => (
                 <Pressable
@@ -649,7 +1823,6 @@ export default function BusinessSignupScreen() {
                   }
                   onPress={() => {
                     setIndustry(item);
-
                     setIndustryOpen(
                       false
                     );
@@ -674,63 +1847,102 @@ export default function BusinessSignupScreen() {
 
         <TextInput
           value={website}
-          onChangeText={setWebsite}
+          onChangeText={
+            handleWebsiteChange
+          }
           placeholder="https://company.co.za"
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
-          style={styles.input}
+          maxLength={MAX_WEBSITE}
+          style={[
+            styles.input,
+            !websiteIsValid &&
+              styles.errorInput,
+          ]}
           editable={!loading}
         />
 
-        {website.length > 0 &&
-          !isValidWebsite(
-            website
-          ) && (
-            <Text
-              style={styles.errorText}
-            >
-              Website must start with
-              https:// or http://
-            </Text>
-          )}
+        {!websiteIsValid && (
+          <Text
+            style={styles.errorText}
+          >
+            Enter a complete website starting
+            with https:// or http://
+          </Text>
+        )}
 
         <FieldLabel text="Location" />
 
         <TextInput
           value={location}
-          onChangeText={setLocation}
+          onChangeText={
+            handleLocationChange
+          }
           placeholder="e.g. Johannesburg, Gauteng"
-          style={styles.input}
+          autoCapitalize="words"
+          maxLength={MAX_LOCATION}
+          style={[
+            styles.input,
+            !locationIsValid &&
+              styles.errorInput,
+          ]}
           editable={!loading}
         />
+
+        {!locationIsValid && (
+          <Text
+            style={styles.errorText}
+          >
+            Enter a valid company location.
+          </Text>
+        )}
 
         <FieldLabel
           text="Company description"
         />
 
         <TextInput
-          value={companyDescription}
+          value={
+            companyDescription
+          }
           onChangeText={
-            setCompanyDescription
+            handleDescriptionChange
           }
           placeholder="Tell Richfield what your organisation does..."
           multiline
           textAlignVertical="top"
-          maxLength={1000}
+          maxLength={MAX_DESCRIPTION}
           editable={!loading}
           style={[
             styles.input,
             styles.descriptionInput,
+            !descriptionIsValid &&
+              styles.errorInput,
           ]}
         />
 
-        <Text style={styles.counter}>
-          {companyDescription.length}
-          /1000
+        {!descriptionIsValid && (
+          <Text
+            style={styles.errorText}
+          >
+            Enter a meaningful company
+            description.
+          </Text>
+        )}
+
+        <Text
+          style={styles.counter}
+        >
+          {companyDescription.length}/
+          {MAX_DESCRIPTION}
         </Text>
 
-        <Text style={styles.sectionTitle}>
+        {/* CONTACT PERSON */}
+
+        <Text
+          style={styles.sectionTitle}
+        >
           Contact person
         </Text>
 
@@ -748,14 +1960,32 @@ export default function BusinessSignupScreen() {
         <FieldLabel text="Full name" />
 
         <TextInput
-          value={contactPersonName}
+          value={
+            contactPersonName
+          }
           onChangeText={
-            setContactPersonName
+            handleContactNameChange
           }
           placeholder="Contact person's full name"
-          style={styles.input}
+          autoCapitalize="words"
+          autoCorrect={false}
+          maxLength={MAX_CONTACT_NAME}
+          style={[
+            styles.input,
+            !contactNameIsValid &&
+              styles.errorInput,
+          ]}
           editable={!loading}
         />
+
+        {!contactNameIsValid && (
+          <Text
+            style={styles.errorText}
+          >
+            Enter a valid full name. Numbers
+            are not allowed.
+          </Text>
+        )}
 
         <FieldLabel text="Job title" />
 
@@ -764,12 +1994,28 @@ export default function BusinessSignupScreen() {
             contactPersonJobTitle
           }
           onChangeText={
-            setContactPersonJobTitle
+            handleJobTitleChange
           }
           placeholder="e.g. HR Manager"
-          style={styles.input}
+          autoCapitalize="words"
+          autoCorrect={false}
+          maxLength={MAX_JOB_TITLE}
+          style={[
+            styles.input,
+            !jobTitleIsValid &&
+              styles.errorInput,
+          ]}
           editable={!loading}
         />
+
+        {!jobTitleIsValid && (
+          <Text
+            style={styles.errorText}
+          >
+            Enter a valid job title. Numbers
+            are not allowed.
+          </Text>
+        )}
 
         <FieldLabel
           text="Business email"
@@ -778,27 +2024,30 @@ export default function BusinessSignupScreen() {
         <TextInput
           value={contactEmail}
           onChangeText={
-            setContactEmail
+            handleEmailChange
           }
           placeholder="name@company.co.za"
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
-          style={styles.input}
+          maxLength={MAX_EMAIL}
+          style={[
+            styles.input,
+            !emailIsValid &&
+              styles.errorInput,
+          ]}
           editable={!loading}
         />
 
-        {contactEmail.length > 0 &&
-          !isValidEmail(
-            contactEmail
-          ) && (
-            <Text
-              style={styles.errorText}
-            >
-              Enter a valid business
-              email.
-            </Text>
-          )}
+        {!emailIsValid && (
+          <Text
+            style={styles.errorText}
+          >
+            Enter a valid business email.
+            Repeated or fake values are not
+            accepted.
+          </Text>
+        )}
 
         <FieldLabel
           text="Contact number"
@@ -807,15 +2056,34 @@ export default function BusinessSignupScreen() {
         <TextInput
           value={contactPhone}
           onChangeText={
-            setContactPhone
+            handlePhoneChange
           }
           placeholder="+27 82 123 4567"
           keyboardType="phone-pad"
-          style={styles.input}
+          maxLength={MAX_PHONE}
+          style={[
+            styles.input,
+            !phoneIsValid &&
+              styles.errorInput,
+          ]}
           editable={!loading}
         />
 
-        <Text style={styles.sectionTitle}>
+        {!phoneIsValid && (
+          <Text
+            style={styles.errorText}
+          >
+            Enter a valid contact number.
+            Repeated zeros or fake numbers are
+            not accepted.
+          </Text>
+        )}
+
+        {/* VERIFICATION DOCUMENT */}
+
+        <Text
+          style={styles.sectionTitle}
+        >
           Verification document
         </Text>
 
@@ -826,8 +2094,8 @@ export default function BusinessSignupScreen() {
         >
           Upload your official company
           registration document. Richfield
-          administrators will use it to
-          verify your organisation.
+          administrators will use it to verify
+          your organisation.
         </Text>
 
         {!registrationDocument ? (
@@ -841,9 +2109,7 @@ export default function BusinessSignupScreen() {
             }
           >
             <View
-              style={
-                styles.documentIcon
-              }
+              style={styles.documentIcon}
             >
               <Ionicons
                 name="cloud-upload-outline"
@@ -858,8 +2124,7 @@ export default function BusinessSignupScreen() {
                   styles.documentTitle
                 }
               >
-                Upload registration
-                document
+                Upload registration document
               </Text>
 
               <Text
@@ -927,9 +2192,7 @@ export default function BusinessSignupScreen() {
                 }
                 numberOfLines={2}
               >
-                {
-                  registrationDocument.name
-                }
+                {registrationDocument.name}
               </Text>
 
               <Text
@@ -1004,14 +2267,17 @@ export default function BusinessSignupScreen() {
               styles.documentSecurityText
             }
           >
-            Your document is stored
-            privately and is only available
-            to authorised Richfield
-            administrators.
+            Your document is stored privately
+            and is only available to authorised
+            Richfield administrators.
           </Text>
         </View>
 
-        <Text style={styles.sectionTitle}>
+        {/* ACCOUNT SECURITY */}
+
+        <Text
+          style={styles.sectionTitle}
+        >
           Account security
         </Text>
 
@@ -1024,7 +2290,14 @@ export default function BusinessSignupScreen() {
           secureTextEntry
           autoCapitalize="none"
           autoCorrect={false}
-          style={styles.input}
+          maxLength={128}
+          style={[
+            styles.input,
+            password.length > 0 &&
+            !passwordIsStrong
+              ? styles.errorInput
+              : null,
+          ]}
           editable={!loading}
         />
 
@@ -1038,27 +2311,21 @@ export default function BusinessSignupScreen() {
 
           <PasswordRule
             valid={
-              /[A-Z]/.test(
-                password
-              )
+              /[A-Z]/.test(password)
             }
             text="Uppercase letter"
           />
 
           <PasswordRule
             valid={
-              /[a-z]/.test(
-                password
-              )
+              /[a-z]/.test(password)
             }
             text="Lowercase letter"
           />
 
           <PasswordRule
             valid={
-              /[0-9]/.test(
-                password
-              )
+              /[0-9]/.test(password)
             }
             text="Number"
           />
@@ -1071,6 +2338,17 @@ export default function BusinessSignupScreen() {
             }
             text="Special character"
           />
+
+          {password.length > 0 &&
+          !passwordValidation.valid ? (
+            <Text
+              style={
+                styles.passwordError
+              }
+            >
+              {passwordValidation.message}
+            </Text>
+          ) : null}
         </View>
 
         <FieldLabel
@@ -1086,12 +2364,11 @@ export default function BusinessSignupScreen() {
           secureTextEntry
           autoCapitalize="none"
           autoCorrect={false}
+          maxLength={128}
           editable={!loading}
           style={[
             styles.input,
-
-            confirmPassword.length >
-              0 &&
+            confirmPassword.length > 0 &&
             !passwordsMatch
               ? styles.errorInput
               : null,
@@ -1113,6 +2390,8 @@ export default function BusinessSignupScreen() {
           </Text>
         )}
 
+        {/* DECLARATION */}
+
         <Pressable
           style={
             styles.declarationRow
@@ -1127,7 +2406,6 @@ export default function BusinessSignupScreen() {
           <View
             style={[
               styles.checkbox,
-
               declarationAccepted &&
                 styles.checkboxSelected,
             ]}
@@ -1153,6 +2431,8 @@ export default function BusinessSignupScreen() {
           </Text>
         </Pressable>
 
+        {/* PROGRESS */}
+
         {loading &&
           uploadProgress.length >
             0 && (
@@ -1176,18 +2456,15 @@ export default function BusinessSignupScreen() {
             </View>
           )}
 
+        {/* SUBMIT */}
+
         <Pressable
           style={[
             styles.submitButton,
-
-            (!formIsValid ||
-              loading) &&
+            loading &&
               styles.disabled,
           ]}
-          disabled={
-            !formIsValid ||
-            loading
-          }
+          disabled={loading}
           onPress={handleSignup}
         >
           {loading ? (
@@ -1201,8 +2478,7 @@ export default function BusinessSignupScreen() {
                   styles.submitText
                 }
               >
-                Submit business
-                application
+                Submit business application
               </Text>
 
               <Ionicons
@@ -1225,8 +2501,14 @@ export default function BusinessSignupScreen() {
           </Text>
         )}
 
-        <View style={styles.loginRow}>
-          <Text style={styles.loginText}>
+        {/* LOGIN */}
+
+        <View
+          style={styles.loginRow}
+        >
+          <Text
+            style={styles.loginText}
+          >
             Already registered?
           </Text>
 
@@ -1239,9 +2521,7 @@ export default function BusinessSignupScreen() {
             }
           >
             <Text
-              style={
-                styles.loginLink
-              }
+              style={styles.loginLink}
             >
               Sign in
             </Text>
@@ -1251,6 +2531,10 @@ export default function BusinessSignupScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+/* =========================================================
+   FIELD LABEL
+========================================================= */
 
 function FieldLabel({
   text,
@@ -1269,6 +2553,10 @@ function FieldLabel({
   );
 }
 
+/* =========================================================
+   PASSWORD RULE
+========================================================= */
+
 function PasswordRule({
   valid,
   text,
@@ -1277,7 +2565,9 @@ function PasswordRule({
   text: string;
 }) {
   return (
-    <View style={styles.ruleRow}>
+    <View
+      style={styles.ruleRow}
+    >
       <Ionicons
         name={
           valid
@@ -1295,7 +2585,6 @@ function PasswordRule({
       <Text
         style={[
           styles.ruleText,
-
           valid &&
             styles.validRuleText,
         ]}
@@ -1305,6 +2594,10 @@ function PasswordRule({
     </View>
   );
 }
+
+/* =========================================================
+   STYLES
+========================================================= */
 
 const styles =
   StyleSheet.create({
@@ -1428,6 +2721,13 @@ const styles =
       color: "#D00000",
       fontSize: 12,
       marginTop: 6,
+    },
+
+    passwordError: {
+      color: "#D00000",
+      fontSize: 12,
+      lineHeight: 17,
+      marginTop: 5,
     },
 
     successText: {

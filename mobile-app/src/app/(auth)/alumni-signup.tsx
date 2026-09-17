@@ -1,4 +1,5 @@
 import React, {
+  useMemo,
   useState,
 } from "react";
 
@@ -20,6 +21,18 @@ import {
 } from "../../lib/supabase";
 
 const PRIMARY = "#0300cf";
+
+const STUDENT_DOMAIN =
+  "@my.richfield.ac.za";
+
+const STUDENT_NUMBER_REGEX =
+  /^40\d{7}$/;
+
+const STUDENT_EMAIL_REGEX =
+  /^40\d{7}@my\.richfield\.ac\.za$/;
+
+const PERSON_NAME_REGEX =
+  /^[\p{L}\p{M}][\p{L}\p{M}' -]*$/u;
 
 const programmes = [
   "BSc IT",
@@ -43,64 +56,216 @@ const campuses = [
   "Sandton",
 ];
 
-function isAlumniEmail(
-  email: string
+function cleanSingleLine(
+  value: string
 ) {
-  const cleanEmail = email
-    .trim()
-    .toLowerCase();
+  return value
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  return cleanEmail.endsWith(
-    "@my.richfield.ac.za"
-  );
+function cleanPersonName(
+  value: string
+) {
+  return cleanSingleLine(value)
+    .replace(
+      /[^\p{L}\p{M}' -]/gu,
+      ""
+    )
+    .replace(/\s+/g, " ")
+    .slice(0, 100);
+}
+
+function cleanEmail(
+  value: string
+) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s/g, "")
+    .slice(0, 254);
+}
+
+function cleanYear(
+  value: string
+) {
+  return value
+    .replace(/[^0-9]/g, "")
+    .slice(0, 4);
+}
+
+function isValidPersonName(
+  value: string
+) {
+  const clean =
+    cleanPersonName(value);
+
+  if (
+    clean.length < 2 ||
+    clean.length > 100
+  ) {
+    return false;
+  }
+
+  if (
+    !PERSON_NAME_REGEX.test(clean)
+  ) {
+    return false;
+  }
+
+  const letters =
+    clean.match(/\p{L}/gu) || [];
+
+  return letters.length >= 2;
 }
 
 function getStudentNumber(
   email: string
 ) {
-  const cleanEmail = email
-    .trim()
-    .toLowerCase();
-
-  const domain =
-    "@my.richfield.ac.za";
+  const clean =
+    cleanEmail(email);
 
   if (
-    !cleanEmail.endsWith(domain)
+    !STUDENT_EMAIL_REGEX.test(
+      clean
+    )
   ) {
     return null;
   }
 
-  const value = cleanEmail.slice(
-    0,
-    -domain.length
-  );
+  const studentNumber =
+    clean.slice(
+      0,
+      -STUDENT_DOMAIN.length
+    );
 
-  return /^\d+$/.test(value)
-    ? value
-    : null;
+  if (
+    !STUDENT_NUMBER_REGEX.test(
+      studentNumber
+    )
+  ) {
+    return null;
+  }
+
+  if (
+    studentNumber ===
+    "400000000"
+  ) {
+    return null;
+  }
+
+  return studentNumber;
+}
+
+function validateAlumniEmail(
+  email: string
+) {
+  const clean =
+    cleanEmail(email);
+
+  if (!clean) {
+    return "Richfield email is required.";
+  }
+
+  if (
+    !STUDENT_EMAIL_REGEX.test(
+      clean
+    )
+  ) {
+    return "Use a valid Richfield student email, for example 401234567@my.richfield.ac.za.";
+  }
+
+  const studentNumber =
+    clean.slice(
+      0,
+      -STUDENT_DOMAIN.length
+    );
+
+  if (
+    studentNumber ===
+    "400000000"
+  ) {
+    return "Enter your real Richfield student email.";
+  }
+
+  return null;
+}
+
+function validatePassword(
+  value: string
+) {
+  if (!value) {
+    return "Password is required.";
+  }
+
+  if (
+    value === "00000000"
+  ) {
+    return "This password is not allowed.";
+  }
+
+  if (value.length < 8) {
+    return "Password must contain at least 8 characters.";
+  }
+
+  if (value.length > 128) {
+    return "Password is too long.";
+  }
+
+  if (!/[A-Z]/.test(value)) {
+    return "Add at least one uppercase letter.";
+  }
+
+  if (!/[a-z]/.test(value)) {
+    return "Add at least one lowercase letter.";
+  }
+
+  if (!/[0-9]/.test(value)) {
+    return "Add at least one number.";
+  }
+
+  if (
+    !/[^A-Za-z0-9]/.test(
+      value
+    )
+  ) {
+    return "Add at least one special character.";
+  }
+
+  return null;
 }
 
 export default function AlumniSignupScreen() {
-  const [fullName, setFullName] =
-    useState("");
+  const [
+    fullName,
+    setFullName,
+  ] = useState("");
 
-  const [email, setEmail] =
-    useState("");
+  const [
+    email,
+    setEmail,
+  ] = useState("");
 
-  const [programme, setProgramme] =
-    useState("");
+  const [
+    programme,
+    setProgramme,
+  ] = useState("");
 
-  const [campus, setCampus] =
-    useState("");
+  const [
+    campus,
+    setCampus,
+  ] = useState("");
 
   const [
     graduationYear,
     setGraduationYear,
   ] = useState("");
 
-  const [password, setPassword] =
-    useState("");
+  const [
+    password,
+    setPassword,
+  ] = useState("");
 
   const [
     confirmPassword,
@@ -117,90 +282,304 @@ export default function AlumniSignupScreen() {
     setCampusOpen,
   ] = useState(false);
 
-  const [loading, setLoading] =
-    useState(false);
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
 
-  const passwordIsStrong =
-    password.length >= 8 &&
-    /[A-Z]/.test(password) &&
-    /[a-z]/.test(password) &&
-    /[0-9]/.test(password) &&
-    /[^A-Za-z0-9]/.test(password);
-
-  const passwordsMatch =
-    password.length > 0 &&
-    password === confirmPassword;
-
-  const year =
-    Number(graduationYear);
+  const [
+    attemptedSubmit,
+    setAttemptedSubmit,
+  ] = useState(false);
 
   const currentYear =
     new Date().getFullYear();
 
-  const graduationYearValid =
-    Number.isInteger(year) &&
-    year >= 1990 &&
-    year <= currentYear;
+  const cleanName =
+    useMemo(
+      () =>
+        cleanPersonName(
+          fullName
+        ),
+      [fullName]
+    );
+
+  const sanitizedEmail =
+    useMemo(
+      () => cleanEmail(email),
+      [email]
+    );
+
+  const nameError =
+    useMemo(() => {
+      if (!cleanName) {
+        return "Full name is required.";
+      }
+
+      if (
+        !isValidPersonName(
+          cleanName
+        )
+      ) {
+        return "Enter a valid name using letters only.";
+      }
+
+      return null;
+    }, [cleanName]);
+
+  const emailError =
+    useMemo(
+      () =>
+        validateAlumniEmail(
+          sanitizedEmail
+        ),
+      [sanitizedEmail]
+    );
+
+  const graduationYearError =
+    useMemo(() => {
+      if (!graduationYear) {
+        return "Graduation year is required.";
+      }
+
+      if (
+        graduationYear.length !==
+        4
+      ) {
+        return "Enter a 4-digit graduation year.";
+      }
+
+      const year =
+        Number(
+          graduationYear
+        );
+
+      if (
+        !Number.isInteger(
+          year
+        ) ||
+        year < 1990 ||
+        year > currentYear
+      ) {
+        return `Enter a graduation year between 1990 and ${currentYear}.`;
+      }
+
+      return null;
+    }, [
+      graduationYear,
+      currentYear,
+    ]);
+
+  const passwordError =
+    useMemo(
+      () =>
+        validatePassword(
+          password
+        ),
+      [password]
+    );
+
+  const confirmPasswordError =
+    useMemo(() => {
+      if (!confirmPassword) {
+        return "Please re-enter your password.";
+      }
+
+      if (
+        password !==
+        confirmPassword
+      ) {
+        return "Passwords do not match.";
+      }
+
+      return null;
+    }, [
+      password,
+      confirmPassword,
+    ]);
 
   const formIsValid =
-    fullName.trim().length > 0 &&
-    isAlumniEmail(email) &&
-    programme.length > 0 &&
-    campus.length > 0 &&
-    graduationYearValid &&
-    passwordIsStrong &&
-    passwordsMatch;
+    !nameError &&
+    !emailError &&
+    Boolean(programme) &&
+    Boolean(campus) &&
+    !graduationYearError &&
+    !passwordError &&
+    !confirmPasswordError;
+
+  function showError(
+    value: string,
+    error: string | null
+  ) {
+    return Boolean(
+      attemptedSubmit ||
+        value.length > 0
+    ) && Boolean(error);
+  }
 
   async function handleSignup() {
-    if (!formIsValid) {
-      Alert.alert(
-        "Check your details",
-        "Please complete all required fields correctly."
+    setAttemptedSubmit(true);
+
+    const finalName =
+      cleanPersonName(
+        fullName
       );
 
+    const finalEmail =
+      cleanEmail(email);
+
+    const studentNumber =
+      getStudentNumber(
+        finalEmail
+      );
+
+    if (
+      !isValidPersonName(
+        finalName
+      )
+    ) {
+      Alert.alert(
+        "Invalid name",
+        "Enter your real full name using letters only."
+      );
+
+      return;
+    }
+
+    const finalEmailError =
+      validateAlumniEmail(
+        finalEmail
+      );
+
+    if (finalEmailError) {
+      Alert.alert(
+        "Invalid email",
+        finalEmailError
+      );
+
+      return;
+    }
+
+    if (!studentNumber) {
+      Alert.alert(
+        "Invalid student number",
+        "Your Richfield email must contain a valid 9-digit student number starting with 40."
+      );
+
+      return;
+    }
+
+    if (!programme) {
+      Alert.alert(
+        "Programme required",
+        "Select the programme you completed at Richfield."
+      );
+
+      return;
+    }
+
+    if (!campus) {
+      Alert.alert(
+        "Campus required",
+        "Select your Richfield campus."
+      );
+
+      return;
+    }
+
+    if (
+      graduationYearError
+    ) {
+      Alert.alert(
+        "Invalid graduation year",
+        graduationYearError
+      );
+
+      return;
+    }
+
+    const finalPasswordError =
+      validatePassword(
+        password
+      );
+
+    if (
+      finalPasswordError
+    ) {
+      Alert.alert(
+        "Weak password",
+        finalPasswordError
+      );
+
+      return;
+    }
+
+    if (
+      password !==
+      confirmPassword
+    ) {
+      Alert.alert(
+        "Passwords do not match",
+        "Re-enter the same password."
+      );
+
+      return;
+    }
+
+    if (loading) {
       return;
     }
 
     try {
       setLoading(true);
 
-      const cleanEmail = email
-        .trim()
-        .toLowerCase();
+      /*
+        Sanitise again immediately
+        before sending data to Supabase.
 
-      const studentNumber =
-        getStudentNumber(cleanEmail);
+        Client-side validation improves
+        UX. The database must still
+        enforce important security rules.
+      */
 
       const {
         data,
         error,
       } =
-        await supabase.auth.signUp({
-          email: cleanEmail,
-          password,
+        await supabase.auth.signUp(
+          {
+            email: finalEmail,
+            password,
 
-          options: {
-            data: {
-              full_name:
-                fullName.trim(),
+            options: {
+              data: {
+                full_name:
+                  finalName,
 
-              signup_role:
-                "alumni",
+                signup_role:
+                  "alumni",
 
-              student_number:
-                studentNumber,
+                student_number:
+                  studentNumber,
 
-              programme,
+                programme:
+                  cleanSingleLine(
+                    programme
+                  ),
 
-              campus,
+                campus:
+                  cleanSingleLine(
+                    campus
+                  ),
 
-              graduation_year:
-                Number(
-                  graduationYear
-                ),
+                graduation_year:
+                  Number(
+                    graduationYear
+                  ),
+              },
             },
-          },
-        });
+          }
+        );
 
       if (error) {
         throw error;
@@ -214,10 +593,11 @@ export default function AlumniSignupScreen() {
 
       Alert.alert(
         "Registration submitted",
-        "Your Alumni account has been created and will be verified before Alumni access is activated.",
+        "Your Alumni account has been created. Your Alumni status must be verified before full Alumni access is activated.",
         [
           {
             text: "Continue",
+
             onPress: () =>
               router.replace(
                 "/login"
@@ -225,11 +605,39 @@ export default function AlumniSignupScreen() {
           },
         ]
       );
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
+      console.log(
+        "Alumni signup:",
+        error
+      );
+
+      let message =
+        error?.message ||
+        "Something went wrong.";
+
+      const lower =
+        message.toLowerCase();
+
+      if (
+        lower.includes(
+          "already registered"
+        ) ||
+        lower.includes(
+          "already been registered"
+        ) ||
+        lower.includes(
+          "user already"
+        )
+      ) {
+        message =
+          "An account already exists for this Richfield email.";
+      }
+
       Alert.alert(
         "Signup failed",
-        error?.message ||
-          "Something went wrong."
+        message
       );
     } finally {
       setLoading(false);
@@ -243,10 +651,15 @@ export default function AlumniSignupScreen() {
         styles.container
       }
       keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={
+        false
+      }
     >
       <Pressable
         style={styles.backTop}
-        onPress={() => router.back()}
+        onPress={() =>
+          router.back()
+        }
       >
         <Ionicons
           name="arrow-back"
@@ -267,7 +680,9 @@ export default function AlumniSignupScreen() {
         Alumni signup
       </Text>
 
-      <Text style={styles.subtitle}>
+      <Text
+        style={styles.subtitle}
+      >
         Rejoin the Richfield community
         and continue building your
         professional network.
@@ -279,10 +694,45 @@ export default function AlumniSignupScreen() {
 
       <TextInput
         value={fullName}
-        onChangeText={setFullName}
+        onChangeText={text =>
+          setFullName(
+            cleanPersonName(
+              text
+            )
+          )
+        }
+        onBlur={() =>
+          setFullName(
+            cleanPersonName(
+              fullName
+            )
+          )
+        }
         placeholder="Enter your full name"
-        style={styles.input}
+        placeholderTextColor="#999"
+        autoCapitalize="words"
+        autoCorrect={false}
+        maxLength={100}
+        style={[
+          styles.input,
+
+          showError(
+            fullName,
+            nameError
+          )
+            ? styles.errorInput
+            : null,
+        ]}
       />
+
+      {showError(
+        fullName,
+        nameError
+      ) ? (
+        <ValidationError
+          text={nameError!}
+        />
+      ) : null}
 
       <Text style={styles.label}>
         Richfield email *
@@ -290,29 +740,71 @@ export default function AlumniSignupScreen() {
 
       <TextInput
         value={email}
-        onChangeText={setEmail}
-        placeholder="123456789@my.richfield.ac.za"
+        onChangeText={text =>
+          setEmail(
+            cleanEmail(text)
+          )
+        }
+        onBlur={() =>
+          setEmail(
+            cleanEmail(email)
+          )
+        }
+        placeholder="401234567@my.richfield.ac.za"
+        placeholderTextColor="#999"
         keyboardType="email-address"
         autoCapitalize="none"
         autoCorrect={false}
-        style={styles.input}
+        maxLength={254}
+        style={[
+          styles.input,
+
+          showError(
+            email,
+            emailError
+          )
+            ? styles.errorInput
+            : null,
+        ]}
       />
 
-      <Text style={styles.helper}>
-        Use the Richfield email linked
-        to your student record.
-      </Text>
+      {showError(
+        email,
+        emailError
+      ) ? (
+        <ValidationError
+          text={emailError!}
+        />
+      ) : (
+        <Text
+          style={styles.helper}
+        >
+          Use the Richfield email linked
+          to your student record. The
+          student number must contain 9
+          digits and start with 40.
+        </Text>
+      )}
 
       <Text style={styles.label}>
         Programme *
       </Text>
 
       <Pressable
-        style={styles.select}
+        style={[
+          styles.select,
+
+          attemptedSubmit &&
+          !programme
+            ? styles.errorInput
+            : null,
+        ]}
         onPress={() => {
           setProgrammeOpen(
-            !programmeOpen
+            current =>
+              !current
           );
+
           setCampusOpen(false);
         }}
       >
@@ -328,42 +820,92 @@ export default function AlumniSignupScreen() {
         </Text>
 
         <Ionicons
-          name="chevron-down"
+          name={
+            programmeOpen
+              ? "chevron-up"
+              : "chevron-down"
+          }
           size={18}
           color={PRIMARY}
         />
       </Pressable>
 
-      {programmeOpen && (
-        <View style={styles.dropdown}>
-          {programmes.map(item => (
-            <Pressable
-              key={item}
-              style={
-                styles.dropdownItem
-              }
-              onPress={() => {
-                setProgramme(item);
-                setProgrammeOpen(false);
-              }}
-            >
-              <Text>
-                {item}
-              </Text>
-            </Pressable>
-          ))}
+      {programmeOpen ? (
+        <View
+          style={
+            styles.dropdown
+          }
+        >
+          {programmes.map(
+            item => (
+              <Pressable
+                key={item}
+                style={
+                  styles.dropdownItem
+                }
+                onPress={() => {
+                  setProgramme(
+                    item
+                  );
+
+                  setProgrammeOpen(
+                    false
+                  );
+                }}
+              >
+                <Text
+                  style={
+                    styles.dropdownText
+                  }
+                >
+                  {item}
+                </Text>
+
+                {programme ===
+                item ? (
+                  <Ionicons
+                    name="checkmark"
+                    size={18}
+                    color={
+                      PRIMARY
+                    }
+                  />
+                ) : null}
+              </Pressable>
+            )
+          )}
         </View>
-      )}
+      ) : null}
+
+      {attemptedSubmit &&
+      !programme ? (
+        <ValidationError
+          text="Select your Richfield programme."
+        />
+      ) : null}
 
       <Text style={styles.label}>
         Campus *
       </Text>
 
       <Pressable
-        style={styles.select}
+        style={[
+          styles.select,
+
+          attemptedSubmit &&
+          !campus
+            ? styles.errorInput
+            : null,
+        ]}
         onPress={() => {
-          setCampusOpen(!campusOpen);
-          setProgrammeOpen(false);
+          setCampusOpen(
+            current =>
+              !current
+          );
+
+          setProgrammeOpen(
+            false
+          );
         }}
       >
         <Text
@@ -378,32 +920,67 @@ export default function AlumniSignupScreen() {
         </Text>
 
         <Ionicons
-          name="chevron-down"
+          name={
+            campusOpen
+              ? "chevron-up"
+              : "chevron-down"
+          }
           size={18}
           color={PRIMARY}
         />
       </Pressable>
 
-      {campusOpen && (
-        <View style={styles.dropdown}>
-          {campuses.map(item => (
-            <Pressable
-              key={item}
-              style={
-                styles.dropdownItem
-              }
-              onPress={() => {
-                setCampus(item);
-                setCampusOpen(false);
-              }}
-            >
-              <Text>
-                {item}
-              </Text>
-            </Pressable>
-          ))}
+      {campusOpen ? (
+        <View
+          style={
+            styles.dropdown
+          }
+        >
+          {campuses.map(
+            item => (
+              <Pressable
+                key={item}
+                style={
+                  styles.dropdownItem
+                }
+                onPress={() => {
+                  setCampus(item);
+
+                  setCampusOpen(
+                    false
+                  );
+                }}
+              >
+                <Text
+                  style={
+                    styles.dropdownText
+                  }
+                >
+                  {item}
+                </Text>
+
+                {campus ===
+                item ? (
+                  <Ionicons
+                    name="checkmark"
+                    size={18}
+                    color={
+                      PRIMARY
+                    }
+                  />
+                ) : null}
+              </Pressable>
+            )
+          )}
         </View>
-      )}
+      ) : null}
+
+      {attemptedSubmit &&
+      !campus ? (
+        <ValidationError
+          text="Select your Richfield campus."
+        />
+      ) : null}
 
       <Text style={styles.label}>
         Graduation year *
@@ -413,27 +990,34 @@ export default function AlumniSignupScreen() {
         value={graduationYear}
         onChangeText={text =>
           setGraduationYear(
-            text
-              .replace(
-                /[^0-9]/g,
-                ""
-              )
-              .slice(0, 4)
+            cleanYear(text)
           )
         }
-        placeholder="2025"
-        keyboardType="numeric"
+        placeholder={`${currentYear}`}
+        placeholderTextColor="#999"
+        keyboardType="number-pad"
         maxLength={4}
-        style={styles.input}
+        style={[
+          styles.input,
+
+          showError(
+            graduationYear,
+            graduationYearError
+          )
+            ? styles.errorInput
+            : null,
+        ]}
       />
 
-      {graduationYear.length ===
-        4 &&
-      !graduationYearValid ? (
-        <Text style={styles.error}>
-          Enter a valid graduation
-          year.
-        </Text>
+      {showError(
+        graduationYear,
+        graduationYearError
+      ) ? (
+        <ValidationError
+          text={
+            graduationYearError!
+          }
+        />
       ) : null}
 
       <Text style={styles.label}>
@@ -442,44 +1026,88 @@ export default function AlumniSignupScreen() {
 
       <TextInput
         value={password}
-        onChangeText={setPassword}
+        onChangeText={
+          setPassword
+        }
         placeholder="Create a strong password"
+        placeholderTextColor="#999"
         secureTextEntry
-        style={styles.input}
+        autoCapitalize="none"
+        autoCorrect={false}
+        maxLength={128}
+        style={[
+          styles.input,
+
+          showError(
+            password,
+            passwordError
+          )
+            ? styles.errorInput
+            : null,
+        ]}
       />
 
-      <Text style={styles.passwordHint}>
-        At least 8 characters with
-        uppercase, lowercase, number and
-        special character.
-      </Text>
+      {showError(
+        password,
+        passwordError
+      ) ? (
+        <ValidationError
+          text={passwordError!}
+        />
+      ) : (
+        <Text
+          style={
+            styles.passwordHint
+          }
+        >
+          At least 8 characters with
+          uppercase, lowercase, a number
+          and a special character.
+        </Text>
+      )}
+
+      <PasswordRules
+        password={password}
+      />
 
       <Text style={styles.label}>
         Re-enter password *
       </Text>
 
       <TextInput
-        value={confirmPassword}
+        value={
+          confirmPassword
+        }
         onChangeText={
           setConfirmPassword
         }
         placeholder="Re-enter password"
+        placeholderTextColor="#999"
         secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+        maxLength={128}
         style={[
           styles.input,
 
-          confirmPassword &&
-          !passwordsMatch
+          showError(
+            confirmPassword,
+            confirmPasswordError
+          )
             ? styles.errorInput
             : null,
         ]}
       />
 
-      {confirmPassword &&
-      !passwordsMatch ? (
-        <Text style={styles.error}>
-          Passwords do not match.
-        </Text>
+      {showError(
+        confirmPassword,
+        confirmPasswordError
+      ) ? (
+        <ValidationError
+          text={
+            confirmPasswordError!
+          }
+        />
       ) : null}
 
       <View style={styles.notice}>
@@ -489,10 +1117,17 @@ export default function AlumniSignupScreen() {
           color={PRIMARY}
         />
 
-        <Text style={styles.noticeText}>
-          Alumni accounts may require
-          verification before access is
-          activated.
+        <Text
+          style={
+            styles.noticeText
+          }
+        >
+          Alumni accounts require
+          verification before Alumni
+          access is activated. Your
+          Richfield details must match
+          your Alumni verification
+          document.
         </Text>
       </View>
 
@@ -508,179 +1143,435 @@ export default function AlumniSignupScreen() {
           !formIsValid ||
           loading
         }
-        onPress={handleSignup}
+        onPress={
+          handleSignup
+        }
       >
-        <Text style={styles.buttonText}>
-          {loading
-            ? "Submitting..."
-            : "Create alumni account"}
-        </Text>
+        {loading ? (
+          <Text
+            style={
+              styles.buttonText
+            }
+          >
+            Submitting...
+          </Text>
+        ) : (
+          <>
+            <Ionicons
+              name="person-add-outline"
+              size={19}
+              color="#fff"
+            />
+
+            <Text
+              style={
+                styles.buttonText
+              }
+            >
+              Create alumni account
+            </Text>
+          </>
+        )}
       </Pressable>
+
+      <View
+        style={
+          styles.securityFooter
+        }
+      >
+        <Ionicons
+          name="lock-closed-outline"
+          size={13}
+          color="#888"
+        />
+
+        <Text
+          style={
+            styles.securityFooterText
+          }
+        >
+          Your account information is
+          protected and used for
+          Richfield community access.
+        </Text>
+      </View>
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
+function ValidationError({
+  text,
+}: {
+  text: string;
+}) {
+  return (
+    <View
+      style={
+        styles.errorRow
+      }
+    >
+      <Ionicons
+        name="alert-circle-outline"
+        size={14}
+        color="#C62828"
+      />
 
-  container: {
-    padding: 24,
-    paddingTop: 45,
-    paddingBottom: 50,
-  },
+      <Text
+        style={styles.error}
+      >
+        {text}
+      </Text>
+    </View>
+  );
+}
 
-  backTop: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#F5F5F7",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 22,
-  },
+function PasswordRules({
+  password,
+}: {
+  password: string;
+}) {
+  if (!password) {
+    return null;
+  }
 
-  icon: {
-    width: 55,
-    height: 55,
-    borderRadius: 16,
-    backgroundColor: PRIMARY,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 17,
-  },
+  return (
+    <View
+      style={
+        styles.passwordRules
+      }
+    >
+      <PasswordRule
+        valid={
+          password.length >= 8
+        }
+        text="8+ characters"
+      />
 
-  title: {
-    fontSize: 30,
-    fontWeight: "800",
-    color: "#111",
-  },
+      <PasswordRule
+        valid={
+          /[A-Z]/.test(
+            password
+          )
+        }
+        text="Uppercase"
+      />
 
-  subtitle: {
-    color: "#666",
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 7,
-    marginBottom: 28,
-  },
+      <PasswordRule
+        valid={
+          /[a-z]/.test(
+            password
+          )
+        }
+        text="Lowercase"
+      />
 
-  label: {
-    color: "#222",
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
+      <PasswordRule
+        valid={
+          /[0-9]/.test(
+            password
+          )
+        }
+        text="Number"
+      />
 
-  input: {
-    height: 52,
-    borderWidth: 1,
-    borderColor: "#DDD",
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    color: "#111",
-    marginBottom: 17,
-  },
+      <PasswordRule
+        valid={
+          /[^A-Za-z0-9]/.test(
+            password
+          )
+        }
+        text="Special character"
+      />
+    </View>
+  );
+}
 
-  errorInput: {
-    borderColor: "#D00000",
-  },
+function PasswordRule({
+  valid,
+  text,
+}: {
+  valid: boolean;
+  text: string;
+}) {
+  return (
+    <View
+      style={
+        styles.passwordRule
+      }
+    >
+      <Ionicons
+        name={
+          valid
+            ? "checkmark-circle"
+            : "ellipse-outline"
+        }
+        size={14}
+        color={
+          valid
+            ? "#18864B"
+            : "#AAA"
+        }
+      />
 
-  helper: {
-    color: "#888",
-    fontSize: 12,
-    marginTop: -10,
-    marginBottom: 18,
-  },
+      <Text
+        style={[
+          styles.passwordRuleText,
 
-  select: {
-    height: 52,
-    borderWidth: 1,
-    borderColor: "#DDD",
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent:
-      "space-between",
-    marginBottom: 17,
-  },
+          valid &&
+            styles.passwordRuleValid,
+        ]}
+      >
+        {text}
+      </Text>
+    </View>
+  );
+}
 
-  selectText: {
-    color: "#111",
-    fontSize: 15,
-  },
+const styles =
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
+    },
 
-  placeholder: {
-    color: "#999",
-    fontSize: 15,
-  },
+    container: {
+      padding: 24,
+      paddingTop: 45,
+      paddingBottom: 55,
+    },
 
-  dropdown: {
-    borderWidth: 1,
-    borderColor: "#DDD",
-    borderRadius: 10,
-    overflow: "hidden",
-    marginTop: -10,
-    marginBottom: 17,
-  },
+    backTop: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor:
+        "#F5F5F7",
+      alignItems: "center",
+      justifyContent:
+        "center",
+      marginBottom: 22,
+    },
 
-  dropdownItem: {
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEE",
-  },
+    icon: {
+      width: 55,
+      height: 55,
+      borderRadius: 16,
+      backgroundColor:
+        PRIMARY,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      marginBottom: 17,
+    },
 
-  passwordHint: {
-    color: "#888",
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: -10,
-    marginBottom: 18,
-  },
+    title: {
+      fontSize: 30,
+      fontWeight: "800",
+      color: "#111",
+    },
 
-  error: {
-    color: "#D00000",
-    fontSize: 12,
-    marginTop: -10,
-    marginBottom: 17,
-  },
+    subtitle: {
+      color: "#666",
+      fontSize: 15,
+      lineHeight: 22,
+      marginTop: 7,
+      marginBottom: 28,
+    },
 
-  notice: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F4F4FF",
-    borderRadius: 11,
-    padding: 13,
-    marginTop: 3,
-  },
+    label: {
+      color: "#222",
+      fontSize: 14,
+      fontWeight: "700",
+      marginBottom: 8,
+    },
 
-  noticeText: {
-    flex: 1,
-    color: "#555",
-    fontSize: 12,
-    lineHeight: 18,
-    marginLeft: 9,
-  },
+    input: {
+      height: 52,
+      borderWidth: 1,
+      borderColor: "#DDD",
+      borderRadius: 10,
+      paddingHorizontal: 16,
+      fontSize: 15,
+      color: "#111",
+      marginBottom: 17,
+      backgroundColor: "#fff",
+    },
 
-  button: {
-    height: 54,
-    borderRadius: 11,
-    backgroundColor: PRIMARY,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 20,
-  },
+    errorInput: {
+      borderColor: "#C62828",
+      backgroundColor:
+        "#FFF9F9",
+    },
 
-  disabled: {
-    opacity: 0.45,
-  },
+    helper: {
+      color: "#888",
+      fontSize: 12,
+      lineHeight: 17,
+      marginTop: -10,
+      marginBottom: 18,
+    },
 
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "800",
-  },
-});
+    select: {
+      height: 52,
+      borderWidth: 1,
+      borderColor: "#DDD",
+      borderRadius: 10,
+      paddingHorizontal: 16,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+      marginBottom: 17,
+      backgroundColor: "#fff",
+    },
+
+    selectText: {
+      color: "#111",
+      fontSize: 15,
+    },
+
+    placeholder: {
+      color: "#999",
+      fontSize: 15,
+    },
+
+    dropdown: {
+      borderWidth: 1,
+      borderColor: "#DDD",
+      borderRadius: 10,
+      overflow: "hidden",
+      marginTop: -10,
+      marginBottom: 17,
+      backgroundColor: "#fff",
+    },
+
+    dropdownItem: {
+      minHeight: 49,
+      paddingHorizontal: 15,
+      borderBottomWidth: 1,
+      borderBottomColor:
+        "#EEE",
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+    },
+
+    dropdownText: {
+      fontSize: 14,
+      color: "#222",
+    },
+
+    passwordHint: {
+      color: "#888",
+      fontSize: 12,
+      lineHeight: 17,
+      marginTop: -10,
+      marginBottom: 10,
+    },
+
+    passwordRules: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+      marginTop: -5,
+      marginBottom: 18,
+    },
+
+    passwordRule: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 5,
+      borderRadius: 20,
+      backgroundColor:
+        "#F5F5F7",
+    },
+
+    passwordRuleText: {
+      fontSize: 9,
+      color: "#888",
+    },
+
+    passwordRuleValid: {
+      color: "#18864B",
+      fontWeight: "700",
+    },
+
+    errorRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 5,
+      marginTop: -10,
+      marginBottom: 17,
+    },
+
+    error: {
+      flex: 1,
+      color: "#C62828",
+      fontSize: 11,
+      lineHeight: 16,
+    },
+
+    notice: {
+      flexDirection: "row",
+      alignItems:
+        "flex-start",
+      backgroundColor:
+        "#F4F4FF",
+      borderRadius: 11,
+      padding: 13,
+      marginTop: 3,
+    },
+
+    noticeText: {
+      flex: 1,
+      color: "#555",
+      fontSize: 12,
+      lineHeight: 18,
+      marginLeft: 9,
+    },
+
+    button: {
+      height: 54,
+      borderRadius: 11,
+      backgroundColor:
+        PRIMARY,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "center",
+      gap: 8,
+      marginTop: 20,
+    },
+
+    disabled: {
+      opacity: 0.45,
+    },
+
+    buttonText: {
+      color: "#FFFFFF",
+      fontSize: 16,
+      fontWeight: "800",
+    },
+
+    securityFooter: {
+      marginTop: 17,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "center",
+      gap: 6,
+      paddingHorizontal: 12,
+    },
+
+    securityFooterText: {
+      flexShrink: 1,
+      textAlign: "center",
+      fontSize: 10,
+      lineHeight: 15,
+      color: "#888",
+    },
+  });
