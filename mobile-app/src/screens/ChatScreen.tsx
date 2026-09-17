@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -21,15 +22,22 @@ import {
   View,
 } from "react-native";
 
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
+
+import {
+  Ionicons,
+} from "@expo/vector-icons";
 
 import {
   useFocusEffect,
   useRouter,
 } from "expo-router";
 
-import { supabase } from "../lib/supabase";
+import {
+  supabase,
+} from "../lib/supabase";
 
 import {
   archiveConversation,
@@ -202,7 +210,20 @@ export default function ChatScreen() {
   const router =
     useRouter();
 
-  const [search, setSearch] =
+  const mountedRef =
+    useRef(true);
+
+  const realtimeIdRef =
+    useRef(
+      `chat-screen-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`
+    );
+
+  const [
+    search,
+    setSearch,
+  ] =
     useState("");
 
   const [
@@ -213,12 +234,18 @@ export default function ChatScreen() {
       "active"
     );
 
-  const [chats, setChats] =
+  const [
+    chats,
+    setChats,
+  ] =
     useState<Conversation[]>(
       []
     );
 
-  const [loading, setLoading] =
+  const [
+    loading,
+    setLoading,
+  ] =
     useState(true);
 
   const [
@@ -253,29 +280,45 @@ export default function ChatScreen() {
   ] =
     useState(false);
 
+  /*
+   * ========================================================
+   * LOAD CHATS
+   * ========================================================
+   */
+
   const fetchChats =
     useCallback(
       async (
         showLoading = false
       ) => {
         try {
-          if (showLoading) {
+          if (
+            showLoading &&
+            mountedRef.current
+          ) {
             setLoading(true);
           }
 
           const data =
             await loadConversations();
 
-          setChats(
-            data || []
-          );
+          if (
+            mountedRef.current
+          ) {
+            setChats(
+              data || []
+            );
+          }
         } catch (error) {
           console.log(
             "Chat load error:",
             error
           );
 
-          if (showLoading) {
+          if (
+            showLoading &&
+            mountedRef.current
+          ) {
             Alert.alert(
               "Messages",
               error instanceof Error
@@ -284,13 +327,22 @@ export default function ChatScreen() {
             );
           }
         } finally {
-          if (showLoading) {
+          if (
+            showLoading &&
+            mountedRef.current
+          ) {
             setLoading(false);
           }
         }
       },
       []
     );
+
+  /*
+   * ========================================================
+   * LOAD REQUEST COUNT
+   * ========================================================
+   */
 
   const fetchRequestCount =
     useCallback(
@@ -299,10 +351,14 @@ export default function ChatScreen() {
           const requests =
             await loadRequests();
 
-          setRequestCount(
-            requests?.length ||
-              0
-          );
+          if (
+            mountedRef.current
+          ) {
+            setRequestCount(
+              requests?.length ||
+                0
+            );
+          }
         } catch (error) {
           console.log(
             "Request count error:",
@@ -313,18 +369,36 @@ export default function ChatScreen() {
       []
     );
 
+  /*
+   * ========================================================
+   * REFRESH
+   * ========================================================
+   */
+
   const refreshEverything =
     useCallback(
       async () => {
         try {
-          setRefreshing(true);
+          if (
+            mountedRef.current
+          ) {
+            setRefreshing(
+              true
+            );
+          }
 
           await Promise.all([
             fetchChats(false),
             fetchRequestCount(),
           ]);
         } finally {
-          setRefreshing(false);
+          if (
+            mountedRef.current
+          ) {
+            setRefreshing(
+              false
+            );
+          }
         }
       },
       [
@@ -332,6 +406,12 @@ export default function ChatScreen() {
         fetchRequestCount,
       ]
     );
+
+  /*
+   * ========================================================
+   * SCREEN FOCUS
+   * ========================================================
+   */
 
   useFocusEffect(
     useCallback(() => {
@@ -345,12 +425,62 @@ export default function ChatScreen() {
     ])
   );
 
+  /*
+   * ========================================================
+   * REALTIME
+   *
+   * IMPORTANT:
+   * One unique channel.
+   * Add every .on() BEFORE subscribe().
+   * ========================================================
+   */
+
   useEffect(() => {
-    const messagesChannel =
+    mountedRef.current =
+      true;
+
+    const channelName =
+      realtimeIdRef.current;
+
+    /*
+     * Remove any stale local
+     * channel with this exact
+     * name before creating it.
+     */
+
+    const staleChannel =
+      supabase
+        .getChannels()
+        .find(
+          channel =>
+            channel.topic ===
+            `realtime:${channelName}`
+        );
+
+    if (staleChannel) {
+      supabase.removeChannel(
+        staleChannel
+      );
+    }
+
+    /*
+     * IMPORTANT:
+     *
+     * We create ONE channel.
+     * All callbacks are attached
+     * before subscribe().
+     */
+
+    const channel =
       supabase
         .channel(
-          "chat-screen-messages"
+          channelName
         )
+
+        /*
+         * Messages
+         */
+
         .on(
           "postgres_changes",
           {
@@ -359,16 +489,18 @@ export default function ChatScreen() {
             table: "messages",
           },
           () => {
-            fetchChats(false);
+            if (
+              mountedRef.current
+            ) {
+              fetchChats(false);
+            }
           }
         )
-        .subscribe();
 
-    const requestsChannel =
-      supabase
-        .channel(
-          "chat-screen-requests"
-        )
+        /*
+         * Message requests
+         */
+
         .on(
           "postgres_changes",
           {
@@ -378,16 +510,19 @@ export default function ChatScreen() {
               "message_requests",
           },
           () => {
-            fetchRequestCount();
+            if (
+              mountedRef.current
+            ) {
+              fetchRequestCount();
+              fetchChats(false);
+            }
           }
         )
-        .subscribe();
 
-    const membersChannel =
-      supabase
-        .channel(
-          "chat-screen-members"
-        )
+        /*
+         * Conversation members
+         */
+
         .on(
           "postgres_changes",
           {
@@ -397,16 +532,18 @@ export default function ChatScreen() {
               "conversation_members",
           },
           () => {
-            fetchChats(false);
+            if (
+              mountedRef.current
+            ) {
+              fetchChats(false);
+            }
           }
         )
-        .subscribe();
 
-    const settingsChannel =
-      supabase
-        .channel(
-          "chat-screen-settings"
-        )
+        /*
+         * Archive / hidden settings
+         */
+
         .on(
           "postgres_changes",
           {
@@ -416,16 +553,18 @@ export default function ChatScreen() {
               "conversation_user_settings",
           },
           () => {
-            fetchChats(false);
+            if (
+              mountedRef.current
+            ) {
+              fetchChats(false);
+            }
           }
         )
-        .subscribe();
 
-    const blockChannel =
-      supabase
-        .channel(
-          "chat-screen-blocks"
-        )
+        /*
+         * Blocks
+         */
+
         .on(
           "postgres_changes",
           {
@@ -435,36 +574,52 @@ export default function ChatScreen() {
               "blocked_users",
           },
           () => {
-            fetchChats(false);
+            if (
+              mountedRef.current
+            ) {
+              fetchChats(false);
+            }
           }
-        )
-        .subscribe();
+        );
+
+    /*
+     * Subscribe only after
+     * every callback exists.
+     */
+
+    channel.subscribe(
+      (
+        status
+      ) => {
+        if (
+          status ===
+          "CHANNEL_ERROR"
+        ) {
+          console.log(
+            "Chat realtime channel error"
+          );
+        }
+      }
+    );
 
     return () => {
-      supabase.removeChannel(
-        messagesChannel
-      );
+      mountedRef.current =
+        false;
 
       supabase.removeChannel(
-        requestsChannel
-      );
-
-      supabase.removeChannel(
-        membersChannel
-      );
-
-      supabase.removeChannel(
-        settingsChannel
-      );
-
-      supabase.removeChannel(
-        blockChannel
+        channel
       );
     };
   }, [
     fetchChats,
     fetchRequestCount,
   ]);
+
+  /*
+   * ========================================================
+   * COUNTS
+   * ========================================================
+   */
 
   const activeCount =
     useMemo(
@@ -486,6 +641,12 @@ export default function ChatScreen() {
       [chats]
     );
 
+  /*
+   * ========================================================
+   * SEARCH / FILTER
+   * ========================================================
+   */
+
   const filteredChats =
     useMemo(() => {
       const value =
@@ -501,7 +662,9 @@ export default function ChatScreen() {
               ? chat.archived
               : !chat.archived;
 
-          if (!correctFolder) {
+          if (
+            !correctFolder
+          ) {
             return false;
           }
 
@@ -530,11 +693,15 @@ export default function ChatScreen() {
             "";
 
           return (
-            name.includes(value) ||
+            name.includes(
+              value
+            ) ||
             username.includes(
               value
             ) ||
-            role.includes(value) ||
+            role.includes(
+              value
+            ) ||
             message.includes(
               value
             )
@@ -547,11 +714,35 @@ export default function ChatScreen() {
       selectedFilter,
     ]);
 
+  /*
+   * ========================================================
+   * RICHFIELD AI ASSISTANT
+   * ========================================================
+   */
+
+  function openAssistant() {
+
+    router.push(
+      "/ai-assistant"
+    );
+  }
+
+  /*
+   * ========================================================
+   * OPEN CONVERSATION
+   * ========================================================
+   */
+
   function openConversation(
     chat: Conversation
   ) {
-    setOptionsVisible(false);
-    setSelectedChat(null);
+    setOptionsVisible(
+      false
+    );
+
+    setSelectedChat(
+      null
+    );
 
     router.push({
       pathname:
@@ -575,10 +766,12 @@ export default function ChatScreen() {
           "Richfield Member",
 
         username:
-          chat.username || "",
+          chat.username ||
+          "",
 
         image:
-          chat.avatar_url || "",
+          chat.avatar_url ||
+          "",
 
         role:
           chat.role ||
@@ -602,27 +795,57 @@ export default function ChatScreen() {
     });
   }
 
+  /*
+   * ========================================================
+   * REQUESTS
+   * ========================================================
+   */
+
   function openRequests() {
     router.push(
       "/requests"
     );
   }
 
+  /*
+   * ========================================================
+   * OPTIONS
+   * ========================================================
+   */
+
   function openOptions(
     chat: Conversation
   ) {
-    setSelectedChat(chat);
-    setOptionsVisible(true);
+    setSelectedChat(
+      chat
+    );
+
+    setOptionsVisible(
+      true
+    );
   }
 
   function closeOptions() {
-    if (processingOption) {
+    if (
+      processingOption
+    ) {
       return;
     }
 
-    setOptionsVisible(false);
-    setSelectedChat(null);
+    setOptionsVisible(
+      false
+    );
+
+    setSelectedChat(
+      null
+    );
   }
+
+  /*
+   * ========================================================
+   * ARCHIVE
+   * ========================================================
+   */
 
   async function handleArchive() {
     if (
@@ -633,7 +856,9 @@ export default function ChatScreen() {
     }
 
     try {
-      setProcessingOption(true);
+      setProcessingOption(
+        true
+      );
 
       if (
         selectedChat.archived
@@ -668,8 +893,13 @@ export default function ChatScreen() {
           )
       );
 
-      setOptionsVisible(false);
-      setSelectedChat(null);
+      setOptionsVisible(
+        false
+      );
+
+      setSelectedChat(
+        null
+      );
     } catch (error) {
       console.log(
         "Archive error:",
@@ -683,9 +913,17 @@ export default function ChatScreen() {
           : "Unable to update this conversation."
       );
     } finally {
-      setProcessingOption(false);
+      setProcessingOption(
+        false
+      );
     }
   }
+
+  /*
+   * ========================================================
+   * DELETE FROM MY CHATS
+   * ========================================================
+   */
 
   function handleDeleteFromChats() {
     if (
@@ -709,6 +947,7 @@ export default function ChatScreen() {
           text: "Cancel",
           style: "cancel",
         },
+
         {
           text: "Delete",
           style:
@@ -764,6 +1003,12 @@ export default function ChatScreen() {
     );
   }
 
+  /*
+   * ========================================================
+   * MENTOR
+   * ========================================================
+   */
+
   async function toggleMentor() {
     if (
       !selectedChat ||
@@ -812,8 +1057,13 @@ export default function ChatScreen() {
           )
       );
 
-      setOptionsVisible(false);
-      setSelectedChat(null);
+      setOptionsVisible(
+        false
+      );
+
+      setSelectedChat(
+        null
+      );
     } catch (error) {
       console.log(
         "Mentor error:",
@@ -833,17 +1083,27 @@ export default function ChatScreen() {
     }
   }
 
+  /*
+   * ========================================================
+   * AVATAR
+   * ========================================================
+   */
+
   function renderAvatar(
     chat: Conversation
   ) {
-    if (chat.avatar_url) {
+    if (
+      chat.avatar_url
+    ) {
       return (
         <Image
           source={{
             uri:
               chat.avatar_url,
           }}
-          style={styles.avatar}
+          style={
+            styles.avatar
+          }
         />
       );
     }
@@ -868,6 +1128,12 @@ export default function ChatScreen() {
     );
   }
 
+  /*
+   * ========================================================
+   * CHAT ITEM
+   * ========================================================
+   */
+
   const renderChat = ({
     item,
   }: {
@@ -887,13 +1153,21 @@ export default function ChatScreen() {
 
     return (
       <TouchableOpacity
-        style={styles.chatItem}
-        activeOpacity={0.7}
+        style={
+          styles.chatItem
+        }
+        activeOpacity={
+          0.7
+        }
         onPress={() =>
-          openConversation(item)
+          openConversation(
+            item
+          )
         }
         onLongPress={() =>
-          openOptions(item)
+          openOptions(
+            item
+          )
         }
       >
         <View
@@ -901,7 +1175,9 @@ export default function ChatScreen() {
             styles.avatarContainer
           }
         >
-          {renderAvatar(item)}
+          {renderAvatar(
+            item
+          )}
 
           {item.online &&
             !item.blocked && (
@@ -935,7 +1211,9 @@ export default function ChatScreen() {
                   hasUnread &&
                     styles.unreadName,
                 ]}
-                numberOfLines={1}
+                numberOfLines={
+                  1
+                }
               >
                 {item.full_name ||
                   "Richfield Member"}
@@ -976,7 +1254,9 @@ export default function ChatScreen() {
             >
               <Ionicons
                 name={
-                  getRoleIcon(role)
+                  getRoleIcon(
+                    role
+                  )
                 }
                 size={11}
                 color="#555"
@@ -987,7 +1267,9 @@ export default function ChatScreen() {
                   styles.roleText
                 }
               >
-                {getRoleLabel(role)}
+                {getRoleLabel(
+                  role
+                )}
               </Text>
             </View>
 
@@ -1042,7 +1324,9 @@ export default function ChatScreen() {
                 hasUnread &&
                   styles.unreadMessage,
               ]}
-              numberOfLines={1}
+              numberOfLines={
+                1
+              }
             >
               {item.blocked
                 ? "Messaging unavailable"
@@ -1062,7 +1346,8 @@ export default function ChatScreen() {
                       styles.unreadText
                     }
                   >
-                    {unread > 99
+                    {unread >
+                    99
                       ? "99+"
                       : unread}
                   </Text>
@@ -1074,9 +1359,14 @@ export default function ChatScreen() {
               style={
                 styles.moreButton
               }
-              onPress={(event) => {
+              onPress={(
+                event
+              ) => {
                 event.stopPropagation();
-                openOptions(item);
+
+                openOptions(
+                  item
+                );
               }}
             >
               <Ionicons
@@ -1091,23 +1381,39 @@ export default function ChatScreen() {
     );
   };
 
+  /*
+   * ========================================================
+   * SCREEN
+   * ========================================================
+   */
+
   return (
     <SafeAreaView
-      style={styles.safeArea}
+      style={
+        styles.safeArea
+      }
     >
       <StatusBar
         barStyle="dark-content"
       />
 
       <View
-        style={styles.container}
+        style={
+          styles.container
+        }
       >
+        {/* HEADER */}
+
         <View
-          style={styles.header}
+          style={
+            styles.header
+          }
         >
           <View>
             <Text
-              style={styles.title}
+              style={
+                styles.title
+              }
             >
               Messages
             </Text>
@@ -1181,6 +1487,91 @@ export default function ChatScreen() {
           </View>
         </View>
 
+        {/* AI ASSISTANT */}
+
+        {selectedFilter ===
+          "active" && (
+          <TouchableOpacity
+            style={
+              styles.aiCard
+            }
+            activeOpacity={
+              0.75
+            }
+            onPress={
+              openAssistant
+            }
+          >
+            <View
+              style={
+                styles.aiAvatar
+              }
+            >
+              <Ionicons
+                name="sparkles"
+                size={24}
+                color="#FFFFFF"
+              />
+            </View>
+
+            <View
+              style={
+                styles.aiContent
+              }
+            >
+              <View
+                style={
+                  styles.aiTitleRow
+                }
+              >
+                <Text
+                  style={
+                    styles.aiTitle
+                  }
+                >
+                  Richfield Assistant
+                </Text>
+
+                <View
+                  style={
+                    styles.aiBadge
+                  }
+                >
+                  <Text
+                    style={
+                      styles.aiBadgeText
+                    }
+                  >
+                    AI
+                  </Text>
+                </View>
+              </View>
+
+              <Text
+                style={
+                  styles.aiDescription
+                }
+                numberOfLines={
+                  1
+                }
+              >
+                Ask about Richfield,
+                studies, campus life
+                and your academic
+                journey
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={PRIMARY}
+            />
+          </TouchableOpacity>
+        )}
+
+        {/* SEARCH */}
+
         <View
           style={
             styles.searchContainer
@@ -1193,7 +1584,9 @@ export default function ChatScreen() {
           />
 
           <TextInput
-            value={search}
+            value={
+              search
+            }
             onChangeText={
               setSearch
             }
@@ -1208,7 +1601,9 @@ export default function ChatScreen() {
             0 && (
             <Pressable
               onPress={() =>
-                setSearch("")
+                setSearch(
+                  ""
+                )
               }
             >
               <Ionicons
@@ -1219,6 +1614,8 @@ export default function ChatScreen() {
             </Pressable>
           )}
         </View>
+
+        {/* FILTERS */}
 
         <View
           style={
@@ -1297,10 +1694,13 @@ export default function ChatScreen() {
                   styles.activeFilterText,
               ]}
             >
-              Archived {archivedCount}
+              Archived{" "}
+              {archivedCount}
             </Text>
           </Pressable>
         </View>
+
+        {/* CHAT LIST */}
 
         {loading ? (
           <View
@@ -1309,7 +1709,9 @@ export default function ChatScreen() {
             }
           >
             <ActivityIndicator
-              color={PRIMARY}
+              color={
+                PRIMARY
+              }
             />
 
             <Text
@@ -1347,6 +1749,9 @@ export default function ChatScreen() {
                 tintColor={
                   PRIMARY
                 }
+                colors={[
+                  PRIMARY,
+                ]}
               />
             }
             contentContainerStyle={
@@ -1374,7 +1779,9 @@ export default function ChatScreen() {
                         : "chatbubbles-outline"
                     }
                     size={34}
-                    color={PRIMARY}
+                    color={
+                      PRIMARY
+                    }
                   />
                 </View>
 
@@ -1409,6 +1816,8 @@ export default function ChatScreen() {
         )}
       </View>
 
+      {/* OPTIONS MODAL */}
+
       <Modal
         visible={
           optionsVisible
@@ -1431,7 +1840,9 @@ export default function ChatScreen() {
             style={
               styles.sheet
             }
-            onPress={(event) =>
+            onPress={(
+              event
+            ) =>
               event.stopPropagation()
             }
           >
@@ -1634,7 +2045,9 @@ export default function ChatScreen() {
                         styles.deleteDescription
                       }
                     >
-                      Only removes it from your chat list
+                      Only removes it
+                      from your chat
+                      list
                     </Text>
                   </View>
                 </Pressable>
@@ -1644,7 +2057,9 @@ export default function ChatScreen() {
                     style={{
                       marginTop: 14,
                     }}
-                    color={PRIMARY}
+                    color={
+                      PRIMARY
+                    }
                   />
                 )}
               </>
@@ -1676,24 +2091,37 @@ export default function ChatScreen() {
   );
 }
 
+/*
+ * ==========================================================
+ * STYLES
+ * ==========================================================
+ */
+
 const styles =
   StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor: "#fff",
+      backgroundColor:
+        "#fff",
     },
 
     container: {
       flex: 1,
-      backgroundColor: "#fff",
+      backgroundColor:
+        "#fff",
     },
+
+    /*
+     * HEADER
+     */
 
     header: {
       paddingHorizontal: 20,
       paddingTop: 10,
-      paddingBottom: 16,
+      paddingBottom: 14,
       flexDirection: "row",
-      justifyContent: "space-between",
+      justifyContent:
+        "space-between",
       alignItems: "center",
     },
 
@@ -1718,9 +2146,11 @@ const styles =
       width: 42,
       height: 42,
       borderRadius: 21,
-      backgroundColor: "#F2F2F5",
+      backgroundColor:
+        "#F2F2F5",
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
       position: "relative",
     },
 
@@ -1732,9 +2162,11 @@ const styles =
       height: 19,
       paddingHorizontal: 4,
       borderRadius: 10,
-      backgroundColor: "#E53935",
+      backgroundColor:
+        "#E53935",
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
       borderWidth: 2,
       borderColor: "#fff",
     },
@@ -1749,16 +2181,93 @@ const styles =
       width: 42,
       height: 42,
       borderRadius: 21,
-      backgroundColor: PRIMARY,
+      backgroundColor:
+        PRIMARY,
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
     },
+
+    /*
+     * AI ASSISTANT
+     */
+
+    aiCard: {
+      marginHorizontal: 20,
+      marginBottom: 14,
+      minHeight: 78,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor:
+        "#DCDCFF",
+      backgroundColor:
+        "#F5F5FF",
+      paddingHorizontal: 13,
+      paddingVertical: 12,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    aiAvatar: {
+      width: 48,
+      height: 48,
+      borderRadius: 15,
+      backgroundColor:
+        PRIMARY,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      marginRight: 12,
+    },
+
+    aiContent: {
+      flex: 1,
+      paddingRight: 8,
+    },
+
+    aiTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+
+    aiTitle: {
+      fontSize: 14,
+      fontWeight: "800",
+      color: "#15151A",
+    },
+
+    aiBadge: {
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 5,
+      backgroundColor:
+        "#E1E1FF",
+    },
+
+    aiBadgeText: {
+      color: PRIMARY,
+      fontSize: 8,
+      fontWeight: "900",
+    },
+
+    aiDescription: {
+      marginTop: 5,
+      fontSize: 11,
+      lineHeight: 15,
+      color: "#777782",
+    },
+
+    /*
+     * SEARCH
+     */
 
     searchContainer: {
       marginHorizontal: 20,
       height: 48,
       borderRadius: 14,
-      backgroundColor: "#F3F3F6",
+      backgroundColor:
+        "#F3F3F6",
       flexDirection: "row",
       alignItems: "center",
       paddingHorizontal: 14,
@@ -1771,6 +2280,10 @@ const styles =
       color: "#111",
     },
 
+    /*
+     * FILTERS
+     */
+
     filters: {
       flexDirection: "row",
       paddingHorizontal: 20,
@@ -1782,14 +2295,16 @@ const styles =
       height: 35,
       paddingHorizontal: 13,
       borderRadius: 18,
-      backgroundColor: "#F1F1F4",
+      backgroundColor:
+        "#F1F1F4",
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
     },
 
     activeFilter: {
-      backgroundColor: PRIMARY,
+      backgroundColor:
+        PRIMARY,
     },
 
     filterText: {
@@ -1802,10 +2317,15 @@ const styles =
       color: "#fff",
     },
 
+    /*
+     * LOADING
+     */
+
     loadingContainer: {
       flex: 1,
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
     },
 
     loadingText: {
@@ -1813,6 +2333,10 @@ const styles =
       fontSize: 12,
       color: "#888",
     },
+
+    /*
+     * LIST
+     */
 
     list: {
       paddingBottom: 30,
@@ -1838,13 +2362,16 @@ const styles =
       width: 56,
       height: 56,
       borderRadius: 28,
-      backgroundColor: "#eee",
+      backgroundColor:
+        "#eee",
     },
 
     avatarFallback: {
-      backgroundColor: "#ECECFF",
+      backgroundColor:
+        "#ECECFF",
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
     },
 
     avatarInitials: {
@@ -1860,7 +2387,8 @@ const styles =
       width: 14,
       height: 14,
       borderRadius: 7,
-      backgroundColor: "#20C76B",
+      backgroundColor:
+        "#20C76B",
       borderWidth: 2,
       borderColor: "#fff",
     },
@@ -1871,7 +2399,8 @@ const styles =
 
     chatTopRow: {
       flexDirection: "row",
-      justifyContent: "space-between",
+      justifyContent:
+        "space-between",
       alignItems: "center",
     },
 
@@ -1915,7 +2444,8 @@ const styles =
       flexDirection: "row",
       gap: 3,
       alignItems: "center",
-      backgroundColor: "#F1F1F3",
+      backgroundColor:
+        "#F1F1F3",
       borderRadius: 6,
       paddingHorizontal: 7,
       paddingVertical: 3,
@@ -1928,7 +2458,8 @@ const styles =
     },
 
     mentorBadge: {
-      backgroundColor: "#FFF6DB",
+      backgroundColor:
+        "#FFF6DB",
       paddingHorizontal: 7,
       paddingVertical: 3,
       borderRadius: 6,
@@ -1944,7 +2475,8 @@ const styles =
       flexDirection: "row",
       alignItems: "center",
       gap: 3,
-      backgroundColor: "#FFF0F0",
+      backgroundColor:
+        "#FFF0F0",
       paddingHorizontal: 7,
       paddingVertical: 3,
       borderRadius: 6,
@@ -1977,9 +2509,11 @@ const styles =
       height: 21,
       paddingHorizontal: 5,
       borderRadius: 11,
-      backgroundColor: PRIMARY,
+      backgroundColor:
+        PRIMARY,
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
       marginLeft: 7,
     },
 
@@ -1994,13 +2528,19 @@ const styles =
       height: 30,
       marginLeft: 5,
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
     },
+
+    /*
+     * EMPTY
+     */
 
     emptyContainer: {
       flex: 1,
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
       paddingHorizontal: 35,
       paddingBottom: 70,
     },
@@ -2009,9 +2549,11 @@ const styles =
       width: 68,
       height: 68,
       borderRadius: 34,
-      backgroundColor: "#EEEEFF",
+      backgroundColor:
+        "#EEEEFF",
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
     },
 
     emptyTitle: {
@@ -2028,14 +2570,21 @@ const styles =
       textAlign: "center",
     },
 
+    /*
+     * MODAL
+     */
+
     modalOverlay: {
       flex: 1,
-      backgroundColor: "rgba(0,0,0,0.35)",
-      justifyContent: "flex-end",
+      backgroundColor:
+        "rgba(0,0,0,0.35)",
+      justifyContent:
+        "flex-end",
     },
 
     sheet: {
-      backgroundColor: "#fff",
+      backgroundColor:
+        "#fff",
       borderTopLeftRadius: 24,
       borderTopRightRadius: 24,
       paddingHorizontal: 20,
@@ -2047,7 +2596,8 @@ const styles =
       width: 40,
       height: 4,
       borderRadius: 2,
-      backgroundColor: "#D4D4D9",
+      backgroundColor:
+        "#D4D4D9",
       alignSelf: "center",
       marginBottom: 18,
     },
@@ -2080,7 +2630,8 @@ const styles =
     optionRow: {
       minHeight: 58,
       borderBottomWidth: 1,
-      borderBottomColor: "#EEEEF1",
+      borderBottomColor:
+        "#EEEEF1",
       flexDirection: "row",
       alignItems: "center",
       gap: 14,
@@ -2112,9 +2663,11 @@ const styles =
       marginTop: 14,
       height: 47,
       borderRadius: 12,
-      backgroundColor: "#F3F3F5",
+      backgroundColor:
+        "#F3F3F5",
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        "center",
     },
 
     cancelText: {

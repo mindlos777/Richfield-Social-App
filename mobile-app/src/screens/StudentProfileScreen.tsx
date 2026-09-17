@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useRouter } from 'expo-router';
+import { router, useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 
@@ -1062,9 +1062,11 @@ export function FollowersScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadFollowers();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadFollowers();
+    }, [])
+  );
 
   async function loadFollowers() {
     try {
@@ -1072,36 +1074,63 @@ export function FollowersScreen() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) return;
+      if (!user) {
+        setFollowers([]);
+        return;
+      }
 
-      const { data, error } = await supabase
+      const { data: followRows, error: followError } = await supabase
         .from('follows')
+        .select('follower_id, created_at')
+        .eq('following_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (followError) throw followError;
+
+      if (!followRows || followRows.length === 0) {
+        setFollowers([]);
+        return;
+      }
+
+      const followerIds = followRows
+        .map(item => item.follower_id)
+        .filter(Boolean);
+
+      const { data: profileRows, error: profileError } = await supabase
+        .from('profiles')
         .select(`
           id,
-          follower_id,
-          profiles!follows_follower_id_fkey (
-            id,
-            full_name,
-            username,
-            avatar_url,
-            bio
-          )
+          full_name,
+          username,
+          avatar_url,
+          bio,
+          headline,
+          role,
+          status
         `)
-        .eq('following_id', user.id)
-        .order('created_at', {
-          ascending: false,
-        });
+        .in('id', followerIds);
 
-      if (error) throw error;
+      if (profileError) throw profileError;
 
-      setFollowers(
-        (data || []).map(item => ({
-          followId: item.id,
-          ...item.profiles,
-        }))
+      const profileMap = new Map(
+        (profileRows || []).map(profile => [profile.id, profile])
       );
-    } catch (error) {
+
+      const result = followRows
+        .map(follow => {
+          const person = profileMap.get(follow.follower_id);
+          if (!person) return null;
+          return { ...person, followId: follow.follower_id };
+        })
+        .filter(Boolean) as Record<string, any>[];
+
+      setFollowers(result);
+    } catch (error: any) {
       console.log('Followers error:', error);
+      Alert.alert(
+        'Followers',
+        error?.message || 'Unable to load your followers.'
+      );
       setFollowers([]);
     } finally {
       setLoading(false);
@@ -1109,15 +1138,21 @@ export function FollowersScreen() {
     }
   }
 
+  function openProfile(person: Record<string, any>) {
+    if (!person?.id) return;
+
+    router.push({
+      pathname: '../(student)/user-profile',
+      params: { id: person.id },
+    });
+  }
+
   async function removeFollower(followerId: string) {
     Alert.alert(
       'Remove follower',
       'Remove this person from your followers?',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Remove',
           style: 'destructive',
@@ -1129,21 +1164,22 @@ export function FollowersScreen() {
 
               if (!user) return;
 
-              await supabase
+              const { error } = await supabase
                 .from('follows')
                 .delete()
                 .eq('follower_id', followerId)
                 .eq('following_id', user.id);
 
+              if (error) throw error;
+
               setFollowers(current =>
-                current.filter(
-                  person => person.id !== followerId
-                )
+                current.filter(person => person.id !== followerId)
               );
-            } catch (error) {
+            } catch (error: any) {
+              console.log('Remove follower error:', error);
               Alert.alert(
                 'Error',
-                'Unable to remove follower.'
+                error?.message || 'Unable to remove follower.'
               );
             }
           },
@@ -1152,9 +1188,7 @@ export function FollowersScreen() {
     );
   }
 
-  if (loading) {
-    return <LoadingScreen />;
-  }
+  if (loading) return <LoadingScreen />;
 
   return (
     <View style={styles.screen}>
@@ -1170,6 +1204,7 @@ export function FollowersScreen() {
         <FlatList
           data={followers}
           keyExtractor={item => item.id}
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -1186,15 +1221,8 @@ export function FollowersScreen() {
               person={item}
               buttonText="Remove"
               secondary
-              onPress={() =>
-                router.push({
-                  pathname: '../(student)/user-profile',
-                  params: { id: item.id },
-                })
-              }
-              onButtonPress={() =>
-                removeFollower(item.id)
-              }
+              onPress={() => openProfile(item)}
+              onButtonPress={() => removeFollower(item.id)}
             />
           )}
         />
@@ -1212,9 +1240,11 @@ export function FollowingScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadFollowing();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadFollowing();
+    }, [])
+  );
 
   async function loadFollowing() {
     try {
@@ -1222,36 +1252,63 @@ export function FollowingScreen() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) return;
+      if (!user) {
+        setFollowing([]);
+        return;
+      }
 
-      const { data, error } = await supabase
+      const { data: followRows, error: followError } = await supabase
         .from('follows')
+        .select('following_id, created_at')
+        .eq('follower_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (followError) throw followError;
+
+      if (!followRows || followRows.length === 0) {
+        setFollowing([]);
+        return;
+      }
+
+      const followingIds = followRows
+        .map(item => item.following_id)
+        .filter(Boolean);
+
+      const { data: profileRows, error: profileError } = await supabase
+        .from('profiles')
         .select(`
           id,
-          following_id,
-          profiles!follows_following_id_fkey (
-            id,
-            full_name,
-            username,
-            avatar_url,
-            bio
-          )
+          full_name,
+          username,
+          avatar_url,
+          bio,
+          headline,
+          role,
+          status
         `)
-        .eq('follower_id', user.id)
-        .order('created_at', {
-          ascending: false,
-        });
+        .in('id', followingIds);
 
-      if (error) throw error;
+      if (profileError) throw profileError;
 
-      setFollowing(
-        (data || []).map(item => ({
-          followId: item.id,
-          ...item.profiles,
-        }))
+      const profileMap = new Map(
+        (profileRows || []).map(profile => [profile.id, profile])
       );
-    } catch (error) {
+
+      const result = followRows
+        .map(follow => {
+          const person = profileMap.get(follow.following_id);
+          if (!person) return null;
+          return { ...person, followId: follow.following_id };
+        })
+        .filter(Boolean) as Record<string, any>[];
+
+      setFollowing(result);
+    } catch (error: any) {
       console.log('Following error:', error);
+      Alert.alert(
+        'Following',
+        error?.message || 'Unable to load the people you follow.'
+      );
       setFollowing([]);
     } finally {
       setLoading(false);
@@ -1259,36 +1316,57 @@ export function FollowingScreen() {
     }
   }
 
-  async function unfollow(userId: string) {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+  function openProfile(person: Record<string, any>) {
+    if (!person?.id) return;
 
-      if (!user) return;
-
-      const { error } = await supabase
-        .from('follows')
-        .delete()
-        .eq('follower_id', user.id)
-        .eq('following_id', userId);
-
-      if (error) throw error;
-
-      setFollowing(current =>
-        current.filter(person => person.id !== userId)
-      );
-    } catch (error) {
-      Alert.alert(
-        'Error',
-        'Unable to unfollow this person.'
-      );
-    }
+    router.push({
+      pathname: '../(student)/user-profile',
+      params: { id: person.id },
+    });
   }
 
-  if (loading) {
-    return <LoadingScreen />;
+  function unfollow(userId: string) {
+    Alert.alert(
+      'Unfollow?',
+      'You will stop following this person.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unfollow',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const {
+                data: { user },
+              } = await supabase.auth.getUser();
+
+              if (!user) return;
+
+              const { error } = await supabase
+                .from('follows')
+                .delete()
+                .eq('follower_id', user.id)
+                .eq('following_id', userId);
+
+              if (error) throw error;
+
+              setFollowing(current =>
+                current.filter(person => person.id !== userId)
+              );
+            } catch (error: any) {
+              console.log('Unfollow error:', error);
+              Alert.alert(
+                'Error',
+                error?.message || 'Unable to unfollow this person.'
+              );
+            }
+          },
+        },
+      ]
+    );
   }
+
+  if (loading) return <LoadingScreen />;
 
   return (
     <View style={styles.screen}>
@@ -1304,6 +1382,7 @@ export function FollowingScreen() {
         <FlatList
           data={following}
           keyExtractor={item => item.id}
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -1319,12 +1398,7 @@ export function FollowingScreen() {
             <PersonRow
               person={item}
               buttonText="Following"
-              onPress={() =>
-                router.push({
-                  pathname: '../(student)/user-profile',
-                  params: { id: item.id },
-                })
-              }
+              onPress={() => openProfile(item)}
               onButtonPress={() => unfollow(item.id)}
             />
           )}
