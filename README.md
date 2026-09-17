@@ -276,9 +276,3 @@ or used for commercial purposes without prior written permission from the
 copyright owner.
 
 See the [LICENSE](LICENSE) file for more information.
-
-## Project Status
-
-Hackathon prototype. The main submitted product is the mobile
-application and all four required roles should be tested end-to-end
-before demonstration.
